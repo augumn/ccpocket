@@ -21,6 +21,8 @@ import 'streaming_state_cubit.dart';
 class ChatSessionCubit extends Cubit<ChatSessionState> {
   static const _uuid = Uuid();
   static const offlineQueuedInputPrefix = 'offline:';
+  static const deliveryPendingQueuedInputPrefix = 'pending:';
+  static const _deliveryPendingDelay = Duration(milliseconds: 600);
 
   final String sessionId;
   final Provider? provider;
@@ -31,6 +33,7 @@ class ChatSessionCubit extends Cubit<ChatSessionState> {
   StreamSubscription<ServerMessage>? _subscription;
   bool _pastHistoryLoaded = false;
   Timer? _statusRefreshTimer;
+  final Map<String, Timer> _deliveryPendingTimers = {};
 
   /// Number of entries prepended from past_history, so that [replaceEntries]
   /// can preserve them while replacing in-memory history entries.
@@ -57,6 +60,14 @@ class ChatSessionCubit extends Cubit<ChatSessionState> {
   static String? offlineQueuedClientMessageId(QueuedInputItem? item) {
     if (!isOfflineQueuedInput(item)) return null;
     return item!.itemId.substring(offlineQueuedInputPrefix.length);
+  }
+
+  static bool isDeliveryPendingQueuedInput(QueuedInputItem? item) =>
+      item?.itemId.startsWith(deliveryPendingQueuedInputPrefix) ?? false;
+
+  static String? deliveryPendingClientMessageId(QueuedInputItem? item) {
+    if (!isDeliveryPendingQueuedInput(item)) return null;
+    return item!.itemId.substring(deliveryPendingQueuedInputPrefix.length);
   }
 
   ChatSessionCubit({
@@ -469,13 +480,37 @@ class ChatSessionCubit extends Cubit<ChatSessionState> {
     // --- Apply state update ---
     final newClaudeSessionId =
         update.claudeSessionId ?? current.claudeSessionId;
+    if (originalMsg
+        case InputAckMessage(:final clientMessageId) ||
+            InputRejectedMessage(:final clientMessageId)
+        when clientMessageId != null) {
+      _deliveryPendingTimers.remove(clientMessageId)?.cancel();
+    } else if (update.markUserMessagesSent) {
+      for (final timer in _deliveryPendingTimers.values) {
+        timer.cancel();
+      }
+      _deliveryPendingTimers.clear();
+    }
+
     var nextQueuedInput = update.clearQueuedInput
         ? null
         : (update.queuedInput ?? current.queuedInput);
     if (originalMsg is InputAckMessage &&
         originalMsg.queued == false &&
-        offlineQueuedClientMessageId(nextQueuedInput) ==
+        (offlineQueuedClientMessageId(nextQueuedInput) ==
+                originalMsg.clientMessageId ||
+            deliveryPendingClientMessageId(nextQueuedInput) ==
+                originalMsg.clientMessageId)) {
+      nextQueuedInput = null;
+    }
+    if (originalMsg is InputRejectedMessage &&
+        deliveryPendingClientMessageId(nextQueuedInput) ==
             originalMsg.clientMessageId) {
+      nextQueuedInput = null;
+    }
+    if (originalMsg is! InputAckMessage &&
+        update.markUserMessagesSent &&
+        isDeliveryPendingQueuedInput(nextQueuedInput)) {
       nextQueuedInput = null;
     }
 
@@ -652,10 +687,58 @@ class ChatSessionCubit extends Cubit<ChatSessionState> {
         mentions: structuredMentions.mentions,
       ),
     );
+    if (isCodex && !isOffline) {
+      _scheduleDeliveryPendingQueue(
+        clientMessageId: clientMessageId,
+        text: text,
+        imageCount: images?.length ?? 0,
+        skills: structuredMentions.skills,
+        mentions: structuredMentions.mentions,
+      );
+    }
+  }
+
+  void _scheduleDeliveryPendingQueue({
+    required String clientMessageId,
+    required String text,
+    required int imageCount,
+    required List<Map<String, String>> skills,
+    required List<Map<String, String>> mentions,
+  }) {
+    _deliveryPendingTimers[clientMessageId]?.cancel();
+    _deliveryPendingTimers[clientMessageId] = Timer(_deliveryPendingDelay, () {
+      _deliveryPendingTimers.remove(clientMessageId);
+      if (isClosed || state.queuedInput != null) return;
+
+      final entries = state.entries;
+      final entryIndex = entries.indexWhere(
+        (entry) =>
+            entry is UserChatEntry &&
+            entry.clientMessageId == clientMessageId &&
+            entry.status == MessageStatus.sending,
+      );
+      final nextEntries = entryIndex == -1
+          ? entries
+          : [...entries.take(entryIndex), ...entries.skip(entryIndex + 1)];
+      emit(
+        state.copyWith(
+          entries: nextEntries,
+          queuedInput: QueuedInputItem(
+            itemId: '$deliveryPendingQueuedInputPrefix$clientMessageId',
+            text: text,
+            createdAt: DateTime.now().toUtc().toIso8601String(),
+            imageCount: imageCount,
+            skills: skills,
+            mentions: mentions,
+          ),
+        ),
+      );
+    });
   }
 
   void updateQueuedInput(QueuedInputItem item, String text) {
     if (!isCodex || text.trim().isEmpty) return;
+    if (isDeliveryPendingQueuedInput(item)) return;
     final structuredMentions = _extractCodexStructuredInputs(text);
     final offlineClientMessageId = offlineQueuedClientMessageId(item);
     if (offlineClientMessageId != null) {
@@ -692,7 +775,11 @@ class ChatSessionCubit extends Cubit<ChatSessionState> {
   }
 
   void steerQueuedInput(QueuedInputItem item) {
-    if (!isCodex || isOfflineQueuedInput(item)) return;
+    if (!isCodex ||
+        isOfflineQueuedInput(item) ||
+        isDeliveryPendingQueuedInput(item)) {
+      return;
+    }
     _bridge.send(
       ClientMessage.steerQueuedInput(sessionId: sessionId, itemId: item.itemId),
     );
@@ -700,6 +787,7 @@ class ChatSessionCubit extends Cubit<ChatSessionState> {
 
   void cancelQueuedInput(QueuedInputItem item) {
     if (!isCodex) return;
+    if (isDeliveryPendingQueuedInput(item)) return;
     final offlineClientMessageId = offlineQueuedClientMessageId(item);
     if (offlineClientMessageId != null) {
       emit(state.copyWith(queuedInput: null));
@@ -1207,6 +1295,10 @@ class ChatSessionCubit extends Cubit<ChatSessionState> {
   @override
   Future<void> close() {
     _statusRefreshTimer?.cancel();
+    for (final timer in _deliveryPendingTimers.values) {
+      timer.cancel();
+    }
+    _deliveryPendingTimers.clear();
     _subscription?.cancel();
     _sideEffectsController.close();
     return super.close();

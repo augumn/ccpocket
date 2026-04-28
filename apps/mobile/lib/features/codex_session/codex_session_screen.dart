@@ -1136,22 +1136,39 @@ class _CodexChatBody extends HookWidget {
                       isOfflinePending: ChatSessionCubit.isOfflineQueuedInput(
                         queuedInput,
                       ),
+                      isDeliveryPending:
+                          ChatSessionCubit.isDeliveryPendingQueuedInput(
+                            queuedInput,
+                          ),
                       onSteer:
-                          ChatSessionCubit.isOfflineQueuedInput(queuedInput)
+                          ChatSessionCubit.isOfflineQueuedInput(queuedInput) ||
+                              ChatSessionCubit.isDeliveryPendingQueuedInput(
+                                queuedInput,
+                              )
                           ? null
                           : () => context
                                 .read<ChatSessionCubit>()
                                 .steerQueuedInput(queuedInput),
-                      onEdit: () => moveQueuedInputToComposer(
-                        inputController: chatInputController,
-                        item: queuedInput,
-                        cancelQueuedInput: () => context
-                            .read<ChatSessionCubit>()
-                            .cancelQueuedInput(queuedInput),
-                      ),
-                      onCancel: () => context
-                          .read<ChatSessionCubit>()
-                          .cancelQueuedInput(queuedInput),
+                      onEdit:
+                          ChatSessionCubit.isDeliveryPendingQueuedInput(
+                            queuedInput,
+                          )
+                          ? null
+                          : () => moveQueuedInputToComposer(
+                              inputController: chatInputController,
+                              item: queuedInput,
+                              cancelQueuedInput: () => context
+                                  .read<ChatSessionCubit>()
+                                  .cancelQueuedInput(queuedInput),
+                            ),
+                      onCancel:
+                          ChatSessionCubit.isDeliveryPendingQueuedInput(
+                            queuedInput,
+                          )
+                          ? null
+                          : () => context
+                                .read<ChatSessionCubit>()
+                                .cancelQueuedInput(queuedInput),
                     ),
                 if (approval is ApprovalNone)
                   ChatInputWithOverlays(
@@ -1457,13 +1474,15 @@ class CodexQueuedInputPanel extends StatelessWidget {
     required this.onEdit,
     required this.onCancel,
     this.isOfflinePending = false,
+    this.isDeliveryPending = false,
   });
 
   final QueuedInputItem item;
   final VoidCallback? onSteer;
-  final VoidCallback onEdit;
-  final VoidCallback onCancel;
+  final VoidCallback? onEdit;
+  final VoidCallback? onCancel;
   final bool isOfflinePending;
+  final bool isDeliveryPending;
 
   @override
   Widget build(BuildContext context) {
@@ -1472,6 +1491,8 @@ class CodexQueuedInputPanel extends StatelessWidget {
     final imageLabel = item.imageCount > 0 ? ' · ${item.imageCount} image' : '';
     final title = isOfflinePending
         ? 'Queued for reconnect$imageLabel'
+        : isDeliveryPending
+        ? 'Pending delivery$imageLabel'
         : 'Queued for next turn$imageLabel';
 
     return Material(

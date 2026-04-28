@@ -82,6 +82,38 @@ void main() {
     expect(canceled, isTrue);
   });
 
+  testWidgets('CodexQueuedInputPanel disables actions for delivery pending', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: CodexQueuedInputPanel(
+            item: const QueuedInputItem(
+              itemId: 'pending:cm1',
+              text: 'Slow delivery message',
+              createdAt: '2026-04-25T00:00:00.000Z',
+            ),
+            isDeliveryPending: true,
+            onSteer: null,
+            onEdit: null,
+            onCancel: null,
+          ),
+        ),
+      ),
+    );
+
+    expect(find.text('Pending delivery'), findsOneWidget);
+    for (final key in [
+      const ValueKey('codex_queue_steer_button'),
+      const ValueKey('codex_queue_edit_button'),
+      const ValueKey('codex_queue_cancel_button'),
+    ]) {
+      final button = tester.widget<IconButton>(find.byKey(key));
+      expect(button.onPressed, isNull);
+    }
+  });
+
   test('moveQueuedInputToComposer cancels queue and overwrites input text', () {
     var canceled = false;
     final controller = TextEditingController(text: 'existing draft');

@@ -376,6 +376,122 @@ void main() {
     );
 
     test(
+      'codex online input moves to queue panel when delivery ack is slow',
+      () async {
+        final cubit = createCubit('s1', provider: Provider.codex);
+        addTearDown(cubit.close);
+        mockBridge.emitMessage(
+          const StatusMessage(status: ProcessStatus.idle),
+          sessionId: 's1',
+        );
+        await Future.microtask(() {});
+
+        cubit.sendMessage('Slow online Codex input');
+
+        var users = cubit.state.entries.whereType<UserChatEntry>().toList();
+        expect(users, hasLength(1));
+        expect(users.single.status, MessageStatus.sending);
+        expect(cubit.state.queuedInput, isNull);
+
+        await Future<void>.delayed(const Duration(milliseconds: 650));
+
+        users = cubit.state.entries.whereType<UserChatEntry>().toList();
+        expect(users, isEmpty);
+        expect(cubit.state.queuedInput?.text, 'Slow online Codex input');
+        expect(
+          ChatSessionCubit.isDeliveryPendingQueuedInput(
+            cubit.state.queuedInput,
+          ),
+          isTrue,
+        );
+
+        final payload =
+            jsonDecode(mockBridge.sentMessages.single.toJson())
+                as Map<String, dynamic>;
+        mockBridge.emitMessage(
+          InputAckMessage(
+            sessionId: 's1',
+            clientMessageId: payload['clientMessageId'] as String,
+          ),
+          sessionId: 's1',
+        );
+        await Future.microtask(() {});
+
+        expect(cubit.state.queuedInput, isNull);
+      },
+    );
+
+    test(
+      'codex online input ack before delay keeps normal message entry',
+      () async {
+        final cubit = createCubit('s1', provider: Provider.codex);
+        addTearDown(cubit.close);
+        mockBridge.emitMessage(
+          const StatusMessage(status: ProcessStatus.idle),
+          sessionId: 's1',
+        );
+        await Future.microtask(() {});
+
+        cubit.sendMessage('Fast online Codex input');
+        final payload =
+            jsonDecode(mockBridge.sentMessages.single.toJson())
+                as Map<String, dynamic>;
+        mockBridge.emitMessage(
+          InputAckMessage(
+            sessionId: 's1',
+            clientMessageId: payload['clientMessageId'] as String,
+          ),
+          sessionId: 's1',
+        );
+        await Future.microtask(() {});
+        await Future<void>.delayed(const Duration(milliseconds: 650));
+
+        final users = cubit.state.entries.whereType<UserChatEntry>().toList();
+        expect(users, hasLength(1));
+        expect(users.single.status, MessageStatus.sent);
+        expect(cubit.state.queuedInput, isNull);
+      },
+    );
+
+    test(
+      'codex assistant response clears delivery pending without ack',
+      () async {
+        final cubit = createCubit('s1', provider: Provider.codex);
+        addTearDown(cubit.close);
+        mockBridge.emitMessage(
+          const StatusMessage(status: ProcessStatus.idle),
+          sessionId: 's1',
+        );
+        await Future.microtask(() {});
+
+        cubit.sendMessage('Ack-less online Codex input');
+
+        await Future<void>.delayed(const Duration(milliseconds: 650));
+        expect(
+          ChatSessionCubit.isDeliveryPendingQueuedInput(
+            cubit.state.queuedInput,
+          ),
+          isTrue,
+        );
+
+        mockBridge.emitMessage(
+          AssistantServerMessage(
+            message: AssistantMessage(
+              id: 'a1',
+              role: 'assistant',
+              content: [const TextContent(text: 'delivered')],
+              model: 'codex',
+            ),
+          ),
+          sessionId: 's1',
+        );
+        await Future.microtask(() {});
+
+        expect(cubit.state.queuedInput, isNull);
+      },
+    );
+
+    test(
       'codex sendMessage includes structured skills and app mentions',
       () async {
         final cubit = createCubit('s1', provider: Provider.codex);

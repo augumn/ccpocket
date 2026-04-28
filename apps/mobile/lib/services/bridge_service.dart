@@ -99,6 +99,8 @@ class BridgeService implements BridgeServiceBase {
   final SessionRuntimeStore _runtimeStore = SessionRuntimeStore();
   final Map<String, int> _pendingHistoryDeltaSinceSeq = {};
   final Map<String, ClientMessage> _inFlightPendingMessages = {};
+  final Map<String, Timer> _inFlightPendingVisibilityTimers = {};
+  final Set<String> _visibleInFlightPendingKeys = {};
   List<OfflinePendingAction> _offlinePendingActions = const [];
 
   // Diff image cache: survives screen navigation, cleared on session stop.
@@ -229,6 +231,7 @@ class BridgeService implements BridgeServiceBase {
   static const _prefKeyApiKey = 'bridge_api_key';
   static const _prefKeyOfflinePendingMessages =
       'bridge_offline_pending_messages_v1';
+  static const _inFlightPendingVisibilityDelay = Duration(milliseconds: 600);
 
   Future<void>? _offlineQueueRestore;
 
@@ -594,7 +597,7 @@ class BridgeService implements BridgeServiceBase {
   void _queueOfflineMessage(ClientMessage message) {
     final dedupeKey = _offlineMessageDedupeKey(message);
     if (dedupeKey != null) {
-      _inFlightPendingMessages.remove(dedupeKey);
+      _clearInFlightPendingMessage(dedupeKey);
     }
     final didAdd = _addQueuedMessageIfAbsent(message);
     if (didAdd || _isPersistableOfflineMessage(message)) {
@@ -630,13 +633,36 @@ class BridgeService implements BridgeServiceBase {
       return false;
     }
     _inFlightPendingMessages[dedupeKey] = message;
-    _publishOfflinePendingActions();
+    _scheduleInFlightPendingVisibility(dedupeKey);
     return true;
+  }
+
+  void _scheduleInFlightPendingVisibility(String dedupeKey) {
+    _inFlightPendingVisibilityTimers[dedupeKey]?.cancel();
+    _inFlightPendingVisibilityTimers[dedupeKey] = Timer(
+      _inFlightPendingVisibilityDelay,
+      () {
+        _inFlightPendingVisibilityTimers.remove(dedupeKey);
+        if (!_inFlightPendingMessages.containsKey(dedupeKey)) return;
+        _visibleInFlightPendingKeys.add(dedupeKey);
+        _publishOfflinePendingActions();
+      },
+    );
+  }
+
+  void _clearInFlightPendingMessage(String dedupeKey) {
+    _inFlightPendingMessages.remove(dedupeKey);
+    _visibleInFlightPendingKeys.remove(dedupeKey);
+    _inFlightPendingVisibilityTimers.remove(dedupeKey)?.cancel();
   }
 
   void _requeueInFlightPendingMessages() {
     if (_inFlightPendingMessages.isEmpty) return;
     final messages = List<ClientMessage>.from(_inFlightPendingMessages.values);
+    for (final dedupeKey in _inFlightPendingMessages.keys) {
+      _inFlightPendingVisibilityTimers.remove(dedupeKey)?.cancel();
+      _visibleInFlightPendingKeys.remove(dedupeKey);
+    }
     _inFlightPendingMessages.clear();
     var didAdd = false;
     for (final message in messages) {
@@ -760,7 +786,9 @@ class BridgeService implements BridgeServiceBase {
       if (action == null || !seen.add(action.id)) continue;
       actions.add(action);
     }
-    for (final message in _inFlightPendingMessages.values) {
+    for (final entry in _inFlightPendingMessages.entries) {
+      if (!_visibleInFlightPendingKeys.contains(entry.key)) continue;
+      final message = entry.value;
       final action = _offlinePendingActionFor(message, canCancel: false);
       if (action == null || !seen.add(action.id)) continue;
       actions.add(action);
@@ -775,10 +803,13 @@ class BridgeService implements BridgeServiceBase {
       final action = _offlinePendingActionFor(message);
       return action?.id == actionId;
     });
-    _inFlightPendingMessages.removeWhere((_, message) {
+    for (final entry in List.of(_inFlightPendingMessages.entries)) {
+      final message = entry.value;
       final action = _offlinePendingActionFor(message, canCancel: false);
-      return action?.id == actionId;
-    });
+      if (action?.id == actionId) {
+        _clearInFlightPendingMessage(entry.key);
+      }
+    }
     _publishOfflinePendingActions();
     await _persistOfflinePendingMessages();
   }
@@ -804,7 +835,7 @@ class BridgeService implements BridgeServiceBase {
     var removed = false;
     for (final entry in List.of(_inFlightPendingMessages.entries)) {
       if (!matches(entry.value)) continue;
-      _inFlightPendingMessages.remove(entry.key);
+      _clearInFlightPendingMessage(entry.key);
       removed = true;
       break;
     }
@@ -1700,6 +1731,10 @@ class BridgeService implements BridgeServiceBase {
   void dispose() {
     _intentionalDisconnect = true;
     _reconnectTimer?.cancel();
+    for (final timer in _inFlightPendingVisibilityTimers.values) {
+      timer.cancel();
+    }
+    _inFlightPendingVisibilityTimers.clear();
     _channelSub?.cancel();
     _channelSub = null;
     _channel?.sink.close();

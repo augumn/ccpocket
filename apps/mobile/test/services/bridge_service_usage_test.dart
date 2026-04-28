@@ -282,16 +282,20 @@ void main() {
       bridge.send(ClientMessage.start('/home/user/app', provider: 'codex'));
       await Future<void>.delayed(const Duration(milliseconds: 50));
 
+      expect(bridge.offlinePendingActions, isEmpty);
+      expect(
+        received.where((message) => message['type'] == 'start'),
+        hasLength(1),
+      );
+
+      await Future<void>.delayed(const Duration(milliseconds: 650));
+
       expect(bridge.offlinePendingActions, hasLength(1));
       expect(
         bridge.offlinePendingActions.single.kind,
         OfflinePendingActionKind.start,
       );
       expect(bridge.offlinePendingActions.single.canCancel, isFalse);
-      expect(
-        received.where((message) => message['type'] == 'start'),
-        hasLength(1),
-      );
 
       socket.add(
         jsonEncode({
@@ -327,7 +331,7 @@ void main() {
 
       bridge.send(ClientMessage.start('/home/user/app', provider: 'codex'));
       await Future<void>.delayed(const Duration(milliseconds: 50));
-      expect(bridge.offlinePendingActions.single.canCancel, isFalse);
+      expect(bridge.offlinePendingActions, isEmpty);
 
       await socket.close();
       await Future<void>.delayed(const Duration(milliseconds: 100));
