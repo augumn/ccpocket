@@ -1155,6 +1155,23 @@ class AppLocalizationsJa extends AppLocalizations {
   String get indentSizeSubtitle => '箇条書きのインデントに使用するスペース数';
 
   @override
+  String get gitDiffInteractionMode => 'Git diff 操作';
+
+  @override
+  String get gitDiffQuickActions => 'クイック操作';
+
+  @override
+  String get gitDiffQuickActionsDescription =>
+      '1本指の横スワイプで hunk の Stage / Unstage / Revert を実行します。長い行は折り返します。';
+
+  @override
+  String get gitDiffScrollFirst => '横スクロール優先';
+
+  @override
+  String get gitDiffScrollFirstDescription =>
+      '長い行を折り返さず、hunk 単位で横スクロールできます。Git 操作はロングタップのメニューまたは下部ボタンから実行します。';
+
+  @override
   String get sectionAbout => '概要';
 
   @override

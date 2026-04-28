@@ -4,6 +4,7 @@ import 'package:ccpocket/features/settings/settings_screen.dart';
 import 'package:ccpocket/features/settings/state/settings_cubit.dart';
 import 'package:ccpocket/features/settings/state/settings_state.dart';
 import 'package:ccpocket/l10n/app_localizations.dart';
+import 'package:ccpocket/models/git_diff_interaction_mode.dart';
 import 'package:ccpocket/models/messages.dart';
 import 'package:ccpocket/providers/machine_manager_cubit.dart';
 import 'package:ccpocket/services/bridge_service.dart';
@@ -627,6 +628,71 @@ void main() {
       expect(
         find.byKey(const ValueKey('macos_native_app_settings_tile')),
         findsNothing,
+      );
+
+      await settingsCubit.close();
+      await machineManagerCubit.close();
+      bridge.dispose();
+    });
+  });
+
+  group('Settings git diff interaction mode', () {
+    test('persists through SettingsCubit reload', () async {
+      SharedPreferences.setMockInitialValues({});
+      final prefs = await SharedPreferences.getInstance();
+      final firstCubit = SettingsCubit(prefs);
+
+      expect(
+        firstCubit.state.gitDiffInteractionMode,
+        GitDiffInteractionMode.quickActions,
+      );
+
+      firstCubit.setGitDiffInteractionMode(GitDiffInteractionMode.scrollFirst);
+      await firstCubit.close();
+
+      final secondCubit = SettingsCubit(prefs);
+      expect(
+        secondCubit.state.gitDiffInteractionMode,
+        GitDiffInteractionMode.scrollFirst,
+      );
+      await secondCubit.close();
+    });
+
+    testWidgets('shows mode selector in editor settings', (tester) async {
+      SharedPreferences.setMockInitialValues({});
+      final prefs = await SharedPreferences.getInstance();
+      final settingsCubit = _SeededSettingsCubit(prefs, activeMachineId: null);
+      final manager = MachineManagerService(prefs, _FakeSecureStorage());
+      final machineManagerCubit = MachineManagerCubit(manager, null);
+      final bridge = _FakeBridgeService(connected: false);
+
+      await tester.pumpWidget(
+        await _buildScreen(
+          bridge: bridge,
+          settingsCubit: settingsCubit,
+          machineManagerCubit: machineManagerCubit,
+        ),
+      );
+      await tester.pumpAndSettle();
+      final l = AppLocalizations.of(tester.element(find.byType(Scaffold)));
+
+      await tester.scrollUntilVisible(
+        find.text(l.gitDiffInteractionMode),
+        300,
+        scrollable: find.byType(Scrollable),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text(l.gitDiffInteractionMode), findsOneWidget);
+      expect(find.text(l.gitDiffQuickActions), findsOneWidget);
+      expect(find.text(l.gitDiffScrollFirst), findsOneWidget);
+
+      await tester.tap(find.text(l.gitDiffScrollFirst));
+      await tester.pumpAndSettle();
+
+      expect(
+        settingsCubit.state.gitDiffInteractionMode,
+        GitDiffInteractionMode.scrollFirst,
       );
 
       await settingsCubit.close();

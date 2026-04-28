@@ -4,6 +4,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:scroll_to_index/scroll_to_index.dart';
 
 import '../../l10n/app_localizations.dart';
+import '../../models/git_diff_interaction_mode.dart';
 import '../../services/bridge_service.dart';
 import '../../theme/app_theme.dart';
 import '../../utils/diff_parser.dart'
@@ -11,6 +12,7 @@ import '../../utils/diff_parser.dart'
 import '../../widgets/adaptive_context_menu.dart';
 import '../../widgets/workspace_pane_chrome.dart';
 import '../session_list/workspace_shell_screen.dart';
+import '../settings/state/settings_cubit.dart';
 import 'state/commit_cubit.dart';
 import 'state/git_view_cubit.dart';
 import 'state/git_view_state.dart';
@@ -157,6 +159,7 @@ class _GitScreenBody extends StatelessWidget {
   Widget build(BuildContext context) {
     final state = context.watch<GitViewCubit>().state;
     final cubit = context.read<GitViewCubit>();
+    final interactionMode = _gitDiffInteractionModeOf(context);
     final l = AppLocalizations.of(context);
     final shell = WorkspaceShellScreen.maybeOf(context);
     final chrome = resolveWorkspacePaneChrome(
@@ -247,6 +250,7 @@ class _GitScreenBody extends StatelessWidget {
               state: state,
               cubit: cubit,
               isProjectMode: isProjectMode,
+              interactionMode: interactionMode,
               onConfirmRevert: _confirmRevert,
               onShowFileActionSheet: _showFileActionSheet,
               onShowHunkActionSheet: _showHunkActionSheet,
@@ -256,6 +260,16 @@ class _GitScreenBody extends StatelessWidget {
         ],
       ),
     );
+  }
+
+  GitDiffInteractionMode _gitDiffInteractionModeOf(BuildContext context) {
+    try {
+      return context.select(
+        (SettingsCubit cubit) => cubit.state.gitDiffInteractionMode,
+      );
+    } catch (_) {
+      return GitDiffInteractionMode.quickActions;
+    }
   }
 
   void _showFileActionSheet(
@@ -523,6 +537,7 @@ class _GitScreenContent extends StatelessWidget {
   final GitViewState state;
   final GitViewCubit cubit;
   final bool isProjectMode;
+  final GitDiffInteractionMode interactionMode;
   final AutoScrollController scrollController;
   final Future<void> Function(
     BuildContext context, {
@@ -553,6 +568,7 @@ class _GitScreenContent extends StatelessWidget {
     required this.state,
     required this.cubit,
     required this.isProjectMode,
+    required this.interactionMode,
     required this.scrollController,
     required this.onConfirmRevert,
     required this.onShowFileActionSheet,
@@ -622,7 +638,10 @@ class _GitScreenContent extends StatelessWidget {
               position,
             )
           : null,
-      lineWrapEnabled: state.lineWrapEnabled,
+      lineWrapEnabled: interactionMode == GitDiffInteractionMode.quickActions
+          ? state.lineWrapEnabled
+          : false,
+      interactionMode: interactionMode,
     );
   }
 }

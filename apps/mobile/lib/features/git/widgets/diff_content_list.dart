@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:scroll_to_index/scroll_to_index.dart';
 
+import '../../../models/git_diff_interaction_mode.dart';
 import '../../../utils/diff_parser.dart';
 import 'diff_binary_notice.dart';
 import 'diff_file_header.dart';
@@ -25,6 +26,7 @@ class DiffContentList extends StatelessWidget {
   final void Function(int fileIdx, int hunkIdx, Offset? position)?
   onLongPressHunk;
   final bool lineWrapEnabled;
+  final GitDiffInteractionMode interactionMode;
   final Set<String> stagedFilePaths;
 
   const DiffContentList({
@@ -44,6 +46,7 @@ class DiffContentList extends StatelessWidget {
     this.onSwipeRevertHunk,
     this.onLongPressHunk,
     this.lineWrapEnabled = false,
+    this.interactionMode = GitDiffInteractionMode.quickActions,
     this.stagedFilePaths = const {},
   });
 
@@ -94,7 +97,7 @@ class DiffContentList extends StatelessWidget {
 
   Widget _buildFileSection(int fileIdx, DiffFile file) {
     final collapsed = collapsedFileIndices.contains(fileIdx);
-    final header = DiffFileHeader(
+    Widget header = DiffFileHeader(
       file: file,
       collapsed: collapsed,
       onToggleCollapse: () => onToggleCollapse(fileIdx),
@@ -137,14 +140,16 @@ class DiffContentList extends StatelessWidget {
     if (onSwipeStage != null ||
         onSwipeUnstage != null ||
         onSwipeRevert != null) {
-      section = _SwipeStageDismissible(
-        fileIdx: fileIdx,
-        filePath: file.filePath,
-        onSwipeStage: onSwipeStage,
-        onSwipeUnstage: onSwipeUnstage,
-        onSwipeRevert: onSwipeRevert,
-        child: section,
-      );
+      if (interactionMode == GitDiffInteractionMode.quickActions) {
+        section = _SwipeStageDismissible(
+          fileIdx: fileIdx,
+          filePath: file.filePath,
+          onSwipeStage: onSwipeStage,
+          onSwipeUnstage: onSwipeUnstage,
+          onSwipeRevert: onSwipeRevert,
+          child: section,
+        );
+      }
     }
     return section;
   }
@@ -158,6 +163,7 @@ class DiffContentList extends StatelessWidget {
           lineNumberWidth: lineNumberWidth,
           dismissKey: '${file.filePath}:$hunkIdx',
           lineWrapEnabled: lineWrapEnabled,
+          interactionMode: interactionMode,
           onLongPress: onLongPressHunk != null
               ? () => onLongPressHunk!(fileIdx, hunkIdx, null)
               : null,

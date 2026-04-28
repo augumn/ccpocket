@@ -1,11 +1,14 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:ccpocket/features/git/git_screen.dart';
 import 'package:ccpocket/features/git/state/git_view_state.dart';
+import 'package:ccpocket/features/settings/state/settings_cubit.dart';
 import 'package:ccpocket/features/git/widgets/git_file_list_sheet.dart';
 import 'package:ccpocket/l10n/app_localizations.dart';
+import 'package:ccpocket/models/git_diff_interaction_mode.dart';
 import 'package:ccpocket/models/messages.dart';
 import 'package:ccpocket/services/bridge_service.dart';
 import 'package:ccpocket/services/mock_bridge_service.dart';
@@ -23,6 +26,40 @@ Widget _wrap(Widget child, {BridgeService? bridge}) {
       home: child,
     ),
   );
+}
+
+Future<Widget> _wrapWithSettings(
+  Widget child, {
+  BridgeService? bridge,
+  GitDiffInteractionMode interactionMode = GitDiffInteractionMode.quickActions,
+}) async {
+  SharedPreferences.setMockInitialValues({});
+  final prefs = await SharedPreferences.getInstance();
+  final settingsCubit = SettingsCubit(prefs)
+    ..setGitDiffInteractionMode(interactionMode);
+  return RepositoryProvider<BridgeService>.value(
+    value: bridge ?? BridgeService(),
+    child: BlocProvider<SettingsCubit>(
+      create: (_) => settingsCubit,
+      child: MaterialApp(
+        localizationsDelegates: AppLocalizations.localizationsDelegates,
+        supportedLocales: AppLocalizations.supportedLocales,
+        locale: const Locale('en'),
+        theme: AppTheme.darkTheme,
+        home: child,
+      ),
+    ),
+  );
+}
+
+class _RecordingMockBridgeService extends MockBridgeService {
+  final sentMessages = <ClientMessage>[];
+
+  @override
+  void send(ClientMessage message) {
+    sentMessages.add(message);
+    super.send(message);
+  }
 }
 
 const _sampleDiff = '''
@@ -496,6 +533,78 @@ diff --git a/lib/file_$index.dart b/lib/file_$index.dart
         findsOneWidget,
       );
       expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('scroll-first mode disables swipe actions', (tester) async {
+      final bridge = MockBridgeService()..mockDiff = _multiFileDiff;
+      addTearDown(bridge.dispose);
+
+      await tester.pumpWidget(
+        await _wrapWithSettings(
+          const GitScreen(projectPath: '/tmp/project'),
+          bridge: bridge,
+          interactionMode: GitDiffInteractionMode.scrollFirst,
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(
+        find.byKey(const ValueKey('hunk_swipe_file_a.dart:0')),
+        findsNothing,
+      );
+      expect(
+        find.byKey(const ValueKey('swipe_stage_file_a.dart')),
+        findsNothing,
+      );
+    });
+
+    testWidgets('scroll-first mode ignores one-finger horizontal swipes', (
+      tester,
+    ) async {
+      final bridge = _RecordingMockBridgeService()..mockDiff = _multiFileDiff;
+      addTearDown(bridge.dispose);
+
+      await tester.pumpWidget(
+        await _wrapWithSettings(
+          const GitScreen(projectPath: '/tmp/project'),
+          bridge: bridge,
+          interactionMode: GitDiffInteractionMode.scrollFirst,
+        ),
+      );
+      await tester.pumpAndSettle();
+      bridge.sentMessages.clear();
+
+      await tester.drag(find.text('new').first, const Offset(120, 0));
+      await tester.pump();
+
+      expect(bridge.sentMessages.where((m) => m.type == 'git_stage'), isEmpty);
+      expect(
+        bridge.sentMessages.where((m) => m.type == 'git_revert_hunks'),
+        isEmpty,
+      );
+    });
+
+    testWidgets('scroll-first mode keeps hunk action sheet available', (
+      tester,
+    ) async {
+      final bridge = MockBridgeService()..mockDiff = _multiFileDiff;
+      addTearDown(bridge.dispose);
+
+      await tester.pumpWidget(
+        await _wrapWithSettings(
+          const GitScreen(projectPath: '/tmp/project'),
+          bridge: bridge,
+          interactionMode: GitDiffInteractionMode.scrollFirst,
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.longPress(find.text('@@ -1,2 +1,2 @@').first);
+      await tester.pumpAndSettle();
+
+      expect(find.text('Request Change'), findsOneWidget);
+      expect(find.text('Stage'), findsWidgets);
+      expect(find.text('Revert'), findsOneWidget);
     });
   });
 

@@ -9,6 +9,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../../core/logger.dart';
 import '../../../models/app_icon.dart';
+import '../../../models/git_diff_interaction_mode.dart';
 import '../../../models/messages.dart';
 import '../../../models/new_session_tab.dart';
 import '../../../models/terminal_app.dart';
@@ -42,6 +43,8 @@ class SettingsCubit extends Cubit<SettingsState> {
   /// Also read directly from SharedPreferences in main.dart at startup.
   static const keyShorebirdTrack = 'settings_shorebird_track';
   static const _keyHideVoiceInput = 'settings_hide_voice_input';
+  static const _keyGitDiffInteractionMode =
+      'settings_git_diff_interaction_mode';
   static const _keySelectedAppIcon = 'settings_selected_app_icon';
   static const _keyTerminalApp = 'settings_terminal_app';
   static const _keyNewSessionTabs = 'settings_new_session_tabs';
@@ -166,6 +169,9 @@ class SettingsCubit extends Cubit<SettingsState> {
     final shorebirdTrack = prefs.getString(keyShorebirdTrack) ?? 'stable';
     final indentSize = prefs.getInt(_keyIndentSize) ?? 2;
     final hideVoiceInput = prefs.getBool(_keyHideVoiceInput) ?? false;
+    final gitDiffInteractionMode = gitDiffInteractionModeFromRaw(
+      prefs.getString(_keyGitDiffInteractionMode),
+    );
     final selectedAppIcon = appIconVariantFromId(
       prefs.getString(_keySelectedAppIcon),
     );
@@ -206,6 +212,7 @@ class SettingsCubit extends Cubit<SettingsState> {
       shorebirdTrack: shorebirdTrack,
       indentSize: indentSize.clamp(1, 4),
       hideVoiceInput: hideVoiceInput,
+      gitDiffInteractionMode: gitDiffInteractionMode,
       selectedAppIcon: selectedAppIcon,
       terminalApp: terminalApp,
       newSessionTabs: newSessionTabs,
@@ -292,6 +299,11 @@ class SettingsCubit extends Cubit<SettingsState> {
   void setHideVoiceInput(bool hide) {
     _prefs.setBool(_keyHideVoiceInput, hide);
     emit(state.copyWith(hideVoiceInput: hide));
+  }
+
+  void setGitDiffInteractionMode(GitDiffInteractionMode mode) {
+    _prefs.setString(_keyGitDiffInteractionMode, mode.name);
+    emit(state.copyWith(gitDiffInteractionMode: mode));
   }
 
   Future<void> setSelectedAppIcon(AppIconVariant icon) async {

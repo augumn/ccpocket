@@ -15,6 +15,7 @@ import '../../constants/feature_flags.dart';
 import '../../services/app_update_service.dart';
 import '../../l10n/app_localizations.dart';
 import '../../models/app_icon.dart';
+import '../../models/git_diff_interaction_mode.dart';
 import '../../models/new_session_tab.dart';
 import '../../providers/machine_manager_cubit.dart';
 import '../../router/app_router.dart';
@@ -502,6 +503,60 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         ],
                       ),
                     ),
+                    Divider(
+                      height: 1,
+                      indent: 16,
+                      endIndent: 16,
+                      color: cs.outlineVariant,
+                    ),
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          Text(
+                            l.gitDiffInteractionMode,
+                            style: Theme.of(context).textTheme.bodyLarge,
+                          ),
+                          const SizedBox(height: 8),
+                          SegmentedButton<GitDiffInteractionMode>(
+                            key: const ValueKey(
+                              'git_diff_interaction_mode_segment',
+                            ),
+                            segments: [
+                              ButtonSegment(
+                                value: GitDiffInteractionMode.quickActions,
+                                label: Text(l.gitDiffQuickActions),
+                              ),
+                              ButtonSegment(
+                                value: GitDiffInteractionMode.scrollFirst,
+                                label: Text(l.gitDiffScrollFirst),
+                              ),
+                            ],
+                            selected: {state.gitDiffInteractionMode},
+                            onSelectionChanged: (selected) {
+                              context
+                                  .read<SettingsCubit>()
+                                  .setGitDiffInteractionMode(selected.first);
+                            },
+                            showSelectedIcon: false,
+                            style: ButtonStyle(
+                              visualDensity: VisualDensity.compact,
+                              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                            ),
+                          ),
+                          const SizedBox(height: 6),
+                          Text(
+                            _gitDiffInteractionModeDescription(
+                              l,
+                              state.gitDiffInteractionMode,
+                            ),
+                            style: Theme.of(context).textTheme.bodySmall
+                                ?.copyWith(color: cs.onSurfaceVariant),
+                          ),
+                        ],
+                      ),
+                    ),
                   ],
                 ),
               ),
@@ -769,6 +824,16 @@ class _SettingsScreenState extends State<SettingsScreen> {
     }
     return null;
   }
+}
+
+String _gitDiffInteractionModeDescription(
+  AppLocalizations l,
+  GitDiffInteractionMode mode,
+) {
+  return switch (mode) {
+    GitDiffInteractionMode.quickActions => l.gitDiffQuickActionsDescription,
+    GitDiffInteractionMode.scrollFirst => l.gitDiffScrollFirstDescription,
+  };
 }
 
 class _SectionHeader extends StatelessWidget {

@@ -1142,6 +1142,23 @@ class AppLocalizationsZh extends AppLocalizations {
   String get indentSizeSubtitle => '列表缩进使用的空格数';
 
   @override
+  String get gitDiffInteractionMode => 'Git diff 手势';
+
+  @override
+  String get gitDiffQuickActions => '快捷操作';
+
+  @override
+  String get gitDiffQuickActionsDescription =>
+      '单指横向滑动可暂存、取消暂存或还原 hunk。长行会自动换行。';
+
+  @override
+  String get gitDiffScrollFirst => '优先横向滚动';
+
+  @override
+  String get gitDiffScrollFirstDescription =>
+      '长行不换行，可按 hunk 横向滚动。Git 操作请使用长按菜单或底部按钮。';
+
+  @override
   String get sectionAbout => '关于';
 
   @override

@@ -2,6 +2,7 @@ import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
 
+import '../../../models/git_diff_interaction_mode.dart';
 import '../../../theme/app_theme.dart';
 import '../../../utils/diff_parser.dart';
 import '../../../widgets/adaptive_context_menu.dart';
@@ -69,6 +70,7 @@ class DiffHunkWidget extends StatefulWidget {
   final DiffHunk hunk;
   final double lineNumberWidth;
   final bool lineWrapEnabled;
+  final GitDiffInteractionMode interactionMode;
   final String dismissKey;
   final VoidCallback? onLongPress;
   final ValueChanged<Offset?>? onShowActions;
@@ -82,6 +84,7 @@ class DiffHunkWidget extends StatefulWidget {
     required this.lineNumberWidth,
     required this.dismissKey,
     this.lineWrapEnabled = false,
+    this.interactionMode = GitDiffInteractionMode.quickActions,
     this.onLongPress,
     this.onShowActions,
     this.onSwipeStage,
@@ -156,20 +159,27 @@ class _DiffHunkWidgetState extends State<DiffHunkWidget> {
       );
     }
 
-    if (!widget.lineWrapEnabled ||
-        (widget.onSwipeStage == null &&
-            widget.onSwipeUnstage == null &&
-            widget.onSwipeRevert == null)) {
+    final hasSwipeAction =
+        widget.onSwipeStage != null ||
+        widget.onSwipeUnstage != null ||
+        widget.onSwipeRevert != null;
+    if (!hasSwipeAction) {
       return content;
     }
 
-    return _HunkSwipeDismissible(
-      dismissKey: widget.dismissKey,
-      onSwipeStage: widget.onSwipeStage,
-      onSwipeUnstage: widget.onSwipeUnstage,
-      onSwipeRevert: widget.onSwipeRevert,
-      child: content,
-    );
+    return switch (widget.interactionMode) {
+      GitDiffInteractionMode.quickActions =>
+        widget.lineWrapEnabled
+            ? _HunkSwipeDismissible(
+                dismissKey: widget.dismissKey,
+                onSwipeStage: widget.onSwipeStage,
+                onSwipeUnstage: widget.onSwipeUnstage,
+                onSwipeRevert: widget.onSwipeRevert,
+                child: content,
+              )
+            : content,
+      GitDiffInteractionMode.scrollFirst => content,
+    };
   }
 }
 

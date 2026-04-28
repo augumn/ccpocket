@@ -2236,6 +2236,36 @@ abstract class AppLocalizations {
   /// **'箇条書きのインデントに使用するスペース数'**
   String get indentSizeSubtitle;
 
+  /// No description provided for @gitDiffInteractionMode.
+  ///
+  /// In ja, this message translates to:
+  /// **'Git diff 操作'**
+  String get gitDiffInteractionMode;
+
+  /// No description provided for @gitDiffQuickActions.
+  ///
+  /// In ja, this message translates to:
+  /// **'クイック操作'**
+  String get gitDiffQuickActions;
+
+  /// No description provided for @gitDiffQuickActionsDescription.
+  ///
+  /// In ja, this message translates to:
+  /// **'1本指の横スワイプで hunk の Stage / Unstage / Revert を実行します。長い行は折り返します。'**
+  String get gitDiffQuickActionsDescription;
+
+  /// No description provided for @gitDiffScrollFirst.
+  ///
+  /// In ja, this message translates to:
+  /// **'横スクロール優先'**
+  String get gitDiffScrollFirst;
+
+  /// No description provided for @gitDiffScrollFirstDescription.
+  ///
+  /// In ja, this message translates to:
+  /// **'長い行を折り返さず、hunk 単位で横スクロールできます。Git 操作はロングタップのメニューまたは下部ボタンから実行します。'**
+  String get gitDiffScrollFirstDescription;
+
   /// No description provided for @sectionAbout.
   ///
   /// In ja, this message translates to:

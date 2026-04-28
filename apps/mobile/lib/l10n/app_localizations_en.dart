@@ -1202,6 +1202,23 @@ class AppLocalizationsEn extends AppLocalizations {
   String get indentSizeSubtitle => 'Number of spaces for list indentation';
 
   @override
+  String get gitDiffInteractionMode => 'Git diff gestures';
+
+  @override
+  String get gitDiffQuickActions => 'Quick actions';
+
+  @override
+  String get gitDiffQuickActionsDescription =>
+      'One-finger horizontal swipes stage, unstage, or revert hunks. Long lines wrap.';
+
+  @override
+  String get gitDiffScrollFirst => 'Scroll first';
+
+  @override
+  String get gitDiffScrollFirstDescription =>
+      'Long lines stay unwrapped for hunk-level horizontal scrolling. Use long press menus or the bottom buttons for Git actions.';
+
+  @override
   String get sectionAbout => 'ABOUT';
 
   @override
