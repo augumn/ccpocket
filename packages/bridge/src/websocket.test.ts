@@ -763,6 +763,70 @@ describe("BridgeWebSocketServer resume/get_history flow", () => {
     bridge.close();
   });
 
+  it("includes resume past_history before get_history_delta", async () => {
+    getSessionHistoryMock.mockResolvedValue([
+      {
+        role: "user",
+        content: [{ type: "text", text: "previous prompt" }],
+      },
+      {
+        role: "assistant",
+        content: [{ type: "text", text: "previous answer" }],
+      },
+    ]);
+    const bridge = new BridgeWebSocketServer({ server: httpServer });
+    const ws = {
+      readyState: OPEN_STATE,
+      send: vi.fn(),
+    } as any;
+
+    (bridge as any).handleClientMessage(
+      {
+        type: "resume_session",
+        sessionId: "claude-session-1",
+        projectPath: "/tmp/project-a",
+        provider: "claude",
+      },
+      ws,
+    );
+    await Promise.resolve();
+    await Promise.resolve();
+
+    const created = ws.send.mock.calls
+      .map((c: unknown[]) => JSON.parse(c[0] as string))
+      .find((m: any) => m.type === "system" && m.subtype === "session_created");
+    const sessionId = created.sessionId as string;
+
+    ws.send.mockClear();
+    await (bridge as any).handleClientMessage(
+      {
+        type: "get_history_delta",
+        sessionId,
+        sinceSeq: 1,
+      },
+      ws,
+    );
+
+    const sends = ws.send.mock.calls.map((c: unknown[]) =>
+      JSON.parse(c[0] as string),
+    );
+    expect(sends[0]).toMatchObject({
+      type: "past_history",
+      sessionId,
+      claudeSessionId: "claude-session-1",
+      messages: [
+        { role: "user" },
+        { role: "assistant" },
+      ],
+    });
+    expect(sends[1]).toMatchObject({
+      type: "history_delta",
+      sessionId,
+    });
+
+    bridge.close();
+  });
+
   it("keeps restored image generation results in past history order", async () => {
     getSessionHistoryMock.mockResolvedValue([
       {

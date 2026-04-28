@@ -2374,6 +2374,18 @@ export class BridgeWebSocketServer {
           msg.sinceSeq,
         );
         if (session && result) {
+          if (session.pastMessages && session.pastMessages.length > 0) {
+            const splitPastHistory =
+              await this.splitPastHistoryMessages(session);
+            if (splitPastHistory.pastMessages.length > 0) {
+              this.send(ws, {
+                type: "past_history",
+                claudeSessionId: session.claudeSessionId ?? msg.sessionId,
+                sessionId: msg.sessionId,
+                messages: splitPastHistory.pastMessages,
+              } as Record<string, unknown>);
+            }
+          }
           this.send(ws, {
             type:
               result.kind === "snapshot"
