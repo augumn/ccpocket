@@ -10,7 +10,7 @@
   <meta property="og:image" content="https://k9i-0.github.io/ccpocket/images/screenshots.png">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Outfit:wght@600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Outfit:wght@600;700;800&family=JetBrains+Mono:wght@400;500&family=Noto+Sans+KR:wght@400;500;600;700&display=swap" rel="stylesheet">
   <style>
     :root {
       --accent: #5fe0cf;
@@ -28,7 +28,7 @@
     * { box-sizing: border-box; margin: 0; padding: 0; }
 
     body {
-      font-family: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      font-family: "Inter", "Noto Sans KR", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
       color: var(--text);
       background-color: var(--bg);
       background-image:
@@ -446,12 +446,30 @@
         step3Desc: "选择项目，再选择 Codex 或 Claude，即可从手机开始工作。",
         remoteHint: "如果需要在本地网络之外访问，请使用 Tailscale，并连接到主机的 Tailscale 地址。",
         footnote: "CC Pocket 与 Anthropic 或 OpenAI 没有附属、认可或官方联系。"
+      },
+      ko: {
+        eyebrow: "어디서든 코딩 에이전트를 실행하세요",
+        titleBefore: "휴대폰에서 ",
+        titleAnd: "와 ",
+        titleAfter: " 세션을 시작하세요.",
+        subtitle: "휴대폰에서 세션을 시작하고 승인과 diff를 확인하며, 판단이 필요할 때만 개입하세요. 세션은 사용자의 머신에서 계속 실행됩니다.",
+        scanIOS: "iPhone / iPad용",
+        scanAndroid: "Android용",
+        stepTitle: "3단계 빠른 시작",
+        step1Title: "Bridge 실행",
+        step1Desc: "Codex 또는 Claude가 설치된 Mac/Linux 머신에서 Bridge Server를 실행합니다.",
+        step2Title: "터미널 QR 스캔",
+        step2Desc: "앱을 설치하고 CC Pocket을 열어 Bridge가 터미널에 표시한 QR 코드를 스캔합니다.",
+        step3Title: "세션 시작",
+        step3Desc: "프로젝트를 선택하고 Codex 또는 Claude를 고른 뒤 휴대폰에서 작업을 시작합니다.",
+        remoteHint: "로컬 네트워크 밖에서 접속해야 하나요? Tailscale을 사용해 머신의 Tailscale 주소로 연결하세요.",
+        footnote: "CC Pocket은 Anthropic 또는 OpenAI와 제휴, 보증 또는 공식 관계가 없습니다."
       }
     };
 
     function renderI18n(lang) {
       document.documentElement.lang = lang;
-      document.title = lang === 'en' ? 'Install CC Pocket' : (lang === 'ja' ? 'CC Pocketをインストール' : '安装 CC Pocket');
+      document.title = lang === 'en' ? 'Install CC Pocket' : (lang === 'ja' ? 'CC Pocketをインストール' : (lang === 'ko' ? 'CC Pocket 설치' : '安装 CC Pocket'));
       
       document.querySelectorAll('[data-i18n]').forEach(el => {
         const key = el.getAttribute('data-i18n');
@@ -466,6 +484,8 @@
           screenshot.src = '../images/screenshots-ja.png';
         } else if (lang === 'zh') {
           screenshot.src = '../images/screenshots-zh-CN.png';
+        } else if (lang === 'ko') {
+          screenshot.src = '../images/screenshots-ko.png';
         } else {
           screenshot.src = '../images/screenshots.png';
         }
@@ -487,6 +507,7 @@
         const sysLang = navigator.language.toLowerCase();
         if (sysLang.startsWith('ja')) lang = 'ja';
         else if (sysLang.startsWith('zh')) lang = 'zh';
+        else if (sysLang.startsWith('ko')) lang = 'ko';
         else lang = 'en';
       }
       renderI18n(lang);
@@ -553,6 +574,7 @@
           <option value="en" style="color: #000;">English</option>
           <option value="ja" style="color: #000;">日本語</option>
           <option value="zh" style="color: #000;">简体中文</option>
+          <option value="ko" style="color: #000;">한국어</option>
         </select>
         <a class="nav-button" href="https://github.com/K9i-0/ccpocket" target="_blank" rel="noopener noreferrer">GitHub</a>
       </nav>

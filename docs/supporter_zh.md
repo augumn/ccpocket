@@ -1,5 +1,7 @@
 # Supporter
 
+[English](supporter.md) | [日本語版](supporter_ja.md) | [한국어](supporter_ko.md)
+
 CC Pocket 可以继续免费使用。
 
 `Supporter` 是一个可选的支持方式，给想要支持应用持续开发的用户使用。它不会解锁核心功能，也不会改变应用本身的使用方式。

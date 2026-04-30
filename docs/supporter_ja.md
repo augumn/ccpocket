@@ -1,5 +1,7 @@
 # Supporter
 
+[English](supporter.md) | [简体中文版](supporter_zh.md) | [한국어](supporter_ko.md)
+
 CC Pocket は無料のまま使えます。
 
 `Supporter` は、アプリの継続開発を応援したい人向けの任意のサポートです。主要機能のロック解除や、使い方の制限には使っていません。

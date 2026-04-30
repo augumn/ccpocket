@@ -48,6 +48,10 @@ class AppConstants {
   static const String privacyPolicyUrl =
       'https://github.com/K9i-0/ccpocket/blob/main/PRIVACY_POLICY.md';
 
+  /// Public Korean privacy policy page
+  static const String privacyPolicyKoUrl =
+      'https://github.com/K9i-0/ccpocket/blob/main/PRIVACY_POLICY.ko.md';
+
   /// Apple standard EULA for auto-renewable subscriptions
   static const String termsOfUseUrl =
       'https://www.apple.com/legal/internet-services/itunes/dev/stdeula/';

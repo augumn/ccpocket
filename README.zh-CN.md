@@ -4,7 +4,7 @@ CC Pocket 是一款用于 Codex / Claude 编程代理会话的移动与桌面客
 代理运行在你自己的 Mac 或 Linux 主机上，你可以从 iPhone、iPad、
 Android 或原生 macOS App 启动会话、批准操作、回答问题并审查 diff。
 
-[English README](README.md) | [日本語 README](README.ja.md)
+[English README](README.md) | [日本語 README](README.ja.md) | [한국어 README](README.ko.md)
 
 <p align="center">
   <img src="docs/images/screenshots-zh-CN.png" alt="CC Pocket 截图" width="800">

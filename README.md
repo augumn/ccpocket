@@ -4,7 +4,7 @@ CC Pocket is a mobile and desktop client for Codex and Claude coding-agent sessi
 Run the agents on your own Mac or Linux machine, then start sessions, approve actions,
 answer questions, and review diffs from iPhone, iPad, Android, or the native macOS app.
 
-[日本語版 README](README.ja.md) | [简体中文版 README](README.zh-CN.md)
+[日本語版 README](README.ja.md) | [简体中文版 README](README.zh-CN.md) | [한국어 README](README.ko.md)
 
 <p align="center">
   <img src="docs/images/screenshots.png" alt="CC Pocket screenshots" width="800">

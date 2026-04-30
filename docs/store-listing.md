@@ -126,4 +126,5 @@ Korean keywords: codex,claude,코딩,AI,에이전트,모바일,bridge,ssh,원격
 ## Privacy
 
 - Privacy Policy URL: https://github.com/K9i-0/ccpocket/blob/main/PRIVACY_POLICY.md
+- Korean Privacy Policy URL: https://github.com/K9i-0/ccpocket/blob/main/PRIVACY_POLICY.ko.md
 - Data collected: See privacy-policy.md

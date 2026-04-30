@@ -1,5 +1,7 @@
 # Privacy Policy
 
+[한국어](PRIVACY_POLICY.ko.md)
+
 **Last updated: February 21, 2026**
 
 ## Overview

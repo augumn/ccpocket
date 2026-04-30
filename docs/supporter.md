@@ -1,5 +1,7 @@
 # Supporter
 
+[日本語版](supporter_ja.md) | [简体中文版](supporter_zh.md) | [한국어](supporter_ko.md)
+
 CC Pocket is fully usable for free.
 
 `Supporter` exists as an optional way to support ongoing development of the app. It does not unlock core features or change how the app works.

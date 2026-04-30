@@ -231,7 +231,7 @@ class _SupportPurchaseInfoCard extends StatelessWidget {
                   label: l.supporterPrivacyPolicyLink,
                   onTap: () => _openExternalSupportLink(
                     context,
-                    Uri.parse(AppConstants.privacyPolicyUrl),
+                    _privacyPolicyUri(context),
                   ),
                 ),
                 if (showTermsLink)
@@ -1060,11 +1060,21 @@ Future<void> _openSupporterDoc(BuildContext context) async {
     'zh' => Uri.parse(
       'https://github.com/K9i-0/ccpocket/blob/main/docs/supporter_zh.md',
     ),
+    'ko' => Uri.parse(
+      'https://github.com/K9i-0/ccpocket/blob/main/docs/supporter_ko.md',
+    ),
     _ => Uri.parse(
       'https://github.com/K9i-0/ccpocket/blob/main/docs/supporter.md',
     ),
   };
   await _openExternalSupportLink(context, uri);
+}
+
+Uri _privacyPolicyUri(BuildContext context) {
+  return switch (Localizations.localeOf(context).languageCode) {
+    'ko' => Uri.parse(AppConstants.privacyPolicyKoUrl),
+    _ => Uri.parse(AppConstants.privacyPolicyUrl),
+  };
 }
 
 Future<void> _openExternalSupportLink(BuildContext context, Uri uri) async {

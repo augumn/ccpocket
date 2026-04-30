@@ -1,6 +1,6 @@
 # Claude 认证故障排查
 
-[English](auth-troubleshooting.md) | [日本語版](auth-troubleshooting.ja.md)
+[English](auth-troubleshooting.md) | [日本語版](auth-troubleshooting.ja.md) | [한국어](auth-troubleshooting.ko.md)
 
 CC Pocket 会使用保存在你的 Bridge 机器上的 Claude Code 登录状态。
 如果认证失败，请在那台机器上重新登录 Claude Code。
