@@ -36,7 +36,7 @@ jobs:
   ios:
     if: ${{ inputs.platform == 'ios' || inputs.platform == 'both' }}
     runs-on: macos-latest
-    timeout-minutes: 10
+    timeout-minutes: 45
     defaults:
       run:
         working-directory: apps/mobile
@@ -59,6 +59,7 @@ jobs:
           APP_STORE_CONNECT_KEY_IDENTIFIER: ${{ secrets.APP_STORE_CONNECT_KEY_IDENTIFIER }}
           APP_STORE_CONNECT_PRIVATE_KEY: ${{ secrets.APP_STORE_CONNECT_PRIVATE_KEY }}
           SKIP_SCREENSHOTS: ${{ inputs.upload_screenshots == false }}
+          SPACESHIP_SCREENSHOT_UPLOAD_TIMEOUT: "5"
         run: fastlane ios metadata
 
   android:
