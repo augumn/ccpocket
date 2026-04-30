@@ -78,7 +78,7 @@ final class BridgeProcessManager: Sendable {
 
     /// Setup (register) the launchd service.
     func setupService(port: Int? = nil, apiKey: String? = nil) async throws {
-        var cmd = "npx @ccpocket/bridge@latest setup"
+        var cmd = "npx --yes @ccpocket/bridge@latest setup"
         if let port { cmd += " --port \(port)" }
         if let apiKey, !apiKey.isEmpty { cmd += " --api-key \(apiKey)" }
         try await shell(cmd, timeout: 120)
@@ -86,7 +86,7 @@ final class BridgeProcessManager: Sendable {
 
     /// Uninstall the launchd service.
     func uninstallService() async throws {
-        try await shell("npx @ccpocket/bridge@latest setup --uninstall")
+        try await shell("npx --yes @ccpocket/bridge@latest setup --uninstall")
     }
 
     /// Install or update the Bridge npm package globally.

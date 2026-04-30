@@ -96,7 +96,7 @@ After=network.target
 
 [Service]
 Type=simple
-ExecStart=${npxPath} @ccpocket/bridge@latest
+ExecStart=${npxPath} --yes @ccpocket/bridge@latest
 ${envLines}
 Restart=on-failure
 RestartSec=5

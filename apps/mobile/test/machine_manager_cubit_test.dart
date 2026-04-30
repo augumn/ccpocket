@@ -16,6 +16,9 @@ class MockMachineManagerService implements MachineManagerService {
   bool addMachineShouldFail = false;
   bool updateMachineShouldFail = false;
   bool deleteMachineShouldFail = false;
+  List<MachineStatus> checkHealthResults = [];
+  MachineStatus defaultCheckHealthResult = MachineStatus.online;
+  List<MachineWithStatus> machineStatuses = [];
 
   final Map<String, Machine> _machines = {};
 
@@ -39,7 +42,10 @@ class MockMachineManagerService implements MachineManagerService {
   @override
   Future<MachineStatus> checkHealth(String machineId) async {
     calls.add('checkHealth:$machineId');
-    return MachineStatus.online;
+    if (checkHealthResults.isNotEmpty) {
+      return checkHealthResults.removeAt(0);
+    }
+    return defaultCheckHealthResult;
   }
 
   @override
@@ -143,7 +149,10 @@ class MockMachineManagerService implements MachineManagerService {
   List<Machine> get currentMachines => _machines.values.toList();
 
   @override
-  List<MachineWithStatus> get machinesWithStatus => [];
+  List<MachineWithStatus> get machinesWithStatus {
+    if (machineStatuses.isNotEmpty) return machineStatuses;
+    return _machines.values.map((m) => MachineWithStatus(machine: m)).toList();
+  }
 
   @override
   Machine? findByHostPort(String host, int port) => null;
@@ -223,13 +232,22 @@ void main() {
     mockService.dispose();
   });
 
-  MachineManagerCubit createCubit({bool withSsh = true}) {
-    return MachineManagerCubit(mockService, withSsh ? mockSsh : null);
+  MachineManagerCubit createCubit({
+    bool withSsh = true,
+    Duration? healthTimeout,
+    Duration? healthRetryDelay,
+  }) {
+    return MachineManagerCubit(
+      mockService,
+      withSsh ? mockSsh : null,
+      healthTimeout: healthTimeout ?? const Duration(seconds: 30),
+      healthRetryDelay: healthRetryDelay ?? const Duration(seconds: 1),
+    );
   }
 
   group('MachineManagerCubit - initial state', () {
     test('has default empty state', () {
-      final cubit = createCubit();
+      final cubit = createCubit(healthRetryDelay: Duration.zero);
       addTearDown(cubit.close);
 
       expect(cubit.state.machines, isEmpty);
@@ -242,7 +260,7 @@ void main() {
     });
 
     test('calls init on creation', () async {
-      final cubit = createCubit();
+      final cubit = createCubit(healthRetryDelay: Duration.zero);
       addTearDown(cubit.close);
       await Future.microtask(() {});
 
@@ -471,6 +489,124 @@ void main() {
 
       expect(result.success, false);
       expect(result.error, 'SSH not available on this platform');
+    });
+  });
+
+  group('MachineManagerCubit - SSH start', () {
+    test('retries health check until bridge becomes online', () async {
+      mockService.checkHealthResults = [
+        MachineStatus.offline,
+        MachineStatus.online,
+      ];
+      final cubit = createCubit();
+      addTearDown(cubit.close);
+      await Future.microtask(() {});
+
+      final result = await cubit.startBridge('m1');
+
+      expect(result, true);
+      expect(cubit.state.successMessage, 'Bridge Server started');
+      expect(
+        mockService.calls.where((call) => call == 'checkHealth:m1'),
+        hasLength(2),
+      );
+    });
+
+    test('returns command failure before health check', () async {
+      mockSsh.startResult = SshResult.failure('launchctl failed');
+      final cubit = createCubit();
+      addTearDown(cubit.close);
+      await Future.microtask(() {});
+      mockService.calls.clear();
+
+      final result = await cubit.startBridge('m1');
+
+      expect(result, false);
+      expect(cubit.state.error, 'launchctl failed');
+      expect(mockService.calls, isNot(contains('checkHealth:m1')));
+    });
+  });
+
+  group('MachineManagerCubit - SSH update', () {
+    test('retries health check after restart and refreshes version', () async {
+      mockService.checkHealthResults = [
+        MachineStatus.offline,
+        MachineStatus.online,
+      ];
+      mockService.machineStatuses = [
+        const MachineWithStatus(
+          machine: Machine(id: 'm1', host: '10.0.0.1'),
+          status: MachineStatus.online,
+          versionInfo: BridgeVersionInfo(version: '1.47.0'),
+        ),
+      ];
+      final cubit = createCubit();
+      addTearDown(cubit.close);
+      await Future.microtask(() {});
+
+      final result = await cubit.updateBridge('m1');
+
+      expect(result, true);
+      expect(cubit.state.successMessage, 'Bridge Server updated successfully');
+      expect(
+        mockService.calls.where((call) => call == 'checkHealth:m1'),
+        hasLength(2),
+      );
+    });
+
+    test('treats setup service missing as update failure', () async {
+      mockSsh.updateResult = SshResult.failure(
+        'Bridge auto-start setup is required',
+      );
+      final cubit = createCubit();
+      addTearDown(cubit.close);
+      await Future.microtask(() {});
+      mockService.calls.clear();
+
+      final result = await cubit.updateBridge('m1');
+
+      expect(result, false);
+      expect(cubit.state.error, 'Bridge auto-start setup is required');
+      expect(mockService.calls, isNot(contains('checkHealth:m1')));
+    });
+
+    test('fails when health never recovers after restart', () async {
+      mockService.defaultCheckHealthResult = MachineStatus.offline;
+      final cubit = createCubit(
+        healthTimeout: const Duration(milliseconds: 10),
+        healthRetryDelay: Duration.zero,
+      );
+      addTearDown(cubit.close);
+      await Future.microtask(() {});
+
+      final result = await cubit.updateBridge('m1');
+
+      expect(result, false);
+      expect(
+        cubit.state.error,
+        'Server process restarted but health check failed',
+      );
+    });
+
+    test('fails when refreshed version is still older than expected', () async {
+      mockService.machineStatuses = [
+        const MachineWithStatus(
+          machine: Machine(id: 'm1', host: '10.0.0.1'),
+          status: MachineStatus.online,
+          versionInfo: BridgeVersionInfo(version: '1.46.0'),
+        ),
+      ];
+      final cubit = createCubit();
+      addTearDown(cubit.close);
+      await Future.microtask(() {});
+
+      final result = await cubit.updateBridge('m1');
+
+      expect(result, false);
+      expect(
+        cubit.state.error,
+        'Bridge Server restarted but version is still older',
+      );
     });
   });
 

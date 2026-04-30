@@ -124,13 +124,13 @@ class AppLocalizationsJa extends AppLocalizations {
   String get setupStep1Title => 'Bridge Server を起動';
 
   @override
-  String get setupStep1Command => 'npx @ccpocket/bridge@latest';
+  String get setupStep1Command => 'npx --yes @ccpocket/bridge@latest';
 
   @override
   String get setupStep2Title => '常時起動したい場合はサービス登録';
 
   @override
-  String get setupStep2Command => 'npx @ccpocket/bridge@latest setup';
+  String get setupStep2Command => 'npx --yes @ccpocket/bridge@latest setup';
 
   @override
   String get setupNetworkHint =>
@@ -323,6 +323,23 @@ class AppLocalizationsJa extends AppLocalizations {
 
   @override
   String get updateBridge => 'Bridge を更新';
+
+  @override
+  String get bridgeIsUpToDate => 'Bridge は最新です';
+
+  @override
+  String get bridgeUpdateAvailable => '更新があります';
+
+  @override
+  String get bridgeUpdateRequiresSetup => 'SSH と Bridge の自動起動セットアップが必要です';
+
+  @override
+  String get bridgeVersionUnknown => 'Bridge のバージョンを確認できません';
+
+  @override
+  String bridgeVersionCurrentExpected(String current, String expected) {
+    return '現在 v$current、必要 v$expected';
+  }
 
   @override
   String get stopServer => 'サーバーを停止';
@@ -906,7 +923,7 @@ class AppLocalizationsJa extends AppLocalizations {
   String get guideBridgeStep1 => 'npx で実行（推奨）';
 
   @override
-  String get guideBridgeStep1Command => 'npx @ccpocket/bridge@latest';
+  String get guideBridgeStep1Command => 'npx --yes @ccpocket/bridge@latest';
 
   @override
   String get guideBridgeStep2 => 'またはグローバルインストール';
@@ -982,7 +999,8 @@ class AppLocalizationsJa extends AppLocalizations {
   String get guideLaunchdCommand => 'セットアップコマンド';
 
   @override
-  String get guideLaunchdCommandValue => 'npx @ccpocket/bridge@latest setup';
+  String get guideLaunchdCommandValue =>
+      'npx --yes @ccpocket/bridge@latest setup';
 
   @override
   String get guideLaunchdRecommendation =>

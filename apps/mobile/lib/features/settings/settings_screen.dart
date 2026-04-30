@@ -169,8 +169,16 @@ class _SettingsScreenState extends State<SettingsScreen> {
       ),
       body: BlocBuilder<SettingsCubit, SettingsState>(
         builder: (context, state) {
-          final machine = _activeMachine(context, state.activeMachineId);
+          final machineManagerCubit = context.watch<MachineManagerCubit>();
+          final machineWithStatus = _activeMachineWithStatus(
+            machineManagerCubit.state,
+            state.activeMachineId,
+          );
+          final machine = machineWithStatus?.machine;
           final isConnected = state.activeMachineId != null;
+          final isUpdating =
+              machine != null &&
+              machineManagerCubit.state.updatingMachineId == machine.id;
           return ListView(
             key: const PageStorageKey('settings_list'),
             controller: _scrollController,
@@ -192,6 +200,20 @@ class _SettingsScreenState extends State<SettingsScreen> {
                           machine?.displayName ??
                               (bridge.lastUrl ?? 'Not connected'),
                         ),
+                      ),
+                      Divider(
+                        height: 1,
+                        indent: 16,
+                        endIndent: 16,
+                        color: cs.outlineVariant,
+                      ),
+                      _BridgeUpdateStatusTile(
+                        machineWithStatus: machineWithStatus,
+                        isUpdating: isUpdating,
+                        onUpdate: machineWithStatus == null
+                            ? null
+                            : () =>
+                                  _updateBridgeFromSettings(machineWithStatus),
                       ),
                     ],
                   ),
@@ -814,15 +836,81 @@ class _SettingsScreenState extends State<SettingsScreen> {
     context.pushRoute(const SupporterRoute());
   }
 
-  Machine? _activeMachine(BuildContext context, String? activeMachineId) {
+  MachineWithStatus? _activeMachineWithStatus(
+    MachineManagerState machineState,
+    String? activeMachineId,
+  ) {
     if (activeMachineId == null) return null;
-    final machines = context.read<MachineManagerCubit>().state.machines;
-    for (final item in machines) {
+    for (final item in machineState.machines) {
       if (item.machine.id == activeMachineId) {
-        return item.machine;
+        return item;
       }
     }
     return null;
+  }
+
+  void _updateBridgeFromSettings(MachineWithStatus machine) async {
+    final cubit = context.read<MachineManagerCubit>();
+    final l = AppLocalizations.of(context);
+
+    final savedPassword = await cubit.getSshPassword(machine.machine.id);
+    var password = savedPassword;
+
+    if (password == null || password.isEmpty) {
+      password = await _promptForPassword(machine.machine.displayName);
+      if (password == null) return;
+    }
+
+    final success = await cubit.updateBridge(
+      machine.machine.id,
+      password: password,
+    );
+
+    if (!mounted) return;
+    final message = success
+        ? l.bridgeServerUpdated
+        : cubit.state.error ?? l.failedToUpdateServer;
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text(message)));
+  }
+
+  Future<String?> _promptForPassword(String machineName) async {
+    final controller = TextEditingController();
+    final l = AppLocalizations.of(context);
+    return showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(l.sshPassword),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(l.sshPasswordPrompt(machineName)),
+            const SizedBox(height: 16),
+            TextField(
+              controller: controller,
+              obscureText: true,
+              autofocus: true,
+              decoration: InputDecoration(
+                labelText: l.password,
+                border: const OutlineInputBorder(),
+              ),
+              onSubmitted: (value) => Navigator.pop(ctx, value),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: Text(l.cancel),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, controller.text),
+            child: Text(l.update),
+          ),
+        ],
+      ),
+    );
   }
 }
 
@@ -854,6 +942,77 @@ class _SectionHeader extends StatelessWidget {
           color: cs.onSurfaceVariant,
         ),
       ),
+    );
+  }
+}
+
+class _BridgeUpdateStatusTile extends StatelessWidget {
+  final MachineWithStatus? machineWithStatus;
+  final bool isUpdating;
+  final VoidCallback? onUpdate;
+
+  const _BridgeUpdateStatusTile({
+    required this.machineWithStatus,
+    required this.isUpdating,
+    this.onUpdate,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final l = AppLocalizations.of(context);
+    final cs = Theme.of(context).colorScheme;
+    final expectedVersion = AppConstants.expectedBridgeVersion;
+    final machine = machineWithStatus?.machine;
+    final versionInfo = machineWithStatus?.versionInfo;
+    final hasSshSetup = machine?.canStartRemotely ?? false;
+    final isOnline = machineWithStatus?.status == MachineStatus.online;
+    final needsUpdate =
+        isOnline &&
+        hasSshSetup &&
+        versionInfo != null &&
+        versionInfo.needsUpdate(expectedVersion);
+    final isKnownUpToDate =
+        versionInfo != null && !versionInfo.needsUpdate(expectedVersion);
+
+    final title = needsUpdate
+        ? l.bridgeUpdateAvailable
+        : isKnownUpToDate
+        ? l.bridgeIsUpToDate
+        : l.updateBridge;
+    final subtitle = !hasSshSetup
+        ? l.bridgeUpdateRequiresSetup
+        : versionInfo == null
+        ? l.bridgeVersionUnknown
+        : l.bridgeVersionCurrentExpected(versionInfo.version, expectedVersion);
+    final icon = needsUpdate
+        ? Icons.system_update
+        : isKnownUpToDate
+        ? Icons.check_circle_outline
+        : Icons.info_outline;
+    final iconColor = needsUpdate
+        ? cs.tertiary
+        : isKnownUpToDate
+        ? cs.primary
+        : cs.onSurfaceVariant;
+
+    return ListTile(
+      leading: Icon(icon, color: iconColor),
+      title: Text(title),
+      subtitle: Text(subtitle),
+      trailing: isUpdating
+          ? const SizedBox(
+              width: 20,
+              height: 20,
+              child: CircularProgressIndicator(strokeWidth: 2),
+            )
+          : needsUpdate
+          ? FilledButton.tonalIcon(
+              key: const ValueKey('settings_update_bridge_button'),
+              onPressed: onUpdate,
+              icon: const Icon(Icons.system_update, size: 18),
+              label: Text(l.update),
+            )
+          : null,
     );
   }
 }

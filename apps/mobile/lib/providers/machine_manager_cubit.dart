@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:freezed_annotation/freezed_annotation.dart';
 
+import '../constants/app_constants.dart';
 import '../models/machine.dart';
 import '../services/machine_manager_service.dart';
 import '../services/ssh_startup_service.dart';
@@ -37,10 +38,21 @@ abstract class MachineManagerState with _$MachineManagerState {
 class MachineManagerCubit extends Cubit<MachineManagerState> {
   final MachineManagerService _service;
   final SshStartupService? _sshService;
+  final Duration _healthTimeout;
+  final Duration _healthRetryDelay;
   StreamSubscription? _machinesSub;
 
-  MachineManagerCubit(this._service, this._sshService)
-    : super(const MachineManagerState()) {
+  static const _defaultHealthTimeout = Duration(seconds: 30);
+  static const _defaultHealthRetryDelay = Duration(seconds: 1);
+
+  MachineManagerCubit(
+    this._service,
+    this._sshService, {
+    Duration healthTimeout = _defaultHealthTimeout,
+    Duration healthRetryDelay = _defaultHealthRetryDelay,
+  }) : _healthTimeout = healthTimeout,
+       _healthRetryDelay = healthRetryDelay,
+       super(const MachineManagerState()) {
     _machinesSub = _service.machines.listen((machines) {
       emit(state.copyWith(machines: machines, isLoading: false));
     });
@@ -182,10 +194,7 @@ class MachineManagerCubit extends Cubit<MachineManagerState> {
       );
 
       if (result.success) {
-        // Wait a moment for the server to start
-        await Future.delayed(const Duration(seconds: 2));
-        // Check health to verify server actually started
-        final status = await _service.checkHealth(machineId);
+        final status = await _waitForOnline(machineId, timeout: _healthTimeout);
 
         if (status == MachineStatus.online) {
           emit(
@@ -217,6 +226,22 @@ class MachineManagerCubit extends Cubit<MachineManagerState> {
       emit(state.copyWith(startingMachineId: null, error: e.toString()));
       return false;
     }
+  }
+
+  Future<MachineStatus> _waitForOnline(
+    String machineId, {
+    required Duration timeout,
+  }) async {
+    final deadline = DateTime.now().add(timeout);
+    var status = await _service.checkHealth(machineId);
+
+    while (status != MachineStatus.online &&
+        DateTime.now().isBefore(deadline)) {
+      await Future.delayed(_healthRetryDelay);
+      status = await _service.checkHealth(machineId);
+    }
+
+    return status;
   }
 
   /// Stop Bridge Server on a machine via SSH
@@ -279,10 +304,27 @@ class MachineManagerCubit extends Cubit<MachineManagerState> {
       );
 
       if (result.success) {
-        // Wait for server to restart
-        await Future.delayed(const Duration(seconds: 3));
-        // Check health to update status and version
-        await _service.checkHealth(machineId);
+        final status = await _waitForOnline(machineId, timeout: _healthTimeout);
+
+        if (status != MachineStatus.online) {
+          emit(
+            state.copyWith(
+              updatingMachineId: null,
+              error: 'Server process restarted but health check failed',
+            ),
+          );
+          return false;
+        }
+
+        if (_machineStillNeedsUpdate(machineId)) {
+          emit(
+            state.copyWith(
+              updatingMachineId: null,
+              error: 'Bridge Server restarted but version is still older',
+            ),
+          );
+          return false;
+        }
 
         emit(
           state.copyWith(
@@ -304,6 +346,15 @@ class MachineManagerCubit extends Cubit<MachineManagerState> {
       emit(state.copyWith(updatingMachineId: null, error: e.toString()));
       return false;
     }
+  }
+
+  bool _machineStillNeedsUpdate(String machineId) {
+    for (final item in _service.machinesWithStatus) {
+      if (item.machine.id == machineId) {
+        return item.needsUpdate(AppConstants.expectedBridgeVersion);
+      }
+    }
+    return false;
   }
 
   /// Test SSH connection for a machine

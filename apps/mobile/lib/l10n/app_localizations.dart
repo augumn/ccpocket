@@ -325,7 +325,7 @@ abstract class AppLocalizations {
   /// No description provided for @setupStep1Command.
   ///
   /// In ja, this message translates to:
-  /// **'npx @ccpocket/bridge@latest'**
+  /// **'npx --yes @ccpocket/bridge@latest'**
   String get setupStep1Command;
 
   /// No description provided for @setupStep2Title.
@@ -337,7 +337,7 @@ abstract class AppLocalizations {
   /// No description provided for @setupStep2Command.
   ///
   /// In ja, this message translates to:
-  /// **'npx @ccpocket/bridge@latest setup'**
+  /// **'npx --yes @ccpocket/bridge@latest setup'**
   String get setupStep2Command;
 
   /// No description provided for @setupNetworkHint.
@@ -693,6 +693,36 @@ abstract class AppLocalizations {
   /// In ja, this message translates to:
   /// **'Bridge を更新'**
   String get updateBridge;
+
+  /// No description provided for @bridgeIsUpToDate.
+  ///
+  /// In ja, this message translates to:
+  /// **'Bridge は最新です'**
+  String get bridgeIsUpToDate;
+
+  /// No description provided for @bridgeUpdateAvailable.
+  ///
+  /// In ja, this message translates to:
+  /// **'更新があります'**
+  String get bridgeUpdateAvailable;
+
+  /// No description provided for @bridgeUpdateRequiresSetup.
+  ///
+  /// In ja, this message translates to:
+  /// **'SSH と Bridge の自動起動セットアップが必要です'**
+  String get bridgeUpdateRequiresSetup;
+
+  /// No description provided for @bridgeVersionUnknown.
+  ///
+  /// In ja, this message translates to:
+  /// **'Bridge のバージョンを確認できません'**
+  String get bridgeVersionUnknown;
+
+  /// No description provided for @bridgeVersionCurrentExpected.
+  ///
+  /// In ja, this message translates to:
+  /// **'現在 v{current}、必要 v{expected}'**
+  String bridgeVersionCurrentExpected(String current, String expected);
 
   /// No description provided for @stopServer.
   ///
@@ -1771,7 +1801,7 @@ abstract class AppLocalizations {
   /// No description provided for @guideBridgeStep1Command.
   ///
   /// In ja, this message translates to:
-  /// **'npx @ccpocket/bridge@latest'**
+  /// **'npx --yes @ccpocket/bridge@latest'**
   String get guideBridgeStep1Command;
 
   /// No description provided for @guideBridgeStep2.
@@ -1909,7 +1939,7 @@ abstract class AppLocalizations {
   /// No description provided for @guideLaunchdCommandValue.
   ///
   /// In ja, this message translates to:
-  /// **'npx @ccpocket/bridge@latest setup'**
+  /// **'npx --yes @ccpocket/bridge@latest setup'**
   String get guideLaunchdCommandValue;
 
   /// No description provided for @guideLaunchdRecommendation.

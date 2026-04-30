@@ -5,6 +5,7 @@ import 'package:ccpocket/features/settings/state/settings_cubit.dart';
 import 'package:ccpocket/features/settings/state/settings_state.dart';
 import 'package:ccpocket/l10n/app_localizations.dart';
 import 'package:ccpocket/models/git_diff_interaction_mode.dart';
+import 'package:ccpocket/models/machine.dart';
 import 'package:ccpocket/models/messages.dart';
 import 'package:ccpocket/providers/machine_manager_cubit.dart';
 import 'package:ccpocket/services/bridge_service.dart';
@@ -101,6 +102,137 @@ class _FakeSecureStorage extends Fake implements FlutterSecureStorage {
   }) async => null;
 }
 
+class _StaticMachineManagerService implements MachineManagerService {
+  final _controller = StreamController<List<MachineWithStatus>>.broadcast();
+  final List<MachineWithStatus> _statuses;
+
+  _StaticMachineManagerService(this._statuses);
+
+  @override
+  Stream<List<MachineWithStatus>> get machines => _controller.stream;
+
+  @override
+  Future<void> init() async {
+    _controller.add(_statuses);
+  }
+
+  @override
+  Future<void> checkAllHealth() async {
+    _controller.add(_statuses);
+  }
+
+  @override
+  Future<MachineStatus> checkHealth(String machineId) async =>
+      _findStatus(machineId)?.status ?? MachineStatus.unknown;
+
+  @override
+  Future<Machine> recordConnection({
+    required String host,
+    required int port,
+    String? apiKey,
+    String? name,
+    bool? useSsl,
+  }) async {
+    return Machine(
+      id: 'recorded',
+      host: host,
+      port: port,
+      name: name,
+      useSsl: useSsl ?? false,
+    );
+  }
+
+  @override
+  Future<void> addMachine(
+    Machine machine, {
+    String? apiKey,
+    String? sshPassword,
+    String? sshPrivateKey,
+  }) async {}
+
+  @override
+  Future<void> updateMachine(
+    Machine machine, {
+    String? apiKey,
+    String? sshPassword,
+    String? sshPrivateKey,
+    bool clearApiKey = false,
+    bool clearCredentials = false,
+  }) async {}
+
+  @override
+  Future<void> deleteMachine(String id) async {}
+
+  @override
+  Future<void> toggleFavorite(String machineId) async {}
+
+  @override
+  Machine? getMachine(String id) => _findStatus(id)?.machine;
+
+  @override
+  Future<String?> getApiKey(String machineId) async => null;
+
+  @override
+  Future<String?> getSshPassword(String machineId) async => null;
+
+  @override
+  Future<String?> getSshPrivateKey(String machineId) async => null;
+
+  @override
+  Future<String> buildWsUrl(String machineId) async => 'ws://127.0.0.1:8765';
+
+  @override
+  Machine createNew({
+    String? name,
+    required String host,
+    int port = 8765,
+    bool useSsl = false,
+  }) {
+    return Machine(
+      id: 'new',
+      host: host,
+      port: port,
+      name: name,
+      useSsl: useSsl,
+    );
+  }
+
+  @override
+  void startPeriodicHealthCheck({Duration? interval}) {}
+
+  @override
+  void stopPeriodicHealthCheck() {}
+
+  @override
+  List<Machine> get currentMachines =>
+      _statuses.map((status) => status.machine).toList();
+
+  @override
+  List<MachineWithStatus> get machinesWithStatus => _statuses;
+
+  @override
+  Machine? findByHostPort(String host, int port) {
+    for (final status in _statuses) {
+      if (status.machine.host == host && status.machine.port == port) {
+        return status.machine;
+      }
+    }
+    return null;
+  }
+
+  @override
+  void dispose() {
+    _controller.close();
+  }
+
+  MachineWithStatus? _findStatus(String id) {
+    for (final status in _statuses) {
+      if (status.machine.id == id) return status;
+    }
+    return null;
+  }
+}
+
 Future<Widget> _buildScreen({
   required BridgeService bridge,
   required SettingsCubit settingsCubit,
@@ -161,6 +293,152 @@ void main() {
   });
 
   group('Settings usage visibility', () {
+    testWidgets(
+      'shows bridge update button only when connected machine is old',
+      (tester) async {
+        SharedPreferences.setMockInitialValues({});
+        final prefs = await SharedPreferences.getInstance();
+        final settingsCubit = _SeededSettingsCubit(
+          prefs,
+          activeMachineId: 'machine-1',
+        );
+        final machineManagerService = _StaticMachineManagerService([
+          const MachineWithStatus(
+            machine: Machine(
+              id: 'machine-1',
+              name: 'Remote Mac',
+              host: '100.64.0.1',
+              sshEnabled: true,
+              sshUsername: 'k9i',
+            ),
+            status: MachineStatus.online,
+            versionInfo: BridgeVersionInfo(version: '1.46.0'),
+          ),
+        ]);
+        final machineManagerCubit = MachineManagerCubit(
+          machineManagerService,
+          null,
+        );
+        final bridge = _FakeBridgeService(
+          connected: true,
+          fakeLastUrl: 'ws://100.64.0.1:8765',
+        );
+
+        await tester.pumpWidget(
+          await _buildScreen(
+            bridge: bridge,
+            settingsCubit: settingsCubit,
+            machineManagerCubit: machineManagerCubit,
+          ),
+        );
+        await tester.pumpAndSettle();
+        final l = AppLocalizations.of(tester.element(find.byType(Scaffold)));
+
+        expect(find.text(l.bridgeUpdateAvailable), findsOneWidget);
+        expect(
+          find.byKey(const ValueKey('settings_update_bridge_button')),
+          findsOneWidget,
+        );
+
+        await settingsCubit.close();
+        await machineManagerCubit.close();
+        machineManagerService.dispose();
+        bridge.dispose();
+      },
+    );
+
+    testWidgets('hides bridge update button when latest or SSH is missing', (
+      tester,
+    ) async {
+      SharedPreferences.setMockInitialValues({});
+      final prefs = await SharedPreferences.getInstance();
+      final latestSettingsCubit = _SeededSettingsCubit(
+        prefs,
+        activeMachineId: 'machine-1',
+      );
+      final latestService = _StaticMachineManagerService([
+        const MachineWithStatus(
+          machine: Machine(
+            id: 'machine-1',
+            name: 'Remote Mac',
+            host: '100.64.0.1',
+            sshEnabled: true,
+            sshUsername: 'k9i',
+          ),
+          status: MachineStatus.online,
+          versionInfo: BridgeVersionInfo(version: '1.47.0'),
+        ),
+      ]);
+      final latestCubit = MachineManagerCubit(latestService, null);
+      final latestBridge = _FakeBridgeService(
+        connected: true,
+        fakeLastUrl: 'ws://100.64.0.1:8765',
+      );
+
+      await tester.pumpWidget(
+        await _buildScreen(
+          bridge: latestBridge,
+          settingsCubit: latestSettingsCubit,
+          machineManagerCubit: latestCubit,
+        ),
+      );
+      await tester.pumpAndSettle();
+      final l = AppLocalizations.of(tester.element(find.byType(Scaffold)));
+
+      expect(find.text(l.bridgeIsUpToDate), findsOneWidget);
+      expect(
+        find.byKey(const ValueKey('settings_update_bridge_button')),
+        findsNothing,
+      );
+
+      await latestSettingsCubit.close();
+      await latestCubit.close();
+      latestService.dispose();
+      latestBridge.dispose();
+
+      final missingSshSettingsCubit = _SeededSettingsCubit(
+        prefs,
+        activeMachineId: 'machine-1',
+      );
+      final missingSshService = _StaticMachineManagerService([
+        const MachineWithStatus(
+          machine: Machine(
+            id: 'machine-1',
+            name: 'Remote Mac',
+            host: '100.64.0.1',
+            sshEnabled: false,
+          ),
+          status: MachineStatus.online,
+          versionInfo: BridgeVersionInfo(version: '1.46.0'),
+        ),
+      ]);
+      final missingSshCubit = MachineManagerCubit(missingSshService, null);
+      final missingSshBridge = _FakeBridgeService(
+        connected: true,
+        fakeLastUrl: 'ws://100.64.0.1:8765',
+      );
+
+      await tester.pumpWidget(
+        await _buildScreen(
+          bridge: missingSshBridge,
+          settingsCubit: missingSshSettingsCubit,
+          machineManagerCubit: missingSshCubit,
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text(l.bridgeUpdateRequiresSetup), findsOneWidget);
+      expect(
+        find.byKey(const ValueKey('settings_update_bridge_button')),
+        findsNothing,
+      );
+
+      await missingSshSettingsCubit.close();
+      await missingSshCubit.close();
+      missingSshService.dispose();
+      missingSshBridge.dispose();
+    });
+
     testWidgets(
       'hides usage section when disconnected even with cached usage',
       (tester) async {

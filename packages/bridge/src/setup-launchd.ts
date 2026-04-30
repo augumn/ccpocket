@@ -82,7 +82,7 @@ export function setupLaunchd(opts: SetupOptions): void {
         <string>/bin/zsh</string>
         <string>-li</string>
         <string>-c</string>
-        <string>exec npx @ccpocket/bridge@latest</string>
+        <string>exec npx --yes @ccpocket/bridge@latest</string>
     </array>
 
     <key>EnvironmentVariables</key>

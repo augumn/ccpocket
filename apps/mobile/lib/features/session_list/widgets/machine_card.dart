@@ -108,6 +108,7 @@ class MachineCard extends StatelessWidget {
                   // Menu button
                   _MenuButton(
                     machine: machine,
+                    status: status,
                     needsUpdate: needsUpdate,
                     colorScheme: colorScheme,
                     onEdit: onEdit,
@@ -286,6 +287,7 @@ class _MetadataLine extends StatelessWidget {
 /// Menu button (three dots)
 class _MenuButton extends StatelessWidget {
   final Machine machine;
+  final MachineStatus status;
   final bool needsUpdate;
   final ColorScheme colorScheme;
   final VoidCallback onEdit;
@@ -296,6 +298,7 @@ class _MenuButton extends StatelessWidget {
 
   const _MenuButton({
     required this.machine,
+    required this.status,
     required this.needsUpdate,
     required this.colorScheme,
     required this.onEdit,
@@ -349,7 +352,9 @@ class _MenuButton extends StatelessWidget {
               ],
             ),
           ),
-          if (needsUpdate && machine.canStartRemotely)
+          if (status == MachineStatus.online &&
+              needsUpdate &&
+              machine.canStartRemotely)
             PopupMenuItem(
               value: 'update',
               child: Row(
@@ -360,7 +365,7 @@ class _MenuButton extends StatelessWidget {
                 ],
               ),
             ),
-          if (machine.canStartRemotely)
+          if (status == MachineStatus.online && machine.canStartRemotely)
             PopupMenuItem(
               value: 'stop',
               child: Row(
@@ -445,6 +450,7 @@ class _ActionButton extends StatelessWidget {
       // If needs update and SSH available, show Update button
       if (needsUpdate && canStartRemotely && onUpdate != null) {
         return FilledButton.tonal(
+          key: const ValueKey('machine_update_bridge_button'),
           onPressed: onUpdate,
           style: FilledButton.styleFrom(
             padding: const EdgeInsets.symmetric(horizontal: 12),

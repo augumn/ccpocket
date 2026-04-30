@@ -1,9 +1,9 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:typed_data';
 
 import 'package:dartssh2/dartssh2.dart';
 
-import '../constants/app_constants.dart';
 import '../models/machine.dart';
 import 'machine_manager_service.dart';
 
@@ -32,9 +32,69 @@ class SshStartupService {
   /// Timeout for command execution
   static const _commandTimeout = Duration(seconds: 30);
 
-  /// launchctl commands for Bridge Server
-  static const _startCommand = 'launchctl start com.ccpocket.bridge';
-  static const _stopCommand = 'launchctl stop com.ccpocket.bridge';
+  /// Start the Bridge service installed by
+  /// `npx --yes @ccpocket/bridge@latest setup`.
+  ///
+  /// macOS setup installs a launchd LaunchAgent, while Linux setup installs a
+  /// systemd user service. Detect the remote init system at runtime because the
+  /// mobile app only knows how to reach the machine over SSH.
+  static const _startCommand = r'''
+if command -v launchctl >/dev/null 2>&1; then
+  LABEL=com.ccpocket.bridge
+  UID_VALUE=$(id -u)
+  PLIST="$HOME/Library/LaunchAgents/$LABEL.plist"
+  if [ ! -f "$PLIST" ]; then
+    echo "Bridge auto-start setup is required. Run: npx --yes @ccpocket/bridge@latest setup" >&2
+    exit 1
+  fi
+  MIGRATED=0
+  if /usr/libexec/PlistBuddy -c "Print :ProgramArguments:3" "$PLIST" 2>/dev/null | grep -qx "exec npx @ccpocket/bridge@latest"; then
+    /usr/libexec/PlistBuddy -c "Set :ProgramArguments:3 exec npx --yes @ccpocket/bridge@latest" "$PLIST"
+    MIGRATED=1
+  fi
+  if [ "$MIGRATED" = "1" ]; then
+    launchctl bootout "gui/$UID_VALUE/$LABEL" 2>/dev/null || true
+    launchctl bootout "user/$UID_VALUE/$LABEL" 2>/dev/null || true
+    launchctl unload "$PLIST" 2>/dev/null || true
+  fi
+  launchctl kickstart -k "gui/$UID_VALUE/$LABEL" 2>/dev/null || \
+    launchctl kickstart -k "user/$UID_VALUE/$LABEL" 2>/dev/null || \
+    (launchctl bootstrap "gui/$UID_VALUE" "$PLIST" 2>/dev/null || true; launchctl kickstart -k "gui/$UID_VALUE/$LABEL" 2>/dev/null) || \
+    (launchctl bootstrap "user/$UID_VALUE" "$PLIST" 2>/dev/null || true; launchctl kickstart -k "user/$UID_VALUE/$LABEL" 2>/dev/null) || \
+    (launchctl load -w "$PLIST" 2>/dev/null || true; launchctl start "$LABEL")
+elif command -v systemctl >/dev/null 2>&1; then
+  SERVICE="$HOME/.config/systemd/user/ccpocket-bridge.service"
+  if [ ! -f "$SERVICE" ]; then
+    echo "Bridge auto-start setup is required. Run: npx --yes @ccpocket/bridge@latest setup" >&2
+    exit 1
+  fi
+  if [ -f "$SERVICE" ] && grep -q "^ExecStart=.*npx @ccpocket/bridge@latest$" "$SERVICE"; then
+    perl -0pi.bak -e 's#^ExecStart=(.*npx) \@ccpocket/bridge\@latest$#ExecStart=$1 --yes \@ccpocket/bridge\@latest#m' "$SERVICE"
+    systemctl --user daemon-reload
+  fi
+  systemctl --user restart ccpocket-bridge
+else
+  echo "Neither launchctl nor systemctl is available" >&2
+  exit 127
+fi
+''';
+
+  /// Stop the Bridge service without removing the setup installed by npx.
+  static const _stopCommand = r'''
+if command -v launchctl >/dev/null 2>&1; then
+  LABEL=com.ccpocket.bridge
+  UID_VALUE=$(id -u)
+  launchctl bootout "gui/$UID_VALUE/$LABEL" 2>/dev/null || \
+    launchctl bootout "user/$UID_VALUE/$LABEL" 2>/dev/null || \
+    launchctl unload "$HOME/Library/LaunchAgents/$LABEL.plist" 2>/dev/null || \
+    launchctl stop "$LABEL"
+elif command -v systemctl >/dev/null 2>&1; then
+  systemctl --user stop ccpocket-bridge
+else
+  echo "Neither launchctl nor systemctl is available" >&2
+  exit 127
+fi
+''';
 
   SshStartupService(this._machineManager);
 
@@ -83,7 +143,6 @@ class SshStartupService {
         _startCommand,
         password: sshPassword,
         privateKey: sshPrivateKey,
-        background: true,
       );
       return result;
     } catch (e) {
@@ -121,7 +180,6 @@ class SshStartupService {
         _stopCommand,
         password: sshPassword,
         privateKey: sshPrivateKey,
-        background: true,
       );
     } catch (e) {
       return SshResult.failure(e.toString());
@@ -240,11 +298,9 @@ class SshStartupService {
 
   /// Update Bridge Server on a remote machine via SSH.
   ///
-  /// Steps:
-  /// 1. cd to project directory
-  /// 2. git pull
-  /// 3. npm run bridge:build
-  /// 4. launchctl stop/start (restart)
+  /// This only supports the auto-start service installed by
+  /// `npx --yes @ccpocket/bridge@latest setup`. Source checkouts are not
+  /// updated from the app.
   Future<SshResult> updateBridgeServer(
     String machineId, {
     String? password,
@@ -280,15 +336,12 @@ class SshStartupService {
       }
     }
 
-    // Build update command
     final updateCommand =
         '''
-cd ${AppConstants.defaultProjectPath} && \\
-git pull && \\
-npm run bridge:build && \\
-launchctl stop com.ccpocket.bridge && \\
-sleep 1 && \\
-launchctl start com.ccpocket.bridge
+set -e
+${_stopCommand.trim()} || true
+sleep 1
+${_startCommand.trim()}
 ''';
 
     try {
@@ -305,14 +358,11 @@ launchctl start com.ccpocket.bridge
 
   /// Execute a command on the remote machine.
   ///
-  /// If [background] is true, the command is started and we return immediately
-  /// without waiting for completion (used for launchctl start/stop).
   Future<SshResult> _executeCommand(
     Machine machine,
     String command, {
     String? password,
     String? privateKey,
-    bool background = false,
   }) async {
     try {
       final socket = await SSHSocket.connect(
@@ -329,23 +379,24 @@ launchctl start com.ccpocket.bridge
       );
 
       try {
-        if (background) {
-          // Execute in background and return immediately
-          final session = await client.execute(command);
-          // Don't wait for exit, just give it a moment to start
-          await Future.delayed(const Duration(milliseconds: 500));
-          session.close();
-          client.close();
-          return SshResult.success('Command started');
-        }
-
-        // For other commands, wait for completion
-        final result = await client.run(command).timeout(_commandTimeout);
-
+        final result = await _runCommand(
+          client,
+          command,
+        ).timeout(_commandTimeout);
         client.close();
 
-        final output = utf8.decode(result);
-        return SshResult.success(output);
+        final output = result.output.trim();
+        if (result.exitCode == 0 || result.exitCode == null) {
+          return SshResult.success(
+            output.isEmpty ? 'Command completed' : output,
+          );
+        }
+
+        return SshResult.failure(
+          output.isEmpty
+              ? 'Command failed with exit code ${result.exitCode}'
+              : output,
+        );
       } finally {
         client.close();
       }
@@ -358,6 +409,36 @@ launchctl start com.ccpocket.bridge
     } catch (e) {
       return SshResult.failure('SSH error: $e');
     }
+  }
+
+  Future<_RemoteCommandResult> _runCommand(
+    SSHClient client,
+    String command,
+  ) async {
+    final session = await client.execute(command);
+    final output = BytesBuilder(copy: false);
+    final stdoutDone = Completer<void>();
+    final stderrDone = Completer<void>();
+
+    session.stdout.listen(
+      output.add,
+      onDone: stdoutDone.complete,
+      onError: stdoutDone.completeError,
+    );
+    session.stderr.listen(
+      output.add,
+      onDone: stderrDone.complete,
+      onError: stderrDone.completeError,
+    );
+
+    await session.done;
+    await stdoutDone.future;
+    await stderrDone.future;
+
+    return _RemoteCommandResult(
+      exitCode: session.exitCode,
+      output: utf8.decode(output.takeBytes()),
+    );
   }
 
   /// Authenticate SSH connection
@@ -387,4 +468,11 @@ launchctl start com.ccpocket.bridge
       );
     }
   }
+}
+
+class _RemoteCommandResult {
+  final int? exitCode;
+  final String output;
+
+  const _RemoteCommandResult({required this.exitCode, required this.output});
 }
