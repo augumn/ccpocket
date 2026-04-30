@@ -2,6 +2,11 @@
 
 All notable changes to `@ccpocket/bridge` will be documented in this file.
 
+## [1.48.0] - 2026-04-30
+
+### Added
+- Add Korean push notification translations and normalize Korean locale tags.
+
 ## [1.47.2] - 2026-04-30
 
 ### Changed
