@@ -62,6 +62,9 @@ abstract class SettingsState with _$SettingsState {
     /// Indent size for list formatting (1-4 spaces).
     @Default(2) int indentSize,
 
+    /// App-specific multiplier applied on top of the system text scale.
+    @Default(1.0) double textScale,
+
     /// Whether to hide the voice input button in the chat input bar.
     @Default(false) bool hideVoiceInput,
 

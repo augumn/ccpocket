@@ -2284,6 +2284,18 @@ abstract class AppLocalizations {
   /// **'エディタ'**
   String get sectionEditor;
 
+  /// No description provided for @textDensity.
+  ///
+  /// In ja, this message translates to:
+  /// **'表示密度'**
+  String get textDensity;
+
+  /// No description provided for @textDensityDescription.
+  ///
+  /// In ja, this message translates to:
+  /// **'OSの文字サイズ設定に、このアプリ倍率をさらに掛けます。100%はOS設定のままです。'**
+  String get textDensityDescription;
+
   /// No description provided for @indentSize.
   ///
   /// In ja, this message translates to:

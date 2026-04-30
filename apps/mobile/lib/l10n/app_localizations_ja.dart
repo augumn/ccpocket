@@ -1183,6 +1183,13 @@ class AppLocalizationsJa extends AppLocalizations {
   String get sectionEditor => 'エディタ';
 
   @override
+  String get textDensity => '表示密度';
+
+  @override
+  String get textDensityDescription =>
+      'OSの文字サイズ設定に、このアプリ倍率をさらに掛けます。100%はOS設定のままです。';
+
+  @override
   String get indentSize => 'インデント幅';
 
   @override

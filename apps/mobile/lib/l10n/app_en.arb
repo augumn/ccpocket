@@ -471,6 +471,8 @@
   "sectionNotifications": "Notifications",
   "sectionSupport": "Support",
   "sectionEditor": "EDITOR",
+  "textDensity": "Text density",
+  "textDensityDescription": "Multiplies the system text size by this app scale. 100% keeps the OS setting unchanged.",
   "indentSize": "Indent size",
   "indentSizeSubtitle": "Number of spaces for list indentation",
   "gitDiffInteractionMode": "Git diff gestures",

@@ -435,9 +435,48 @@ class _CcpocketAppState extends State<CcpocketApp> {
           routerConfig: _appRouter.config(
             navigatorObservers: () => [SessionRouteObserver()],
           ),
+          builder: (context, child) {
+            final mediaQuery = MediaQuery.maybeOf(context);
+            final app = child ?? const SizedBox.shrink();
+            if (mediaQuery == null) return app;
+            return MediaQuery(
+              data: mediaQuery.copyWith(
+                textScaler: _AppTextScaler(
+                  base: mediaQuery.textScaler,
+                  multiplier: settings.textScale,
+                ),
+              ),
+              child: app,
+            );
+          },
           debugShowCheckedModeBanner: false,
         );
       },
     );
   }
+}
+
+class _AppTextScaler extends TextScaler {
+  const _AppTextScaler({required this.base, required this.multiplier});
+
+  final TextScaler base;
+  final double multiplier;
+
+  @override
+  double scale(double fontSize) => base.scale(fontSize) * multiplier;
+
+  @override
+  // Required by TextScaler for legacy callers.
+  // ignore: deprecated_member_use
+  double get textScaleFactor => base.textScaleFactor * multiplier;
+
+  @override
+  bool operator ==(Object other) {
+    return other is _AppTextScaler &&
+        other.base == base &&
+        other.multiplier == multiplier;
+  }
+
+  @override
+  int get hashCode => Object.hash(base, multiplier);
 }

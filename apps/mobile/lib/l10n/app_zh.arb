@@ -547,6 +547,8 @@
   "sectionNotifications": "通知",
   "sectionSupport": "支持",
   "sectionEditor": "编辑器",
+  "textDensity": "文字密度",
+  "textDensityDescription": "在系统文字大小的基础上再应用此应用倍率。100% 保持系统设置不变。",
   "indentSize": "缩进大小",
   "indentSizeSubtitle": "列表缩进使用的空格数",
   "gitDiffInteractionMode": "Git diff 手势",

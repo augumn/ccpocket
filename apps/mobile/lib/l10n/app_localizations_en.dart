@@ -1233,6 +1233,13 @@ class AppLocalizationsEn extends AppLocalizations {
   String get sectionEditor => 'EDITOR';
 
   @override
+  String get textDensity => 'Text density';
+
+  @override
+  String get textDensityDescription =>
+      'Multiplies the system text size by this app scale. 100% keeps the OS setting unchanged.';
+
+  @override
   String get indentSize => 'Indent size';
 
   @override

@@ -49,6 +49,9 @@ class SettingsCubit extends Cubit<SettingsState> {
   static const _keyTerminalApp = 'settings_terminal_app';
   static const _keyNewSessionTabs = 'settings_new_session_tabs';
   static const _keyUsageDisplayMode = 'settings_usage_display_mode';
+  static const _keyTextScale = 'settings_text_scale';
+  static const minTextScale = 0.8;
+  static const maxTextScale = 1.0;
   // Legacy key for migration
   static const _keyIndentSize = 'settings_indent_size';
   // Legacy key for migration
@@ -168,6 +171,7 @@ class SettingsCubit extends Cubit<SettingsState> {
 
     final shorebirdTrack = prefs.getString(keyShorebirdTrack) ?? 'stable';
     final indentSize = prefs.getInt(_keyIndentSize) ?? 2;
+    final textScale = prefs.getDouble(_keyTextScale) ?? 1.0;
     final hideVoiceInput = prefs.getBool(_keyHideVoiceInput) ?? false;
     final gitDiffInteractionMode = gitDiffInteractionModeFromRaw(
       prefs.getString(_keyGitDiffInteractionMode),
@@ -211,6 +215,7 @@ class SettingsCubit extends Cubit<SettingsState> {
       fcmPrivacyMachines: fcmPrivacyMachines,
       shorebirdTrack: shorebirdTrack,
       indentSize: indentSize.clamp(1, 4),
+      textScale: textScale.clamp(minTextScale, maxTextScale),
       hideVoiceInput: hideVoiceInput,
       gitDiffInteractionMode: gitDiffInteractionMode,
       selectedAppIcon: selectedAppIcon,
@@ -289,6 +294,12 @@ class SettingsCubit extends Cubit<SettingsState> {
     final clamped = size.clamp(1, 4);
     _prefs.setInt(_keyIndentSize, clamped);
     emit(state.copyWith(indentSize: clamped));
+  }
+
+  void setTextScale(double scale) {
+    final clamped = scale.clamp(minTextScale, maxTextScale);
+    _prefs.setDouble(_keyTextScale, clamped);
+    emit(state.copyWith(textScale: clamped));
   }
 
   void setShorebirdTrack(String track) {

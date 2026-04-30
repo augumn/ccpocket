@@ -529,6 +529,8 @@
   "sectionNotifications": "通知",
   "sectionSupport": "応援",
   "sectionEditor": "エディタ",
+  "textDensity": "表示密度",
+  "textDensityDescription": "OSの文字サイズ設定に、このアプリ倍率をさらに掛けます。100%はOS設定のままです。",
   "indentSize": "インデント幅",
   "indentSizeSubtitle": "箇条書きのインデントに使用するスペース数",
   "gitDiffInteractionMode": "Git diff 操作",
