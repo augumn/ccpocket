@@ -45,11 +45,13 @@ import 'widgets/usage_section.dart';
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({
     super.key,
+    this.focusConnection = false,
     this.focusSupport = false,
     this.embedded = false,
     this.onBack,
   });
 
+  final bool focusConnection;
   final bool focusSupport;
   final bool embedded;
   final VoidCallback? onBack;
@@ -60,11 +62,46 @@ class SettingsScreen extends StatefulWidget {
 
 class _SettingsScreenState extends State<SettingsScreen> {
   final _scrollController = ScrollController();
+  final _connectionSectionKey = GlobalKey();
   final _supportSectionKey = GlobalKey();
+  Timer? _connectionHighlightTimer;
   Timer? _supportHighlightTimer;
+  bool _didHandleConnectionFocus = false;
   bool _didHandleSupportFocus = false;
+  bool _highlightConnectionSection = false;
   bool _highlightSupportSection = false;
   bool _isIOSAppOnMac = false;
+
+  void _maybeFocusConnectionSection() {
+    if (!widget.focusConnection || _didHandleConnectionFocus) return;
+    _didHandleConnectionFocus = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      if (!mounted) return;
+      final targetContext = _connectionSectionKey.currentContext;
+      if (targetContext == null || !targetContext.mounted) {
+        _didHandleConnectionFocus = false;
+        return;
+      }
+      await Scrollable.ensureVisible(
+        targetContext,
+        duration: const Duration(milliseconds: 350),
+        curve: Curves.easeOutCubic,
+        alignment: 0.0,
+      );
+      if (!mounted) return;
+
+      setState(() {
+        _highlightConnectionSection = true;
+      });
+      _connectionHighlightTimer?.cancel();
+      _connectionHighlightTimer = Timer(const Duration(milliseconds: 1800), () {
+        if (!mounted) return;
+        setState(() {
+          _highlightConnectionSection = false;
+        });
+      });
+    });
+  }
 
   void _maybeFocusSupportSection() {
     if (!widget.focusSupport || _didHandleSupportFocus) return;
@@ -121,6 +158,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   @override
   void dispose() {
+    _connectionHighlightTimer?.cancel();
     _supportHighlightTimer?.cancel();
     _scrollController.dispose();
     super.dispose();
@@ -182,40 +220,78 @@ class _SettingsScreenState extends State<SettingsScreen> {
           return ListView(
             key: const PageStorageKey('settings_list'),
             controller: _scrollController,
-            cacheExtent: widget.focusSupport ? 4096 : null,
+            cacheExtent: widget.focusSupport || widget.focusConnection
+                ? 4096
+                : null,
             children: [
               if (isConnected) ...[
+                Builder(
+                  builder: (context) {
+                    _maybeFocusConnectionSection();
+                    return const SizedBox.shrink();
+                  },
+                ),
                 _SectionHeader(title: l.sectionConnectionAccounts),
-                Card(
-                  margin: const EdgeInsets.symmetric(horizontal: 16),
-                  child: Column(
-                    children: [
-                      ListTile(
-                        leading: Icon(
-                          Icons.computer_outlined,
-                          color: cs.primary,
+                KeyedSubtree(
+                  key: _connectionSectionKey,
+                  child: AnimatedContainer(
+                    duration: const Duration(milliseconds: 250),
+                    curve: Curves.easeOutCubic,
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(12),
+                      boxShadow: _highlightConnectionSection
+                          ? [
+                              BoxShadow(
+                                color: cs.tertiary.withValues(alpha: 0.22),
+                                blurRadius: 18,
+                                offset: const Offset(0, 6),
+                              ),
+                            ]
+                          : null,
+                    ),
+                    child: Card(
+                      key: const ValueKey('settings_connection_section_card'),
+                      margin: const EdgeInsets.symmetric(horizontal: 16),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                        side: BorderSide(
+                          color: _highlightConnectionSection
+                              ? cs.tertiary.withValues(alpha: 0.75)
+                              : Colors.transparent,
+                          width: _highlightConnectionSection ? 1.5 : 0,
                         ),
-                        title: const Text('Bridge machine'),
-                        subtitle: Text(
-                          machine?.displayName ??
-                              (bridge.lastUrl ?? 'Not connected'),
-                        ),
                       ),
-                      Divider(
-                        height: 1,
-                        indent: 16,
-                        endIndent: 16,
-                        color: cs.outlineVariant,
+                      child: Column(
+                        children: [
+                          ListTile(
+                            leading: Icon(
+                              Icons.computer_outlined,
+                              color: cs.primary,
+                            ),
+                            title: const Text('Bridge machine'),
+                            subtitle: Text(
+                              machine?.displayName ??
+                                  (bridge.lastUrl ?? 'Not connected'),
+                            ),
+                          ),
+                          Divider(
+                            height: 1,
+                            indent: 16,
+                            endIndent: 16,
+                            color: cs.outlineVariant,
+                          ),
+                          _BridgeUpdateStatusTile(
+                            machineWithStatus: machineWithStatus,
+                            isUpdating: isUpdating,
+                            onUpdate: machineWithStatus == null
+                                ? null
+                                : () => _updateBridgeFromSettings(
+                                    machineWithStatus,
+                                  ),
+                          ),
+                        ],
                       ),
-                      _BridgeUpdateStatusTile(
-                        machineWithStatus: machineWithStatus,
-                        isUpdating: isUpdating,
-                        onUpdate: machineWithStatus == null
-                            ? null
-                            : () =>
-                                  _updateBridgeFromSettings(machineWithStatus),
-                      ),
-                    ],
+                    ),
                   ),
                 ),
                 const SizedBox(height: 8),

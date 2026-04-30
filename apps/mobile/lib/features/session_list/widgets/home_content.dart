@@ -83,6 +83,7 @@ class HomeContent extends StatefulWidget {
   final bool showMacOSNativeAppBanner;
   final VoidCallback? onDismissMacOSNativeAppBanner;
   final VoidCallback? onOpenMacOSNativeAppReleases;
+  final VoidCallback? onOpenBridgeSettings;
   final VoidCallback? onOpenSupportSettings;
   final bool? showInlineStopButtonOverride;
 
@@ -124,6 +125,7 @@ class HomeContent extends StatefulWidget {
     this.showMacOSNativeAppBanner = false,
     this.onDismissMacOSNativeAppBanner,
     this.onOpenMacOSNativeAppReleases,
+    this.onOpenBridgeSettings,
     this.onOpenSupportSettings,
     this.showInlineStopButtonOverride,
   });
@@ -270,6 +272,9 @@ class HomeContentState extends State<HomeContent> {
     return BridgeUpdateBanner(
       currentVersion: widget.bridgeVersion!,
       expectedVersion: AppConstants.expectedBridgeVersion,
+      onTap:
+          widget.onOpenBridgeSettings ??
+          () => context.pushRoute(SettingsRoute(focusConnection: true)),
       onDismiss: () => setState(() => _updateBannerDismissed = true),
     );
   }

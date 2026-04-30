@@ -264,6 +264,7 @@ class WorkspaceShellScreenState extends State<WorkspaceShellScreen> {
   WorkspaceSessionSelection? _selectedSession;
   StreamSubscription<String>? _stoppedSessionSub;
   bool _settingsFocusSupport = false;
+  bool _settingsFocusConnection = false;
   int _settingsPresentationVersion = 0;
   double? _rightPaneUserWidth;
   final ValueNotifier<int> _presentationVersion = ValueNotifier<int>(0);
@@ -357,13 +358,19 @@ class WorkspaceShellScreenState extends State<WorkspaceShellScreen> {
     _openToolPane(_GalleryToolPaneData(sessionId: sessionId));
   }
 
-  void openSettingsCenter({bool focusSupport = false}) {
+  void openSettingsCenter({
+    bool focusSupport = false,
+    bool focusConnection = false,
+  }) {
     setState(() {
-      if (_centerOverlay == _WorkspaceCenterOverlay.settings && !focusSupport) {
+      if (_centerOverlay == _WorkspaceCenterOverlay.settings &&
+          !focusSupport &&
+          !focusConnection) {
         _centerOverlay = _WorkspaceCenterOverlay.none;
       } else {
         _centerOverlay = _WorkspaceCenterOverlay.settings;
         _settingsFocusSupport = focusSupport;
+        _settingsFocusConnection = focusConnection;
         _settingsPresentationVersion++;
       }
     });
@@ -729,6 +736,7 @@ class WorkspaceShellScreenState extends State<WorkspaceShellScreen> {
                 overlay: _centerOverlay,
                 connectionState: connectionState,
                 settingsFocusSupport: _settingsFocusSupport,
+                settingsFocusConnection: _settingsFocusConnection,
                 settingsPresentationVersion: _settingsPresentationVersion,
               ),
             ),
@@ -898,6 +906,7 @@ class _WorkspaceContentHost extends StatelessWidget {
   final _WorkspaceCenterOverlay overlay;
   final BridgeConnectionState connectionState;
   final bool settingsFocusSupport;
+  final bool settingsFocusConnection;
   final int settingsPresentationVersion;
 
   const _WorkspaceContentHost({
@@ -906,6 +915,7 @@ class _WorkspaceContentHost extends StatelessWidget {
     required this.overlay,
     required this.connectionState,
     required this.settingsFocusSupport,
+    required this.settingsFocusConnection,
     required this.settingsPresentationVersion,
   });
 
@@ -922,9 +932,11 @@ class _WorkspaceContentHost extends StatelessWidget {
         return SettingsScreen(
           key: ValueKey(
             'workspace_settings_$settingsPresentationVersion'
-            '_$settingsFocusSupport',
+            '_$settingsFocusSupport'
+            '_$settingsFocusConnection',
           ),
           focusSupport: settingsFocusSupport,
+          focusConnection: settingsFocusConnection,
           embedded: true,
           onBack: shell?.popCenterOverlay,
         );

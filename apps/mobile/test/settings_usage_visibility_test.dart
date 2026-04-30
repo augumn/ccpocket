@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:ccpocket/constants/app_constants.dart';
 import 'package:ccpocket/features/settings/settings_screen.dart';
 import 'package:ccpocket/features/settings/state/settings_cubit.dart';
 import 'package:ccpocket/features/settings/state/settings_state.dart';
@@ -240,6 +241,7 @@ Future<Widget> _buildScreen({
   RevenueCatService? revenueCatService,
   InAppReviewService? inAppReviewService,
   SupportBannerService? supportBannerService,
+  bool focusConnection = false,
   bool focusSupport = false,
 }) async {
   final prefs = await SharedPreferences.getInstance();
@@ -263,7 +265,10 @@ Future<Widget> _buildScreen({
         localizationsDelegates: AppLocalizations.localizationsDelegates,
         supportedLocales: AppLocalizations.supportedLocales,
         locale: const Locale('en'),
-        home: SettingsScreen(focusSupport: focusSupport),
+        home: SettingsScreen(
+          focusConnection: focusConnection,
+          focusSupport: focusSupport,
+        ),
       ),
     ),
   );
@@ -366,7 +371,9 @@ void main() {
             sshUsername: 'k9i',
           ),
           status: MachineStatus.online,
-          versionInfo: BridgeVersionInfo(version: '1.47.1'),
+          versionInfo: BridgeVersionInfo(
+            version: AppConstants.expectedBridgeVersion,
+          ),
         ),
       ]);
       final latestCubit = MachineManagerCubit(latestService, null);

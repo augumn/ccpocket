@@ -781,6 +781,7 @@ class QrScanRoute extends PageRouteInfo<void> {
 class SettingsRoute extends PageRouteInfo<SettingsRouteArgs> {
   SettingsRoute({
     Key? key,
+    bool focusConnection = false,
     bool focusSupport = false,
     bool embedded = false,
     VoidCallback? onBack,
@@ -789,6 +790,7 @@ class SettingsRoute extends PageRouteInfo<SettingsRouteArgs> {
          SettingsRoute.name,
          args: SettingsRouteArgs(
            key: key,
+           focusConnection: focusConnection,
            focusSupport: focusSupport,
            embedded: embedded,
            onBack: onBack,
@@ -806,6 +808,7 @@ class SettingsRoute extends PageRouteInfo<SettingsRouteArgs> {
       );
       return SettingsScreen(
         key: args.key,
+        focusConnection: args.focusConnection,
         focusSupport: args.focusSupport,
         embedded: args.embedded,
         onBack: args.onBack,
@@ -817,12 +820,15 @@ class SettingsRoute extends PageRouteInfo<SettingsRouteArgs> {
 class SettingsRouteArgs {
   const SettingsRouteArgs({
     this.key,
+    this.focusConnection = false,
     this.focusSupport = false,
     this.embedded = false,
     this.onBack,
   });
 
   final Key? key;
+
+  final bool focusConnection;
 
   final bool focusSupport;
 
@@ -832,7 +838,7 @@ class SettingsRouteArgs {
 
   @override
   String toString() {
-    return 'SettingsRouteArgs{key: $key, focusSupport: $focusSupport, embedded: $embedded, onBack: $onBack}';
+    return 'SettingsRouteArgs{key: $key, focusConnection: $focusConnection, focusSupport: $focusSupport, embedded: $embedded, onBack: $onBack}';
   }
 
   @override
@@ -840,6 +846,7 @@ class SettingsRouteArgs {
     if (identical(this, other)) return true;
     if (other is! SettingsRouteArgs) return false;
     return key == other.key &&
+        focusConnection == other.focusConnection &&
         focusSupport == other.focusSupport &&
         embedded == other.embedded &&
         onBack == other.onBack;
@@ -848,6 +855,7 @@ class SettingsRouteArgs {
   @override
   int get hashCode =>
       key.hashCode ^
+      focusConnection.hashCode ^
       focusSupport.hashCode ^
       embedded.hashCode ^
       onBack.hashCode;

@@ -9,12 +9,14 @@ import '../../../models/machine.dart';
 class BridgeUpdateBanner extends StatelessWidget {
   final String currentVersion;
   final String expectedVersion;
+  final VoidCallback? onTap;
   final VoidCallback? onDismiss;
 
   const BridgeUpdateBanner({
     super.key,
     required this.currentVersion,
     required this.expectedVersion,
+    this.onTap,
     this.onDismiss,
   });
 
@@ -24,28 +26,40 @@ class BridgeUpdateBanner extends StatelessWidget {
     final color = colorScheme.tertiary;
     return Container(
       margin: const EdgeInsets.only(bottom: 8),
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-      decoration: BoxDecoration(
+      child: Material(
         color: color.withValues(alpha: 0.10),
         borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: color.withValues(alpha: 0.3)),
-      ),
-      child: Row(
-        children: [
-          Icon(Icons.system_update, size: 18, color: color),
-          const SizedBox(width: 8),
-          Expanded(
-            child: Text(
-              'Bridge Server v$currentVersion → v$expectedVersion',
-              style: TextStyle(fontSize: 13, color: color),
+        child: InkWell(
+          key: const ValueKey('bridge_update_banner'),
+          borderRadius: BorderRadius.circular(8),
+          onTap: onTap,
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(color: color.withValues(alpha: 0.3)),
+            ),
+            child: Row(
+              children: [
+                Icon(Icons.system_update, size: 18, color: color),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    'Bridge Server v$currentVersion → v$expectedVersion',
+                    style: TextStyle(fontSize: 13, color: color),
+                  ),
+                ),
+                if (onDismiss != null)
+                  GestureDetector(
+                    key: const ValueKey('bridge_update_banner_dismiss'),
+                    behavior: HitTestBehavior.opaque,
+                    onTap: onDismiss,
+                    child: Icon(Icons.close, size: 16, color: color),
+                  ),
+              ],
             ),
           ),
-          if (onDismiss != null)
-            GestureDetector(
-              onTap: onDismiss,
-              child: Icon(Icons.close, size: 16, color: color),
-            ),
-        ],
+        ),
       ),
     );
   }

@@ -556,6 +556,15 @@ class _SessionListScreenState extends State<SessionListScreen>
     context.pushRoute(SettingsRoute(focusSupport: true));
   }
 
+  void _openBridgeSettings() {
+    final shell = WorkspaceShellScreen.maybeOf(context);
+    if (widget.embedded && shell != null) {
+      shell.openSettingsCenter(focusConnection: true);
+      return;
+    }
+    context.pushRoute(SettingsRoute(focusConnection: true));
+  }
+
   Future<void> _openGallery() async {
     final shell = WorkspaceShellScreen.maybeOf(context);
     if (widget.embedded && shell != null) {
@@ -1785,6 +1794,7 @@ class _SessionListScreenState extends State<SessionListScreen>
               onDismissAppUpdate: _dismissAppUpdate,
               showMacOSNativeAppBanner: _showMacOSNativeAppBanner,
               onDismissMacOSNativeAppBanner: _dismissMacOSNativeAppBanner,
+              onOpenBridgeSettings: _openBridgeSettings,
               onOpenSupportSettings: _openSupportSettings,
             ),
           );
