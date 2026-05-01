@@ -348,6 +348,19 @@ class MockBridgeService extends BridgeService {
             message: 'Already up to date.',
           ),
         );
+      case 'git_status':
+        final hasChanges = (_mockDiff ?? '').trim().isNotEmpty;
+        _scheduleMessage(
+          const Duration(milliseconds: 100),
+          GitStatusResultMessage(
+            sessionId: json['sessionId'] as String?,
+            projectPath: json['projectPath'] as String? ?? '',
+            hasUncommittedChanges: hasChanges,
+            stagedCount: _stagedFiles.length,
+            unstagedCount: hasChanges ? 1 : 0,
+            untrackedCount: 0,
+          ),
+        );
       case 'refresh_branch':
         // No-op for mock (session branch refresh)
         break;

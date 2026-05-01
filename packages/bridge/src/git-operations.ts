@@ -28,6 +28,13 @@ export interface BranchListResult {
   remoteStatusByBranch: Record<string, BranchRemoteStatus>;
 }
 
+export interface GitStatusResult {
+  hasUncommittedChanges: boolean;
+  stagedCount: number;
+  unstagedCount: number;
+  untrackedCount: number;
+}
+
 // ---- Helpers ----
 
 function resolveProject(projectPath: string): string {
@@ -377,6 +384,55 @@ export function gitFetch(projectPath: string): void {
     encoding: "utf-8",
     timeout: 30000,
   });
+}
+
+/** Get lightweight working tree/index status without fetching remote state. */
+export function gitStatus(projectPath: string): GitStatusResult {
+  const cwd = resolveProject(projectPath);
+  const output = execFileSync(
+    "git",
+    withGitPathConfig([
+      "status",
+      "--porcelain=v1",
+      "--untracked-files=normal",
+    ]),
+    {
+      cwd,
+      encoding: "utf-8",
+    },
+  );
+  if (!output.trim()) {
+    return {
+      hasUncommittedChanges: false,
+      stagedCount: 0,
+      unstagedCount: 0,
+      untrackedCount: 0,
+    };
+  }
+
+  let stagedCount = 0;
+  let unstagedCount = 0;
+  let untrackedCount = 0;
+
+  for (const line of output.split("\n")) {
+    if (!line) continue;
+    const x = line[0];
+    const y = line[1];
+
+    if (x === "?" && y === "?") {
+      untrackedCount++;
+      continue;
+    }
+    if (x !== " ") stagedCount++;
+    if (y !== " ") unstagedCount++;
+  }
+
+  return {
+    hasUncommittedChanges: stagedCount + unstagedCount + untrackedCount > 0,
+    stagedCount,
+    unstagedCount,
+    untrackedCount,
+  };
 }
 
 /** Get ahead/behind counts relative to upstream. */

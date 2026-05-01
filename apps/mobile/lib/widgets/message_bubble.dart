@@ -245,6 +245,7 @@ class ServerMessageWidget extends StatelessWidget {
       GitRevertHunksResultMessage() => const SizedBox.shrink(),
       GitFetchResultMessage() => const SizedBox.shrink(),
       GitPullResultMessage() => const SizedBox.shrink(),
+      GitStatusResultMessage() => const SizedBox.shrink(),
       GitRemoteStatusResultMessage() => const SizedBox.shrink(),
     };
   }

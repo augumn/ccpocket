@@ -335,6 +335,7 @@ export type ClientMessage =
     }
   | { type: "git_fetch"; projectPath: string }
   | { type: "git_pull"; projectPath: string }
+  | { type: "git_status"; projectPath: string; sessionId?: string }
   | { type: "git_remote_status"; projectPath: string };
 
 /** Image change detected in a git diff (binary image file). */
@@ -675,6 +676,16 @@ export type ServerMessage =
       type: "git_pull_result";
       success: boolean;
       message?: string;
+      error?: string;
+    }
+  | {
+      type: "git_status_result";
+      sessionId?: string;
+      projectPath: string;
+      hasUncommittedChanges: boolean;
+      stagedCount: number;
+      unstagedCount: number;
+      untrackedCount: number;
       error?: string;
     }
   | {
@@ -1423,6 +1434,11 @@ export function parseClientMessage(data: string): ClientMessage | null {
         break;
       case "git_pull":
         if (typeof msg.projectPath !== "string") return null;
+        break;
+      case "git_status":
+        if (typeof msg.projectPath !== "string") return null;
+        if (msg.sessionId !== undefined && typeof msg.sessionId !== "string")
+          return null;
         break;
       case "git_remote_status":
         if (typeof msg.projectPath !== "string") return null;

@@ -1,7 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
-import 'dart:typed_data';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
 import '../../../models/messages.dart';
@@ -32,6 +32,7 @@ class GitViewCubit extends Cubit<GitViewState> {
   StreamSubscription<GitCheckoutBranchResultMessage>? _checkoutSub;
   final String? _projectPath;
   final String? _sessionId;
+  final VoidCallback? _onStatusRefreshRequested;
 
   GitViewCubit({
     required BridgeService bridge,
@@ -39,9 +40,11 @@ class GitViewCubit extends Cubit<GitViewState> {
     String? projectPath,
     String? worktreePath,
     String? sessionId,
+    VoidCallback? onStatusRefreshRequested,
   }) : _bridge = bridge,
        _projectPath = projectPath,
        _sessionId = sessionId,
+       _onStatusRefreshRequested = onStatusRefreshRequested,
        super(
          _initialState(
            initialDiff,
@@ -121,19 +124,27 @@ class GitViewCubit extends Cubit<GitViewState> {
 
   /// Re-request `git diff` from Bridge (e.g. for manual refresh).
   void refresh() {
-    refreshDiffOnly();
+    refreshDiffOnly(requestStatus: true);
     // Also fetch + update remote status on refresh
     _fetchAndUpdateStatus();
   }
 
   /// Re-request `git diff` from Bridge without fetching remote status.
-  void refreshDiffOnly() {
+  void refreshDiffOnly({bool requestStatus = false}) {
     final projectPath = _projectPath;
     if (projectPath == null) return;
     emit(state.copyWith(loading: true, error: null));
     _bridge.send(
       ClientMessage.getDiff(projectPath, staged: _stagedParamForMode),
     );
+    if (requestStatus) {
+      _onStatusRefreshRequested?.call();
+    }
+  }
+
+  /// Refresh after an external agent turn changed files.
+  void refreshAfterExternalChange() {
+    refreshDiffOnly(requestStatus: true);
   }
 
   bool get _stagedParamForMode => state.viewMode == GitViewMode.staged;
@@ -463,8 +474,9 @@ class GitViewCubit extends Cubit<GitViewState> {
       if (_pendingSwitchToStaged) {
         _pendingSwitchToStaged = false;
         switchMode(GitViewMode.staged);
+        _onStatusRefreshRequested?.call();
       } else {
-        refreshDiffOnly();
+        refreshDiffOnly(requestStatus: true);
       }
     } else {
       _pendingSwitchToStaged = false;
@@ -475,7 +487,7 @@ class GitViewCubit extends Cubit<GitViewState> {
   void _onRevertResult(GitRevertFileResultMessage result) {
     if (result.success) {
       emit(state.copyWith(staging: false));
-      refreshDiffOnly();
+      refreshDiffOnly(requestStatus: true);
     } else {
       emit(state.copyWith(staging: false, error: result.error));
     }
@@ -484,7 +496,7 @@ class GitViewCubit extends Cubit<GitViewState> {
   void _onRevertHunksResult(GitRevertHunksResultMessage result) {
     if (result.success) {
       emit(state.copyWith(staging: false));
-      refreshDiffOnly();
+      refreshDiffOnly(requestStatus: true);
     } else {
       emit(state.copyWith(staging: false, error: result.error));
     }
@@ -496,8 +508,9 @@ class GitViewCubit extends Cubit<GitViewState> {
       if (_pendingSwitchToUnstaged) {
         _pendingSwitchToUnstaged = false;
         switchMode(GitViewMode.unstaged);
+        _onStatusRefreshRequested?.call();
       } else {
-        refreshDiffOnly();
+        refreshDiffOnly(requestStatus: true);
       }
     } else {
       _pendingSwitchToUnstaged = false;
@@ -508,7 +521,7 @@ class GitViewCubit extends Cubit<GitViewState> {
   void _onUnstageHunksResult(GitUnstageHunksResultMessage result) {
     if (result.success) {
       emit(state.copyWith(staging: false));
-      refreshDiffOnly();
+      refreshDiffOnly(requestStatus: true);
     } else {
       emit(state.copyWith(staging: false, error: result.error));
     }

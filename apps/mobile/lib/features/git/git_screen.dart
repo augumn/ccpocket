@@ -15,6 +15,7 @@ import '../session_list/workspace_shell_screen.dart';
 import '../settings/state/settings_cubit.dart';
 import 'state/commit_cubit.dart';
 import 'state/git_view_cubit.dart';
+import 'state/git_view_cache_service.dart';
 import 'state/git_view_state.dart';
 import 'widgets/commit_bottom_sheet.dart';
 import 'widgets/diff_content_list.dart';
@@ -69,6 +70,9 @@ class GitScreen extends StatefulWidget {
 class _GitScreenState extends State<GitScreen> {
   late final AutoScrollController _scrollController;
   late final ValueNotifier<int?> _scrollToFileIndex;
+  GitViewCubit? _cachedCubit;
+  String? _cachedCubitKey;
+  bool _didScheduleCachedRefresh = false;
 
   @override
   void initState() {
@@ -102,18 +106,33 @@ class _GitScreenState extends State<GitScreen> {
   Widget build(BuildContext context) {
     final bridge = context.read<BridgeService>();
     final isProjectMode = widget.projectPath != null;
+    final cachedLookup = _resolveCachedCubit(context);
+    final gitViewCubit = cachedLookup?.cubit;
+
+    if (cachedLookup != null &&
+        !cachedLookup.created &&
+        !_didScheduleCachedRefresh) {
+      _didScheduleCachedRefresh = true;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        gitViewCubit?.refresh();
+      });
+    }
 
     return MultiBlocProvider(
       providers: [
-        BlocProvider(
-          create: (_) => GitViewCubit(
-            bridge: bridge,
-            initialDiff: widget.initialDiff,
-            projectPath: widget.projectPath,
-            worktreePath: widget.worktreePath,
-            sessionId: widget.sessionId,
+        if (gitViewCubit != null)
+          BlocProvider<GitViewCubit>.value(value: gitViewCubit)
+        else
+          BlocProvider(
+            create: (_) => GitViewCubit(
+              bridge: bridge,
+              initialDiff: widget.initialDiff,
+              projectPath: widget.projectPath,
+              worktreePath: widget.worktreePath,
+              sessionId: widget.sessionId,
+            ),
           ),
-        ),
         if (isProjectMode)
           BlocProvider(
             create: (_) => CommitCubit(
@@ -133,6 +152,36 @@ class _GitScreenState extends State<GitScreen> {
         onRequestChange: widget.onRequestChange,
       ),
     );
+  }
+
+  GitViewCacheLookup? _resolveCachedCubit(BuildContext context) {
+    final sessionId = widget.sessionId;
+    final projectPath = widget.projectPath;
+    if (widget.initialDiff != null ||
+        sessionId == null ||
+        projectPath == null) {
+      return null;
+    }
+
+    final key = '$sessionId\n$projectPath\n${widget.worktreePath ?? ''}';
+    if (_cachedCubit != null && _cachedCubitKey == key) {
+      return GitViewCacheLookup(cubit: _cachedCubit!, created: false);
+    }
+
+    GitViewCacheLookup lookup;
+    try {
+      lookup = context.read<GitViewCacheService>().getOrCreate(
+        sessionId: sessionId,
+        projectPath: projectPath,
+        worktreePath: widget.worktreePath,
+      );
+    } catch (_) {
+      return null;
+    }
+    _cachedCubit = lookup.cubit;
+    _cachedCubitKey = key;
+    _didScheduleCachedRefresh = lookup.created;
+    return lookup;
   }
 }
 

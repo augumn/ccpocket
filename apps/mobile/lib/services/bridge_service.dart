@@ -87,6 +87,8 @@ class BridgeService implements BridgeServiceBase {
       StreamController<GitFetchResultMessage>.broadcast();
   final _gitPullResultController =
       StreamController<GitPullResultMessage>.broadcast();
+  final _gitStatusResultController =
+      StreamController<GitStatusResultMessage>.broadcast();
   final _gitRemoteStatusResultController =
       StreamController<GitRemoteStatusResultMessage>.broadcast();
   BridgeConnectionState _connectionState = BridgeConnectionState.disconnected;
@@ -202,6 +204,8 @@ class BridgeService implements BridgeServiceBase {
       _gitFetchResultController.stream;
   Stream<GitPullResultMessage> get gitPullResults =>
       _gitPullResultController.stream;
+  Stream<GitStatusResultMessage> get gitStatusResults =>
+      _gitStatusResultController.stream;
   Stream<GitRemoteStatusResultMessage> get gitRemoteStatusResults =>
       _gitRemoteStatusResultController.stream;
   BridgeConnectionState get currentBridgeConnectionState => _connectionState;
@@ -458,6 +462,8 @@ class BridgeService implements BridgeServiceBase {
                 _gitFetchResultController.add(msg);
               case GitPullResultMessage():
                 _gitPullResultController.add(msg);
+              case GitStatusResultMessage():
+                _gitStatusResultController.add(msg);
               case GitRemoteStatusResultMessage():
                 _gitRemoteStatusResultController.add(msg);
               case ArchiveResultMessage(:final success):
@@ -2005,6 +2011,7 @@ class BridgeService implements BridgeServiceBase {
     _gitRevertHunksResultController.close();
     _gitFetchResultController.close();
     _gitPullResultController.close();
+    _gitStatusResultController.close();
     _gitRemoteStatusResultController.close();
     clearDiffImageCache();
   }

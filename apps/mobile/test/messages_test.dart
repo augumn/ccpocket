@@ -58,6 +58,7 @@ void main() {
         'conversation_queue',
         'history_delta',
         'history_snapshot',
+        'git_status_result',
         'prompt_history_status',
       ]);
     });
@@ -766,6 +767,35 @@ void main() {
       final json = jsonDecode(msg.toJson()) as Map<String, dynamic>;
       expect(json['type'], 'get_diff');
       expect(json.containsKey('staged'), isFalse);
+    });
+
+    test('gitStatus with sessionId', () {
+      final msg = ClientMessage.gitStatus('/p', sessionId: 's1');
+      final json = jsonDecode(msg.toJson()) as Map<String, dynamic>;
+      expect(json['type'], 'git_status');
+      expect(json['projectPath'], '/p');
+      expect(json['sessionId'], 's1');
+    });
+
+    test('parses gitStatusResult', () {
+      final msg = ServerMessage.fromJson({
+        'type': 'git_status_result',
+        'sessionId': 's1',
+        'projectPath': '/p',
+        'hasUncommittedChanges': true,
+        'stagedCount': 1,
+        'unstagedCount': 2,
+        'untrackedCount': 3,
+      });
+
+      expect(msg, isA<GitStatusResultMessage>());
+      final status = msg as GitStatusResultMessage;
+      expect(status.sessionId, 's1');
+      expect(status.projectPath, '/p');
+      expect(status.hasUncommittedChanges, isTrue);
+      expect(status.stagedCount, 1);
+      expect(status.unstagedCount, 2);
+      expect(status.untrackedCount, 3);
     });
   });
 }

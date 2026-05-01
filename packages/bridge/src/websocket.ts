@@ -62,6 +62,7 @@ import {
   gitFetch,
   gitPull,
   gitRemoteStatus,
+  gitStatus,
 } from "./git-operations.js";
 import { generateCommitMessage } from "./git-assist.js";
 import { listWindows, takeScreenshot } from "./screenshot.js";
@@ -3660,6 +3661,46 @@ export class BridgeWebSocketServer {
           this.send(ws, {
             type: "git_pull_result",
             success: false,
+            error: String(err),
+          });
+        }
+        break;
+      }
+
+      case "git_status": {
+        if (!this.isPathAllowed(msg.projectPath)) {
+          this.send(ws, {
+            type: "git_status_result",
+            sessionId: msg.sessionId,
+            projectPath: msg.projectPath,
+            hasUncommittedChanges: false,
+            stagedCount: 0,
+            unstagedCount: 0,
+            untrackedCount: 0,
+            error: `Path not allowed: ${msg.projectPath}`,
+          });
+          break;
+        }
+        try {
+          const result = gitStatus(msg.projectPath);
+          this.send(ws, {
+            type: "git_status_result",
+            sessionId: msg.sessionId,
+            projectPath: msg.projectPath,
+            hasUncommittedChanges: result.hasUncommittedChanges,
+            stagedCount: result.stagedCount,
+            unstagedCount: result.unstagedCount,
+            untrackedCount: result.untrackedCount,
+          });
+        } catch (err) {
+          this.send(ws, {
+            type: "git_status_result",
+            sessionId: msg.sessionId,
+            projectPath: msg.projectPath,
+            hasUncommittedChanges: false,
+            stagedCount: 0,
+            unstagedCount: 0,
+            untrackedCount: 0,
             error: String(err),
           });
         }

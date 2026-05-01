@@ -23,6 +23,7 @@ import {
   checkoutBranch,
   revertFiles,
   revertHunks,
+  gitStatus,
 } from "./git-operations.js";
 
 // ---- Test Helpers ----
@@ -56,6 +57,60 @@ function createBareRemote(): string {
 }
 
 // ---- Phase 1: Staging ----
+
+describe("gitStatus", () => {
+  let repo: string;
+
+  beforeEach(() => {
+    repo = createTempRepo();
+  });
+  afterEach(() => {
+    rmSync(repo, { recursive: true, force: true });
+  });
+
+  it("reports clean repositories without uncommitted changes", () => {
+    expect(gitStatus(repo)).toEqual({
+      hasUncommittedChanges: false,
+      stagedCount: 0,
+      unstagedCount: 0,
+      untrackedCount: 0,
+    });
+  });
+
+  it("counts unstaged tracked changes", () => {
+    writeFileSync(join(repo, "initial.txt"), "changed\n");
+
+    expect(gitStatus(repo)).toEqual({
+      hasUncommittedChanges: true,
+      stagedCount: 0,
+      unstagedCount: 1,
+      untrackedCount: 0,
+    });
+  });
+
+  it("counts staged changes", () => {
+    writeFileSync(join(repo, "initial.txt"), "changed\n");
+    execFileSync("git", ["add", "initial.txt"], { cwd: repo });
+
+    expect(gitStatus(repo)).toEqual({
+      hasUncommittedChanges: true,
+      stagedCount: 1,
+      unstagedCount: 0,
+      untrackedCount: 0,
+    });
+  });
+
+  it("counts untracked files separately", () => {
+    writeFileSync(join(repo, "new.txt"), "new\n");
+
+    expect(gitStatus(repo)).toEqual({
+      hasUncommittedChanges: true,
+      stagedCount: 0,
+      unstagedCount: 0,
+      untrackedCount: 1,
+    });
+  });
+});
 
 describe("stageFiles", () => {
   let repo: string;

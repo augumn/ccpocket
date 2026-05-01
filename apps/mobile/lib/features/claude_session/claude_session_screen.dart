@@ -46,6 +46,8 @@ import '../chat_session/widgets/scroll_to_bottom_button.dart';
 import '../chat_session/widgets/session_mode_bar.dart';
 import '../chat_session/widgets/status_line_flexible_space.dart';
 import '../explore/state/explore_state.dart';
+import '../git/state/git_status_cubit.dart';
+import '../git/state/git_view_cache_service.dart';
 import 'widgets/rewind_action_sheet.dart';
 import 'widgets/rewind_message_list_sheet.dart' show UserMessageHistorySheet;
 import 'widgets/usage_summary_bar.dart';
@@ -500,6 +502,8 @@ class _ChatScreenBody extends HookWidget {
 
     // Mutable branch state (refreshed from Bridge)
     final currentBranch = useState(gitBranch);
+    final gitProjectPath = worktreePath ?? projectPath;
+    final showGitBadge = _showGitBadgeOf(context, sessionId, gitProjectPath);
 
     // Custom hooks
     final lifecycleState = useAppLifecycleState();
@@ -605,31 +609,51 @@ class _ChatScreenBody extends HookWidget {
     // --- Initial requests on mount ---
     useEffect(() {
       final bridge = context.read<BridgeService>();
+      final path = gitProjectPath;
       if (projectPath != null && projectPath!.isNotEmpty) {
         bridge.requestFileList(projectPath!);
+      }
+      if (path != null && path.isNotEmpty) {
+        try {
+          context.read<GitStatusCubit>().refresh(
+            sessionId: sessionId,
+            projectPath: path,
+          );
+        } catch (_) {}
       }
       bridge.requestSessionList();
       bridge.refreshBranch(sessionId);
       return null;
-    }, [sessionId, projectPath]);
+    }, [sessionId, projectPath, gitProjectPath]);
 
     useEffect(() {
       if (projectPath == null || projectPath!.isEmpty) return null;
 
       final bridge = context.read<BridgeService>();
+      GitStatusCubit? gitStatusCubit;
+      GitViewCacheService? gitViewCache;
+      try {
+        gitStatusCubit = context.read<GitStatusCubit>();
+        gitViewCache = context.read<GitViewCacheService>();
+      } catch (_) {}
       final sub = bridge.messagesForSession(sessionId).listen((msg) {
         if (msg case ToolResultMessage(
           :final toolName,
         ) when _fileListRefreshToolNames.contains(toolName)) {
           bridge.requestFileList(projectPath!);
-        } else if (msg case ResultMessage(
-          :final fileEdits,
-        ) when (fileEdits ?? 0) > 0) {
-          bridge.requestFileList(projectPath!);
+        } else if (msg case ResultMessage(:final fileEdits)) {
+          if ((fileEdits ?? 0) > 0) {
+            bridge.requestFileList(projectPath!);
+          }
+          gitStatusCubit?.refresh(
+            sessionId: sessionId,
+            projectPath: gitProjectPath!,
+          );
+          gitViewCache?.refreshIfPresent(sessionId);
         }
       });
       return sub.cancel;
-    }, [sessionId, projectPath]);
+    }, [sessionId, projectPath, gitProjectPath]);
 
     // --- Listen for branch updates ---
     useEffect(() {
@@ -856,12 +880,16 @@ class _ChatScreenBody extends HookWidget {
                       if ((projectPath ?? '').isNotEmpty)
                         IconButton(
                           key: const ValueKey('appbar_view_changes'),
-                          icon: Icon(
-                            Icons.difference,
-                            size: 18,
-                            color: Theme.of(
-                              context,
-                            ).colorScheme.onSurfaceVariant,
+                          icon: Badge(
+                            isLabelVisible: showGitBadge,
+                            smallSize: 8,
+                            child: Icon(
+                              Icons.difference,
+                              size: 18,
+                              color: Theme.of(
+                                context,
+                              ).colorScheme.onSurfaceVariant,
+                            ),
                           ),
                           padding: EdgeInsets.zero,
                           constraints: const BoxConstraints(
@@ -1210,6 +1238,22 @@ WorkspacePaneChrome _resolveSessionPaneChrome(
     isLeftPaneVisible: shell?.isLeftPaneVisible ?? false,
     slot: WorkspacePaneSlot.center,
   );
+}
+
+bool _showGitBadgeOf(
+  BuildContext context,
+  String sessionId,
+  String? projectPath,
+) {
+  if (projectPath == null || projectPath.isEmpty) return false;
+  try {
+    return context.select((GitStatusCubit cubit) {
+      final entry = cubit.state.entryFor(sessionId);
+      return entry?.projectPath == projectPath && entry?.showBadge == true;
+    });
+  } catch (_) {
+    return false;
+  }
 }
 
 // ---------------------------------------------------------------------------

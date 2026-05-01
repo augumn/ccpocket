@@ -4,6 +4,8 @@ import 'dart:convert';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:ccpocket/features/git/state/git_view_cubit.dart';
+import 'package:ccpocket/features/git/state/git_status_cubit.dart';
+import 'package:ccpocket/features/git/state/git_view_cache_service.dart';
 import 'package:ccpocket/features/git/state/git_view_state.dart';
 import 'package:ccpocket/models/messages.dart';
 import 'package:ccpocket/services/bridge_service.dart';
@@ -89,6 +91,9 @@ class MockDiffBridgeService extends BridgeService {
       StreamController<GitUnstageHunksResultMessage>.broadcast();
   final _fetchController = StreamController<GitFetchResultMessage>.broadcast();
   final _pullController = StreamController<GitPullResultMessage>.broadcast();
+  final _statusController =
+      StreamController<GitStatusResultMessage>.broadcast();
+  final _stoppedController = StreamController<String>.broadcast();
   final _remoteStatusController =
       StreamController<GitRemoteStatusResultMessage>.broadcast();
   final _branchesController =
@@ -115,6 +120,11 @@ class MockDiffBridgeService extends BridgeService {
   Stream<GitFetchResultMessage> get gitFetchResults => _fetchController.stream;
   @override
   Stream<GitPullResultMessage> get gitPullResults => _pullController.stream;
+  @override
+  Stream<GitStatusResultMessage> get gitStatusResults =>
+      _statusController.stream;
+  @override
+  Stream<String> get stoppedSessions => _stoppedController.stream;
   @override
   Stream<GitRemoteStatusResultMessage> get gitRemoteStatusResults =>
       _remoteStatusController.stream;
@@ -143,6 +153,7 @@ class MockDiffBridgeService extends BridgeService {
   void emitUnstageHunksResult(GitUnstageHunksResultMessage msg) =>
       _unstageHunksController.add(msg);
   void emitFetchResult(GitFetchResultMessage msg) => _fetchController.add(msg);
+  void emitStopped(String sessionId) => _stoppedController.add(sessionId);
   void emitRemoteStatus(GitRemoteStatusResultMessage msg) =>
       _remoteStatusController.add(msg);
   void emitRevertFileResult(GitRevertFileResultMessage msg) =>
@@ -158,6 +169,8 @@ class MockDiffBridgeService extends BridgeService {
     _unstageHunksController.close();
     _fetchController.close();
     _pullController.close();
+    _statusController.close();
+    _stoppedController.close();
     _remoteStatusController.close();
     _branchesController.close();
     _checkoutController.close();
@@ -682,5 +695,77 @@ void main() {
         );
       },
     );
+  });
+
+  group('GitViewCacheService', () {
+    test('returns the same cubit for a session until stopped', () async {
+      final bridge = MockDiffBridgeService();
+      final gitStatusCubit = GitStatusCubit(bridge: bridge);
+      final cache = GitViewCacheService(
+        bridge: bridge,
+        gitStatusCubit: gitStatusCubit,
+      );
+      addTearDown(() async {
+        await cache.dispose();
+        await gitStatusCubit.close();
+        bridge.dispose();
+      });
+
+      final first = cache.getOrCreate(
+        sessionId: 's1',
+        projectPath: '/home/user/project',
+      );
+      final second = cache.getOrCreate(
+        sessionId: 's1',
+        projectPath: '/home/user/project',
+      );
+
+      expect(first.created, isTrue);
+      expect(second.created, isFalse);
+      expect(identical(first.cubit, second.cubit), isTrue);
+
+      bridge.emitStopped('s1');
+      await Future.microtask(() {});
+
+      final third = cache.getOrCreate(
+        sessionId: 's1',
+        projectPath: '/home/user/project',
+      );
+      expect(third.created, isTrue);
+      expect(identical(first.cubit, third.cubit), isFalse);
+    });
+
+    test('refreshIfPresent refreshes cached diff only', () {
+      final bridge = MockDiffBridgeService();
+      final gitStatusCubit = GitStatusCubit(bridge: bridge);
+      final cache = GitViewCacheService(
+        bridge: bridge,
+        gitStatusCubit: gitStatusCubit,
+      );
+      addTearDown(() async {
+        await cache.dispose();
+        await gitStatusCubit.close();
+        bridge.dispose();
+      });
+
+      cache.getOrCreate(sessionId: 's1', projectPath: '/home/user/project');
+      final initialFetchCount = bridge.sentMessages
+          .where((m) => m.type == 'git_fetch')
+          .length;
+      cache.refreshIfPresent('s1');
+
+      expect(
+        bridge.sentMessages.where((m) => m.type == 'get_diff').length,
+        greaterThanOrEqualTo(2),
+      );
+      expect(
+        bridge.sentMessages.where((m) => m.type == 'git_fetch').length,
+        initialFetchCount,
+      );
+      expect(
+        bridge.sentMessages.where((m) => m.type == 'git_status').length,
+        greaterThanOrEqualTo(1),
+      );
+    });
   });
 }

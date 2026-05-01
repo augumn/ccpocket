@@ -30,6 +30,8 @@ import 'package:talker_bloc_logger/talker_bloc_logger.dart';
 import 'core/logger.dart';
 import 'l10n/app_localizations.dart';
 import 'features/session_list/state/session_list_cubit.dart';
+import 'features/git/state/git_status_cubit.dart';
+import 'features/git/state/git_view_cache_service.dart';
 import 'features/settings/state/settings_cubit.dart';
 import 'features/settings/state/settings_state.dart';
 import 'models/messages.dart';
@@ -131,6 +133,11 @@ void main() async {
   }
 
   final bridge = BridgeService();
+  final gitStatusCubit = GitStatusCubit(bridge: bridge);
+  final gitViewCacheService = GitViewCacheService(
+    bridge: bridge,
+    gitStatusCubit: gitStatusCubit,
+  );
   final fcmService = FcmService();
   final draftService = DraftService(prefs);
   final inAppReviewService = InAppReviewService(prefs: prefs);
@@ -160,6 +167,9 @@ void main() async {
       providers: [
         RepositoryProvider.value(value: logger),
         RepositoryProvider<BridgeService>.value(value: bridge),
+        RepositoryProvider<GitViewCacheService>.value(
+          value: gitViewCacheService,
+        ),
         RepositoryProvider<DatabaseService>.value(value: dbService),
         RepositoryProvider<DraftService>.value(value: draftService),
         RepositoryProvider<InAppReviewService>.value(value: inAppReviewService),
@@ -185,6 +195,7 @@ void main() async {
               bridge.connectionStatus,
             ),
           ),
+          BlocProvider<GitStatusCubit>.value(value: gitStatusCubit),
           BlocProvider(
             create: (_) => ActiveSessionsCubit(const [], bridge.sessionList),
           ),
