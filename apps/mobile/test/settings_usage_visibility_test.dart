@@ -856,7 +856,7 @@ void main() {
         500,
         scrollable: find.byType(Scrollable),
       );
-      await tester.pumpAndSettle();
+      await tester.pump();
 
       expect(find.byKey(const ValueKey('spread_appeal_message')), findsNothing);
       expect(find.text(l.spreadAppealMessage), findsNothing);
@@ -910,7 +910,7 @@ void main() {
         500,
         scrollable: find.byType(Scrollable),
       );
-      await tester.pumpAndSettle();
+      await tester.pump();
 
       expect(find.text(l.spreadAppealMessage), findsOneWidget);
       expect(l.spreadAppealMessage, isNot(contains('GitHub')));
@@ -969,7 +969,7 @@ void main() {
         500,
         scrollable: find.byType(Scrollable),
       );
-      await tester.pumpAndSettle();
+      await tester.pump();
 
       expect(find.text(l.spreadAppealMessage), findsOneWidget);
       expect(find.text(l.shareApp), findsOneWidget);

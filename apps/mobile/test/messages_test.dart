@@ -58,6 +58,7 @@ void main() {
         'conversation_queue',
         'history_delta',
         'history_snapshot',
+        'prompt_history_status',
       ]);
     });
 

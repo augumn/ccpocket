@@ -4,6 +4,22 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.84.0] - 2026-05-01
+
+### Added
+- Add Bridge-managed Prompt History with multi-Bridge sync, favorites, deletion, usage counts, and persistent filters.
+- Add Prompt History migration controls for replacing Bridge history from old-format local history.
+- Add sync status details that group registered machine names and endpoints by Bridge identity.
+
+### Changed
+- Require Bridge 1.49.0 for Prompt History sync.
+- Remove Prompt History search and project chips in favor of persistent filter controls.
+- Remove the old app-database backup and restore controls now that Bridge owns Prompt History.
+
+### Fixed
+- Record project paths for newly created prompt history entries.
+- Hide project labels in prompt history rows.
+
 ## [1.83.2] - 2026-05-01
 
 ### Changed
