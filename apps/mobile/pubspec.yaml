@@ -128,6 +128,7 @@ flutter:
     - assets/icon_light_outline.png
     - assets/icon_pro_copper_emerald.png
     - assets/docs/
+    - assets/store/
 
   # To add assets to your application, add an assets section, like this:
   # assets:

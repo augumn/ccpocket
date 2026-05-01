@@ -56,23 +56,57 @@ HERO_ILLUSTRATION="${SCRIPT_DIR}/assets/remote-agent-train-laptop.png"
 
 # Screenshot definitions: key, keyword_en, title_en, keyword_ja, title_ja, keyword_zh, title_zh, keyword_ko, title_ko
 SCREENSHOTS=(
-  "01_session_list|Code Agents, From Your Phone|They run on your computer. You control them anywhere.|コードエージェントをスマホから|PCで実行。どこからでも操作。|用手机操控编程代理|在电脑上运行，随时随地控制|휴대폰에서 코딩 에이전트 제어|PC에서 실행하고 어디서든 조작"
-  "02_approval_list|Multiple sessions|Approve at a glance|複数セッション一覧|まとめて承認対応|多会话一览|一目了然，批量审批|여러 세션을 한눈에|승인을 빠르게 처리"
-  "03_multi_question|Mobile-first UI|Questions, answered instantly|モバイル最適化|承認UIで素早く回答|移动端优化|快速回答审批请求|모바일에 최적화|질문과 승인을 즉시 처리"
-  "04_markdown_input|Write rich prompts|Bullet lists made easy|リッチなプロンプト|箇条書きが簡単|丰富的提示|轻松编写列表|풍부한 프롬프트 작성|목록 입력도 간편하게"
-  "05_image_attach|Attach images|From clipboard or gallery|画像を添付|クリップボードから貼り付け|附加图片|从剪贴板或相册选取|이미지 첨부|클립보드나 갤러리에서"
-  "06_git_diff|Review diffs|See every change at once|差分を確認|変更を一覧表示|审查差异|一览所有代码变更|diff 리뷰|모든 변경을 한 번에 확인"
-  "07_new_session|Just your phone|Open the app, pick a project, go|スマホだけでOK|アプリを開いて、すぐ開発|只需手机|打开应用，选择项目，开始|휴대폰만 있으면 OK|앱을 열고 바로 개발 시작"
-  "08_dark_theme|Dark mode|Easy on the eyes|ダークモード|目に優しいダークテーマ|深色模式|护眼深色主题|다크 모드|눈이 편한 어두운 테마"
+  "01_session_list|Self-hosted agents|Run agents on Mac/Linux. Control from your phone.|セルフホストのエージェント|Mac/Linuxで実行し、スマホから操作|自托管代理|在 Mac/Linux 运行，用手机控制|셀프 호스팅 에이전트|Mac/Linux에서 실행하고 휴대폰으로 제어"
+  "02_recent_sessions|Continue anywhere|Resume Codex App/CLI and Claude Code sessions.|どこでも続きを再開|Codex App/CLI、Claude Codeのセッションを引き継ぎ|随处继续|继续 Codex App/CLI 和 Claude Code 会话|어디서나 이어가기|Codex App/CLI와 Claude Code 세션을 다시 열기"
+  "03_approval_list|Approve across sessions|Handle multiple approvals at a glance.|承認をまとめて処理|複数セッションの承認待ちを一目で確認|跨会话审批|一览处理多个审批|세션별 승인 처리|여러 승인 대기를 한눈에 처리"
+  "04_multi_question|Decisions built for touch|Answer agent questions without a laptop.|タッチで判断|PCを開かずにエージェントの質問へ回答|触控决策|无需打开电脑即可回答问题|터치로 판단|노트북 없이 에이전트 질문에 답변"
+  "05_explorer|Project Explorer|Browse the files behind the conversation.|プロジェクトを閲覧|会話の横でファイル構成を確認|项目 Explorer|查看对话背后的文件|프로젝트 Explorer|대화와 함께 파일 확인"
+  "06_git_actions|Review Git changes|Stage, commit, push, or revert from the app.|Git変更をレビュー|stage、commit、push、revertまで|审查 Git 变更|在应用中 stage、commit、push 或 revert|Git 변경 검토|앱에서 stage, commit, push, revert"
+  "07_images_screenshots|Visual context|Review MCP images and Mac screenshots in chat.|画像も文脈に|MCP画像やMacスクショをチャット内で確認|视觉上下文|在聊天中查看 MCP 图片和 Mac 截图|시각 맥락|채팅에서 MCP 이미지와 Mac 스크린샷 확인"
+  "08_network_resilience|Built for poor connections|Queued prompts resend when you are back online.|通信が不安定でも安心|offline中のpromptを保持し、復帰後に自動再送|弱网环境也可靠|离线提示会排队，恢复连接后自动发送|불안정한 연결도 대비|오프라인 프롬프트를 보관하고 재연결 후 자동 전송"
 )
 
 IPAD_SCREENSHOTS=(
-  "01_workspace_overview|Tablet-optimized UI|Chat, sessions, and Git side by side|タブレット最適化 UI|会話、セッション、差分を並べて見渡せる|平板优化界面|会话、会话列表与差异并排查看|태블릿 최적화 UI|채팅, 세션, Git을 나란히"
-  "02_workspace_explorer|IDE-like workflow|Keep files next to the conversation|IDE ライクな操作感|会話しながらファイルを横で確認できる|IDE 般的操作体验|一边对话一边在旁边查看文件|IDE 같은 워크플로|대화 옆에서 파일 확인"
-  "03_approval_context|Stay in flow|Review requests without leaving your place|流れを止めずに承認|今見ている画面のまま判断できる|不中断当前流程|在当前画面中直接完成审批|흐름을 끊지 않고 승인|현재 화면에서 바로 판단"
-  "04_approval_queue|Review requests together|Handle multiple approvals in one place|承認依頼をまとめて確認|複数セッションの待ちを一気に処理|集中查看审批请求|在一个地方处理多个待审批会话|승인 요청을 모아 보기|여러 세션을 한곳에서 처리"
-  "05_dark_workspace|Built for focus|An immersive layout like your desktop IDE|iPad でも集中して開発|デスクトップ IDE のような没入感|专注开发而生|像桌面 IDE 一样沉浸的布局|집중을 위한 작업 공간|데스크톱 IDE 같은 몰입감"
+  "01_workspace_overview|Workspace on iPad|Chat, sessions, and Git side by side|iPadワークスペース|会話、セッション、Gitを並べて確認|iPad 工作区|聊天、会话和 Git 并排显示|iPad 워크스페이스|채팅, 세션, Git을 나란히"
+  "02_workspace_explorer|Explorer beside chat|Keep project files next to the conversation|チャット横にExplorer|会話しながらファイル確認|聊天旁的 Explorer|对话旁边查看项目文件|채팅 옆 Explorer|대화 옆에서 파일 확인"
+  "03_approval_context|Approve in context|Answer without leaving the workspace|文脈のまま承認|ワークスペースを離れず判断|在上下文中审批|不离开工作区即可回答|맥락 안에서 승인|워크스페이스를 떠나지 않고 답변"
+  "04_approval_queue|Approval queue|Review waiting sessions together|承認キュー|複数セッションの待ちをまとめて処理|审批队列|集中处理等待中的会话|승인 대기열|기다리는 세션을 한곳에서 처리"
+  "05_dark_workspace|Focused dark workspace|A desktop-like layout on iPad and foldables|集中できるダーク画面|iPadやフォルダブルでデスクトップのように|专注深色工作区|在 iPad 和折叠屏上获得桌面式布局|집중을 위한 다크 화면|iPad와 폴더블에서 데스크톱 같은 레이아웃"
 )
+
+phone_key_is_current() {
+  local candidate="$1"
+  local entry key
+  for entry in "${SCREENSHOTS[@]}"; do
+    IFS='|' read -r key _ <<< "$entry"
+    if [ "$candidate" = "$key" ]; then
+      return 0
+    fi
+  done
+  return 1
+}
+
+cleanup_obsolete_phone_outputs() {
+  local lang_dir="$1"
+  local dir="${SCRIPT_DIR}/${lang_dir}"
+  [ -d "$dir" ] || return
+
+  local f name key
+  shopt -s nullglob
+  for f in "$dir"/0[1-8]_*.png; do
+    name="$(basename "$f" .png)"
+    key="${name%_framed}"
+    if ! phone_key_is_current "$key"; then
+      rm -f "$f"
+      echo "Removed obsolete screenshot: $f"
+    fi
+  done
+  shopt -u nullglob
+}
+
+for lang_dir in en-US ja zh-CN ko; do
+  cleanup_obsolete_phone_outputs "$lang_dir"
+done
 
 compose_hero_screenshot() {
   local key="$1" keyword="$2" title="$3" lang_dir="$4" font_bold="$5" font_reg="$6"
@@ -123,13 +157,13 @@ compose_hero_screenshot() {
     -font "$font_bold" -pointsize 74 -fill "$text_fill" \
     caption:"$keyword" /tmp/hero_keyword_$$.png
 
-  magick -background none -size "1120x150" -gravity center \
-    -font "$font_reg" -pointsize 44 -fill "$subtitle_fill" \
+  magick -background none -size "1120x140" -gravity center \
+    -font "$font_reg" -pointsize 42 -fill "$subtitle_fill" \
     caption:"$title" /tmp/hero_title_$$.png
 
   magick -size "${CANVAS_W}x${CANVAS_H}" "$bg_gradient" \
     /tmp/hero_keyword_$$.png -geometry "+70+104" -composite \
-    /tmp/hero_title_$$.png -geometry "+100+230" -composite \
+    /tmp/hero_title_$$.png -geometry "+100+206" -composite \
     /tmp/hero_illustration_$$.png -geometry "+${hero_x}+340" -composite \
     /tmp/framed_ss_$$.png -geometry "+${ss_x}+${ss_y}" -composite \
     -depth 8 $PNG_STRIP "$output"
@@ -146,7 +180,7 @@ compose_screenshot() {
 
   # Dark theme variant: dark background + white text
   local is_dark=false
-  case "$key" in 08_dark_theme|05_dark_workspace) is_dark=true ;; esac
+  case "$key" in 08_dark_theme|08_network_resilience|05_dark_workspace) is_dark=true ;; esac
 
   if [ ! -f "$input" ]; then
     echo "SKIP: $input not found"
@@ -220,16 +254,22 @@ compose_screenshot() {
     subtitle_fill="rgba(17,17,17,0.75)"
   fi
 
+  magick -background none -size "1180x220" -gravity center \
+    -font "$font_bold" -pointsize 88 -fill "$text_fill" \
+    caption:"$keyword" /tmp/keyword_$$.png
+
+  magick -background none -size "1160x130" -gravity center \
+    -font "$font_reg" -pointsize 50 -fill "$subtitle_fill" \
+    caption:"$title" /tmp/title_$$.png
+
   magick -size "${CANVAS_W}x${CANVAS_H}" "$bg_gradient" \
     /tmp/framed_ss_$$.png -geometry "+${ss_x}+${ss_y}" -composite \
-    -gravity North \
-    -font "$font_bold" -pointsize 110 -fill "$text_fill" \
-    -annotate +0+180 "$keyword" \
-    -font "$font_reg" -pointsize 72 -fill "$subtitle_fill" \
-    -annotate +0+320 "$title" \
+    /tmp/keyword_$$.png -geometry "+70+118" -composite \
+    /tmp/title_$$.png -geometry "+80+274" -composite \
     -depth 8 $PNG_STRIP "$output"
 
-  rm -f /tmp/mask_$$.png /tmp/ss_$$.png /tmp/bezel_$$.png /tmp/framed_ss_$$.png
+  rm -f /tmp/mask_$$.png /tmp/ss_$$.png /tmp/bezel_$$.png /tmp/framed_ss_$$.png \
+    /tmp/keyword_$$.png /tmp/title_$$.png
   echo "  -> $output"
 }
 
@@ -365,10 +405,10 @@ compose_ipad_screenshot() {
   magick -size "${IPAD_CANVAS_W}x${IPAD_CANVAS_H}" "$bg_gradient" \
     "$tmp_device" -geometry "+${ss_x}+${ss_y}" -composite \
     -gravity North \
-    -font "$font_bold" -pointsize 112 -fill "$text_fill" \
-    -annotate +0+110 "$keyword" \
-    -font "$font_reg" -pointsize 68 -fill "$subtitle_fill" \
-    -annotate +0+225 "$title" \
+    -font "$font_bold" -pointsize 106 -fill "$text_fill" \
+    -annotate +0+96 "$keyword" \
+    -font "$font_reg" -pointsize 62 -fill "$subtitle_fill" \
+    -annotate +0+260 "$title" \
     -depth 8 $PNG_STRIP "$output"
 
   rm -f /tmp/screen_$$.png /tmp/inner_mask_$$.png /tmp/screen_masked_$$.png /tmp/bezel_$$.png /tmp/device_$$.png /tmp/outline_$$.png
@@ -410,7 +450,7 @@ REPO_ROOT="$(cd "${SCRIPT_DIR}/../../../.." && pwd)"
 README_IMG_DIR="${REPO_ROOT}/docs/images"
 mkdir -p "$README_IMG_DIR"
 
-README_KEYS=("01_session_list" "02_approval_list" "04_markdown_input" "07_new_session")
+README_KEYS=("01_session_list" "02_recent_sessions" "05_explorer" "06_git_actions")
 
 for lang_dir in en-US ja zh-CN ko; do
   README_INPUTS=()
@@ -446,10 +486,17 @@ for lang_dir in en-US ja zh-CN ko; do
   store_lang_dir="${STORE_DIR}/${ios_lang}"
   mkdir -p "$store_lang_dir"
   rm -f "$store_lang_dir"/*.png
-  for f in "${SCRIPT_DIR}/${lang_dir}"/*_framed.png; do
+  for entry in "${SCREENSHOTS[@]}"; do
+    IFS='|' read -r key _ <<< "$entry"
+    f="${SCRIPT_DIR}/${lang_dir}/${key}_framed.png"
     [ -f "$f" ] || continue
-    name=$(basename "$f" | sed 's/_framed//')
-    cp "$f" "$store_lang_dir/$name"
+    cp "$f" "$store_lang_dir/${key}.png"
+  done
+  for entry in "${IPAD_SCREENSHOTS[@]}"; do
+    IFS='|' read -r key _ <<< "$entry"
+    f="${SCRIPT_DIR}/${lang_dir}/ipad_${key}_framed.png"
+    [ -f "$f" ] || continue
+    cp "$f" "$store_lang_dir/ipad_${key}.png"
   done
   echo "  iOS  -> $store_lang_dir/ ($(ls "$store_lang_dir" | wc -l | tr -d ' ') files)"
 
@@ -466,12 +513,11 @@ for lang_dir in en-US ja zh-CN ko; do
   android_ss_dir="${ANDROID_META}/${android_lang}/images/phoneScreenshots"
   mkdir -p "$android_ss_dir"
   rm -f "$android_ss_dir"/*.png
-  for f in "${SCRIPT_DIR}/${lang_dir}"/*_framed.png; do
+  for entry in "${SCREENSHOTS[@]}"; do
+    IFS='|' read -r key _ <<< "$entry"
+    f="${SCRIPT_DIR}/${lang_dir}/${key}_framed.png"
     [ -f "$f" ] || continue
-    name=$(basename "$f" | sed 's/_framed//')
-    # Skip iPad screenshots (Android phone screenshots only)
-    case "$name" in ipad_*) continue ;; esac
-    cp "$f" "$android_ss_dir/$name"
+    cp "$f" "$android_ss_dir/${key}.png"
   done
   echo "  Android -> $android_ss_dir/ ($(ls "$android_ss_dir" | wc -l | tr -d ' ') files)"
 done

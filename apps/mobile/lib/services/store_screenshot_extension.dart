@@ -11,8 +11,11 @@
 /// - `ccpocket.setLocale` — switch app language (en/ja/zh/ko)
 library;
 
+import 'dart:convert';
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:marionette_flutter/marionette_flutter.dart';
 
@@ -64,9 +67,9 @@ void registerStoreScreenshotExtensions() {
     name: 'ccpocket.navigateToStoreScenario',
     description:
         'Navigate to a store screenshot scenario by name. '
-        'Available scenarios: Session List (Recent), Session List, '
-        'Multi-Question Approval, Markdown Input, '
-        'Image Attach, Git Diff, New Session, '
+        'Available scenarios: Self-Hosted Agents, Recent Sessions, '
+        'Approval List, Multi-Question Approval, Project Explorer, '
+        'Git Actions, Images & Screenshots, Network Resilience, '
         'Workspace Overview, Workspace Explorer, '
         'Approval In Context, Approval Queue, Dark Workspace',
     callback: (params) async {
@@ -225,12 +228,27 @@ Route<void> buildStoreScenarioRoute(
   DraftService? draftService,
 ]) {
   switch (scenarioName) {
+    case 'Self-Hosted Agents':
     case 'Session List':
     case 'Session List (Recent)':
       return MaterialPageRoute(
         builder: (_) => _StoreSessionListRoute(
           draftService: draftService,
-          minimalRunning: scenarioName == 'Session List (Recent)',
+          variant: _StoreSessionListVariant.home,
+        ),
+      );
+    case 'Recent Sessions':
+      return MaterialPageRoute(
+        builder: (_) => _StoreSessionListRoute(
+          draftService: draftService,
+          variant: _StoreSessionListVariant.recent,
+        ),
+      );
+    case 'Approval List':
+      return MaterialPageRoute(
+        builder: (_) => _StoreSessionListRoute(
+          draftService: draftService,
+          variant: _StoreSessionListVariant.approvals,
         ),
       );
     case 'New Session':
@@ -249,34 +267,60 @@ Route<void> buildStoreScenarioRoute(
       return MaterialPageRoute(
         builder: (_) => _StoreImageAttachRoute(draftService: draftService),
       );
+    case 'Project Explorer':
+      return MaterialPageRoute(builder: (_) => const _StoreExplorerRoute());
+    case 'Git Actions':
     case 'Git Diff':
       return MaterialPageRoute(builder: (_) => const _StoreGitRoute());
+    case 'Images & Screenshots':
+      return MaterialPageRoute(
+        builder: (_) => _StoreChatRoute(scenarioName: scenarioName),
+      );
+    case 'Network Resilience':
+      return MaterialPageRoute(
+        builder: (_) => const _StoreThemeModeRoute(
+          themeMode: ThemeMode.dark,
+          child: _StoreChatRoute(scenarioName: 'Network Resilience'),
+        ),
+      );
     case 'Workspace Overview':
       return MaterialPageRoute(
-        builder: (_) => _StoreWorkspaceRoute(
-          preset: _workspaceOverviewPreset,
-          draftService: draftService,
+        builder: (_) => _StoreThemeModeRoute(
+          themeMode: ThemeMode.light,
+          child: _StoreWorkspaceRoute(
+            preset: _workspaceOverviewPreset,
+            draftService: draftService,
+          ),
         ),
       );
     case 'Workspace Explorer':
       return MaterialPageRoute(
-        builder: (_) => _StoreWorkspaceRoute(
-          preset: _workspaceExplorerPreset,
-          draftService: draftService,
+        builder: (_) => _StoreThemeModeRoute(
+          themeMode: ThemeMode.light,
+          child: _StoreWorkspaceRoute(
+            preset: _workspaceExplorerPreset,
+            draftService: draftService,
+          ),
         ),
       );
     case 'Approval In Context':
       return MaterialPageRoute(
-        builder: (_) => _StoreWorkspaceRoute(
-          preset: _approvalInContextPreset,
-          draftService: draftService,
+        builder: (_) => _StoreThemeModeRoute(
+          themeMode: ThemeMode.light,
+          child: _StoreWorkspaceRoute(
+            preset: _approvalInContextPreset,
+            draftService: draftService,
+          ),
         ),
       );
     case 'Approval Queue':
       return MaterialPageRoute(
-        builder: (_) => _StoreWorkspaceRoute(
-          preset: _approvalQueuePreset,
-          draftService: draftService,
+        builder: (_) => _StoreThemeModeRoute(
+          themeMode: ThemeMode.light,
+          child: _StoreWorkspaceRoute(
+            preset: _approvalQueuePreset,
+            draftService: draftService,
+          ),
         ),
       );
     case 'Dark Workspace':
@@ -298,6 +342,44 @@ Route<void> buildStoreScenarioRoute(
   }
 }
 
+/// Phone-width Explorer route for store screenshots.
+class _StoreExplorerRoute extends StatefulWidget {
+  const _StoreExplorerRoute();
+
+  @override
+  State<_StoreExplorerRoute> createState() => _StoreExplorerRouteState();
+}
+
+class _StoreExplorerRouteState extends State<_StoreExplorerRoute> {
+  late final MockBridgeService _mockBridge;
+
+  @override
+  void initState() {
+    super.initState();
+    _mockBridge = MockBridgeService();
+  }
+
+  @override
+  void dispose() {
+    _mockBridge.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return RepositoryProvider<BridgeService>.value(
+      value: _mockBridge,
+      child: const ExploreScreen(
+        sessionId: 'store-explorer',
+        projectPath: '/Users/dev/projects/web-store',
+        initialFiles: storeMarkdownInputFileList,
+        initialPath: 'src/components/checkout',
+        recentPeekedFiles: ['src/lib/stripe.ts', 'src/app/checkout/page.tsx'],
+      ),
+    );
+  }
+}
+
 // =============================================================================
 // Route Widgets (duplicated from mock_preview_screen.dart's private wrappers)
 //
@@ -307,13 +389,15 @@ Route<void> buildStoreScenarioRoute(
 // =============================================================================
 
 /// Session List route for store screenshots.
+enum _StoreSessionListVariant { home, recent, approvals }
+
 class _StoreSessionListRoute extends StatefulWidget {
   final DraftService? draftService;
-  final bool minimalRunning;
+  final _StoreSessionListVariant variant;
 
   const _StoreSessionListRoute({
     this.draftService,
-    this.minimalRunning = false,
+    this.variant = _StoreSessionListVariant.home,
   });
 
   @override
@@ -340,9 +424,11 @@ class _StoreSessionListRouteState extends State<_StoreSessionListRoute> {
 
   @override
   Widget build(BuildContext context) {
-    final running = widget.minimalRunning
-        ? storeRunningSessionsMinimal()
-        : storeRunningSessions();
+    final running = switch (widget.variant) {
+      _StoreSessionListVariant.home => storeHomeRunningSessions(),
+      _StoreSessionListVariant.recent => storeRunningSessionsMinimal(),
+      _StoreSessionListVariant.approvals => storeApprovalRunningSessions(),
+    };
     final recent = storeRecentSessions();
     final projectPaths = {
       ...running.map((s) => s.projectPath),
@@ -417,7 +503,7 @@ class _StoreSessionListRouteState extends State<_StoreSessionListRoute> {
   }
 }
 
-/// Chat route for store screenshots (Multi-Question Approval).
+/// Codex chat route for store screenshots (Multi-Question Approval).
 class _StoreChatRoute extends StatefulWidget {
   final String scenarioName;
   const _StoreChatRoute({required this.scenarioName});
@@ -433,11 +519,30 @@ class _StoreChatRouteState extends State<_StoreChatRoute> {
   void initState() {
     super.initState();
     _mockService = MockBridgeService();
-    WidgetsBinding.instance.addPostFrameCallback((_) {
+    final sessionId = _sessionIdForScenario(widget.scenarioName);
+    if (widget.scenarioName == 'Images & Screenshots') {
+      _mockService.mockHttpBaseUrl = '';
+    }
+    if (widget.scenarioName == 'Network Resilience') {
+      _mockService.setDeliveryPendingInput(
+        sessionId,
+        const QueuedInputItem(
+          itemId: 'pending:store-dark-queued',
+          text:
+              'Looks good. Stage the checkout files and draft the commit message.',
+          createdAt: '2026-05-01T02:00:00.000Z',
+          updatedAt: '2026-05-01T02:00:00.000Z',
+        ),
+      );
+    }
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
       final history = switch (widget.scenarioName) {
         'Multi-Question Approval' => storeChatMultiQuestion,
+        'Images & Screenshots' => await _storeChatImageResult(),
+        'Network Resilience' => _storeChatMessageQueue(),
         _ => <ServerMessage>[],
       };
+      if (!mounted) return;
       _mockService.loadHistory(history);
     });
   }
@@ -450,8 +555,7 @@ class _StoreChatRouteState extends State<_StoreChatRoute> {
 
   @override
   Widget build(BuildContext context) {
-    final sessionId =
-        'store-${widget.scenarioName.toLowerCase().replaceAll(' ', '-')}';
+    final sessionId = _sessionIdForScenario(widget.scenarioName);
     return RepositoryProvider<BridgeService>.value(
       value: _mockService,
       child: MultiBlocProvider(
@@ -470,7 +574,7 @@ class _StoreChatRouteState extends State<_StoreChatRoute> {
             create: (_) => FileListCubit(const [], _mockService.fileList),
           ),
         ],
-        child: ClaudeSessionScreen(
+        child: CodexSessionScreen(
           sessionId: sessionId,
           projectPath: '/store/preview',
         ),
@@ -478,6 +582,99 @@ class _StoreChatRouteState extends State<_StoreChatRoute> {
     );
   }
 }
+
+String _sessionIdForScenario(String scenarioName) =>
+    'store-${scenarioName.toLowerCase().replaceAll(' ', '-')}';
+
+Future<String> _storeAssetImageDataUrl(String assetPath) async {
+  final data = await rootBundle.load(assetPath);
+  return 'data:image/png;base64,${base64Encode(data.buffer.asUint8List())}';
+}
+
+Future<List<ServerMessage>> _storeChatImageResult() async {
+  final checkoutImageUrl = await _storeAssetImageDataUrl(
+    'assets/store/checkout_mcp_preview.png',
+  );
+  return [
+    const SystemMessage(
+      subtype: 'init',
+      sessionId: 'store-images-&-screenshots',
+      model: 'gpt-5.5',
+      projectPath: '/Users/dev/projects/web-store',
+    ),
+    const StatusMessage(status: ProcessStatus.running),
+    const UserInputMessage(
+      text:
+          'Compare the MCP screenshot result with the current checkout page and '
+          'point out the layout mismatch.',
+    ),
+    AssistantServerMessage(
+      message: AssistantMessage(
+        id: 'store-image-result-a1',
+        role: 'assistant',
+        content: [
+          const TextContent(
+            text:
+                'I will inspect the latest browser screenshot and compare it '
+                'with the checkout component.',
+          ),
+          const ToolUseContent(
+            id: 'store-image-result-tool',
+            name: 'mcp__browser__screenshot',
+            input: {'window': 'Safari - Checkout Preview'},
+          ),
+        ],
+        model: 'gpt-5.5',
+      ),
+    ),
+    ToolResultMessage(
+      toolUseId: 'store-image-result-tool',
+      toolName: 'mcp__browser__screenshot',
+      content: 'Captured an image from the Mac preview: the checkout page.',
+      images: [
+        ImageRef(
+          id: 'store-checkout-shot',
+          url: checkoutImageUrl,
+          mimeType: 'image/png',
+        ),
+      ],
+    ),
+  ];
+}
+
+List<ServerMessage> _storeChatMessageQueue() => [
+  const StatusMessage(status: ProcessStatus.running),
+  const UserInputMessage(
+    text: 'Review the checkout refactor and prepare the Git diff.',
+  ),
+  AssistantServerMessage(
+    message: AssistantMessage(
+      id: 'store-queue-a1',
+      role: 'assistant',
+      content: [
+        const TextContent(
+          text:
+              'The checkout refactor is complete. I updated the payment form, '
+              'summary state, and tests. The diff is ready for review.',
+        ),
+        const ToolUseContent(
+          id: 'store-queue-diff',
+          name: 'Bash',
+          input: {'command': 'git diff --stat'},
+        ),
+      ],
+      model: 'gpt-5.5',
+    ),
+  ),
+  const ToolResultMessage(
+    toolUseId: 'store-queue-diff',
+    toolName: 'Bash',
+    content:
+        ' src/components/checkout/payment-form.tsx | 64 ++++++++++++++------\n'
+        ' tests/checkout/payment-form.test.tsx   | 42 +++++++++++++\n'
+        ' 2 files changed, 86 insertions(+), 20 deletions(-)',
+  ),
+];
 
 /// Markdown Input route for store screenshots.
 class _StoreMarkdownInputRoute extends StatefulWidget {
@@ -712,7 +909,7 @@ class _StoreGitRouteState extends State<_StoreGitRoute> {
   Widget build(BuildContext context) {
     return RepositoryProvider<BridgeService>.value(
       value: _mockBridge,
-      child: const GitScreen(projectPath: '/mock/shopify-app'),
+      child: const GitScreen(projectPath: '/mock/web-store'),
     );
   }
 }
@@ -745,8 +942,8 @@ class _StoreNewSessionRouteState extends State<_StoreNewSessionRoute> {
     showNewSessionSheet(
       context: context,
       recentProjects: const [
-        (path: '/Users/dev/projects/shopify-app', name: 'shopify-app'),
-        (path: '/Users/dev/projects/rust-cli', name: 'rust-cli'),
+        (path: '/Users/dev/projects/web-store', name: 'web-store'),
+        (path: '/Users/dev/projects/api-server', name: 'api-server'),
         (path: '/Users/dev/projects/my-portfolio', name: 'my-portfolio'),
       ],
       projectHistory: const [],
@@ -868,7 +1065,7 @@ class _StoreWorkspacePreset {
   });
 }
 
-const _storeWorkspaceProjectPath = '/Users/dev/projects/shopify-app';
+const _storeWorkspaceProjectPath = '/Users/dev/projects/web-store';
 const _storeWorkspaceSessionId = 'store-chat-md';
 const _storeWorkspaceApprovalSessionId = 'store-chat-mq';
 
@@ -908,8 +1105,8 @@ const _workspaceExplorerPreset = _StoreWorkspacePreset(
 const _approvalInContextPreset = _StoreWorkspacePreset(
   sessionId: _storeWorkspaceApprovalSessionId,
   projectPath: _storeWorkspaceProjectPath,
-  sessionName: 'Notification Rollout',
-  sessionSummary: 'Decide how foreground notifications should behave',
+  sessionName: 'Checkout Decisions',
+  sessionSummary: 'Decide how Codex should stage and verify the checkout diff',
   centerKind: _StoreWorkspaceCenterKind.approval,
   rightPaneKind: _StoreWorkspacePaneKind.none,
   runningKind: _StoreWorkspaceRunningKind.approvalFocus,
@@ -918,8 +1115,8 @@ const _approvalInContextPreset = _StoreWorkspacePreset(
 const _approvalQueuePreset = _StoreWorkspacePreset(
   sessionId: _storeWorkspaceApprovalSessionId,
   projectPath: _storeWorkspaceProjectPath,
-  sessionName: 'Notification Rollout',
-  sessionSummary: 'Review the foreground notification choices before rollout',
+  sessionName: 'Checkout Decisions',
+  sessionSummary: 'Review Codex decisions before staging the checkout changes',
   centerKind: _StoreWorkspaceCenterKind.approval,
   rightPaneKind: _StoreWorkspacePaneKind.none,
   runningKind: _StoreWorkspaceRunningKind.approvalQueue,
@@ -1007,7 +1204,7 @@ class _StoreWorkspaceRouteState extends State<_StoreWorkspaceRoute> {
     }
     NotificationService.instance.setActiveSession(
       sessionId: widget.preset.sessionId,
-      provider: 'claude',
+      provider: 'codex',
     );
   }
 
@@ -1016,7 +1213,7 @@ class _StoreWorkspaceRouteState extends State<_StoreWorkspaceRoute> {
     widget.draftService?.deleteDraft(widget.preset.sessionId);
     NotificationService.instance.clearActiveSession(
       sessionId: widget.preset.sessionId,
-      provider: 'claude',
+      provider: 'codex',
     );
     _sessionListCubit.close();
     _mockBridge.dispose();
@@ -1080,12 +1277,12 @@ class _StoreWorkspaceRouteState extends State<_StoreWorkspaceRoute> {
 
   Widget _buildCenterPane() {
     return switch (widget.preset.centerKind) {
-      _StoreWorkspaceCenterKind.approval => ClaudeSessionScreen(
+      _StoreWorkspaceCenterKind.approval => CodexSessionScreen(
         sessionId: widget.preset.sessionId,
         projectPath: widget.preset.projectPath,
         hideSessionBackButton: true,
       ),
-      _StoreWorkspaceCenterKind.markdown => ClaudeSessionScreen(
+      _StoreWorkspaceCenterKind.markdown => CodexSessionScreen(
         sessionId: widget.preset.sessionId,
         projectPath: widget.preset.projectPath,
         hideSessionBackButton: true,
@@ -1105,8 +1302,8 @@ class _StoreWorkspaceRouteState extends State<_StoreWorkspaceRoute> {
         sessionId: widget.preset.sessionId,
         projectPath: widget.preset.projectPath,
         initialFiles: storeMarkdownInputFileList,
-        initialPath: 'lib/features/checkout',
-        recentPeekedFiles: const ['lib/services/stripe_service.dart'],
+        initialPath: 'src/components/checkout',
+        recentPeekedFiles: const ['src/lib/stripe.ts'],
         embedded: true,
       ),
     };
@@ -1210,7 +1407,7 @@ List<SessionInfo> _workspaceRunningSessions(_StoreWorkspacePreset preset) {
       return [
         SessionInfo(
           id: preset.sessionId,
-          provider: 'claude',
+          provider: 'codex',
           name: preset.sessionName,
           projectPath: preset.projectPath,
           status: 'running',
@@ -1230,9 +1427,8 @@ List<SessionInfo> _workspaceRunningSessions(_StoreWorkspacePreset preset) {
           id: preset.sessionId,
           name: preset.sessionName,
           projectPath: preset.projectPath,
-          gitBranch: 'feat/notifications',
-          lastMessage:
-              'Waiting for your decisions on the notification rollout.',
+          gitBranch: 'feat/checkout-redesign',
+          lastMessage: 'Waiting for your decisions on the checkout refactor.',
           createdOffset: const Duration(minutes: 9),
           lastActivityOffset: const Duration(seconds: 20),
         ),
@@ -1244,17 +1440,17 @@ List<SessionInfo> _workspaceRunningSessions(_StoreWorkspacePreset preset) {
           id: preset.sessionId,
           name: preset.sessionName,
           projectPath: preset.projectPath,
-          gitBranch: 'feat/notifications',
+          gitBranch: 'feat/checkout-redesign',
           lastMessage:
-              'Waiting for your decisions on foreground behavior, channels, and analytics.',
+              'Waiting for your decisions on migration, checks, and staging.',
           createdOffset: const Duration(minutes: 6),
           lastActivityOffset: const Duration(seconds: 15),
         ),
         SessionInfo(
           id: 'store-queue-2',
           provider: 'codex',
-          name: 'Parser Benchmark',
-          projectPath: '/Users/dev/projects/rust-cli',
+          name: 'API Contract Tests',
+          projectPath: '/Users/dev/projects/api-server',
           status: 'waiting_approval',
           createdAt: DateTime.now()
               .subtract(const Duration(minutes: 14))
@@ -1262,18 +1458,18 @@ List<SessionInfo> _workspaceRunningSessions(_StoreWorkspacePreset preset) {
           lastActivityAt: DateTime.now()
               .subtract(const Duration(seconds: 40))
               .toIso8601String(),
-          gitBranch: 'feat/parser',
-          lastMessage: 'Ready to run the parser benchmark before merging.',
+          gitBranch: 'feat/rate-limits',
+          lastMessage: 'Ready to run API contract tests before merging.',
           pendingPermission: const PermissionRequestMessage(
             toolUseId: 'store-queue-bash-1',
             toolName: 'Bash',
-            input: {'command': 'cargo bench parser'},
+            input: {'command': 'pnpm test -- api-contracts'},
           ),
         ),
         SessionInfo(
           id: 'store-queue-3',
           provider: 'claude',
-          name: 'Dark Mode Plan',
+          name: 'Claude Code Plan',
           projectPath: '/Users/dev/projects/my-portfolio',
           status: 'waiting_approval',
           createdAt: DateTime.now()
@@ -1283,7 +1479,7 @@ List<SessionInfo> _workspaceRunningSessions(_StoreWorkspacePreset preset) {
               .subtract(const Duration(minutes: 2))
               .toIso8601String(),
           gitBranch: 'feat/dark-mode',
-          lastMessage: 'Plan ready for dark mode rollout and QA checklist.',
+          lastMessage: 'Claude Code support appears alongside Codex sessions.',
           pendingPermission: const PermissionRequestMessage(
             toolUseId: 'store-queue-plan-1',
             toolName: 'ExitPlanMode',
@@ -1305,7 +1501,7 @@ SessionInfo _buildWorkspaceApprovalSession({
 }) {
   return SessionInfo(
     id: id,
-    provider: 'claude',
+    provider: 'codex',
     name: name,
     projectPath: projectPath,
     status: 'waiting_approval',

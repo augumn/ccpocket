@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:extended_image/extended_image.dart';
@@ -54,42 +55,48 @@ class _SingleImage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final url = '$httpBaseUrl${image.url}';
+    final dataBytes = _decodeDataImageUrl(url);
     return GestureDetector(
       onTap: () => _openFullScreen(context, url),
       child: ClipRRect(
         borderRadius: BorderRadius.circular(8),
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(maxHeight: 200),
-          child: ExtendedImage.network(
-            url,
-            fit: BoxFit.cover,
-            cache: true,
-            cacheMaxAge: _kCacheMaxAge,
-            loadStateChanged: (state) {
-              switch (state.extendedImageLoadState) {
-                case LoadState.loading:
-                  return const SizedBox(
-                    height: 100,
-                    child: Center(
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    ),
-                  );
-                case LoadState.completed:
-                  return state.completedWidget;
-                case LoadState.failed:
-                  return Container(
-                    height: 100,
-                    decoration: BoxDecoration(
-                      color: Theme.of(context).colorScheme.surfaceContainerHigh,
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: const Center(
-                      child: Icon(Icons.broken_image, size: 32),
-                    ),
-                  );
-              }
-            },
-          ),
+        child: SizedBox(
+          width: double.infinity,
+          height: 180,
+          child: dataBytes != null
+              ? Image.memory(dataBytes, fit: BoxFit.cover)
+              : ExtendedImage.network(
+                  url,
+                  fit: BoxFit.cover,
+                  cache: true,
+                  cacheMaxAge: _kCacheMaxAge,
+                  loadStateChanged: (state) {
+                    switch (state.extendedImageLoadState) {
+                      case LoadState.loading:
+                        return const SizedBox(
+                          height: 100,
+                          child: Center(
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          ),
+                        );
+                      case LoadState.completed:
+                        return state.completedWidget;
+                      case LoadState.failed:
+                        return Container(
+                          height: 100,
+                          decoration: BoxDecoration(
+                            color: Theme.of(
+                              context,
+                            ).colorScheme.surfaceContainerHigh,
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: const Center(
+                            child: Icon(Icons.broken_image, size: 32),
+                          ),
+                        );
+                    }
+                  },
+                ),
         ),
       ),
     );
@@ -110,52 +117,75 @@ class _ImageThumbnail extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final url = '$httpBaseUrl${image.url}';
+    final dataBytes = _decodeDataImageUrl(url);
     return GestureDetector(
       onTap: () => _openFullScreen(context, url),
       child: ClipRRect(
         borderRadius: BorderRadius.circular(8),
-        child: ExtendedImage.network(
-          url,
-          height: height,
-          fit: BoxFit.cover,
-          cache: true,
-          cacheMaxAge: _kCacheMaxAge,
-          loadStateChanged: (state) {
-            switch (state.extendedImageLoadState) {
-              case LoadState.loading:
-                return SizedBox(
-                  width: height * 0.75,
-                  height: height,
-                  child: const Center(
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  ),
-                );
-              case LoadState.completed:
-                return state.completedWidget;
-              case LoadState.failed:
-                return Container(
-                  width: height * 0.75,
-                  height: height,
-                  decoration: BoxDecoration(
-                    color: Theme.of(context).colorScheme.surfaceContainerHigh,
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: const Center(
-                    child: Icon(Icons.broken_image, size: 24),
-                  ),
-                );
-            }
-          },
-        ),
+        child: dataBytes != null
+            ? Image.memory(dataBytes, height: height, fit: BoxFit.cover)
+            : ExtendedImage.network(
+                url,
+                height: height,
+                fit: BoxFit.cover,
+                cache: true,
+                cacheMaxAge: _kCacheMaxAge,
+                loadStateChanged: (state) {
+                  switch (state.extendedImageLoadState) {
+                    case LoadState.loading:
+                      return SizedBox(
+                        width: height * 0.75,
+                        height: height,
+                        child: const Center(
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        ),
+                      );
+                    case LoadState.completed:
+                      return state.completedWidget;
+                    case LoadState.failed:
+                      return Container(
+                        width: height * 0.75,
+                        height: height,
+                        decoration: BoxDecoration(
+                          color: Theme.of(
+                            context,
+                          ).colorScheme.surfaceContainerHigh,
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: const Center(
+                          child: Icon(Icons.broken_image, size: 24),
+                        ),
+                      );
+                  }
+                },
+              ),
       ),
     );
   }
 }
 
 void _openFullScreen(BuildContext context, String url) {
-  Navigator.of(
-    context,
-  ).push(MaterialPageRoute(builder: (_) => FullScreenImageViewer(url: url)));
+  final dataBytes = _decodeDataImageUrl(url);
+  Navigator.of(context).push(
+    MaterialPageRoute(
+      builder: (_) => FullScreenImageViewer(
+        url: dataBytes == null ? url : null,
+        bytes: dataBytes,
+      ),
+    ),
+  );
+}
+
+Uint8List? _decodeDataImageUrl(String url) {
+  if (!url.startsWith('data:image/')) return null;
+  final marker = ';base64,';
+  final markerIndex = url.indexOf(marker);
+  if (markerIndex == -1) return null;
+  try {
+    return base64Decode(url.substring(markerIndex + marker.length));
+  } catch (_) {
+    return null;
+  }
 }
 
 class FullScreenImageViewer extends StatelessWidget {

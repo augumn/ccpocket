@@ -8,6 +8,7 @@ import 'bridge_service.dart';
 class MockBridgeService extends BridgeService {
   final _mockMessageController = StreamController<ServerMessage>.broadcast();
   final List<Timer> _timers = [];
+  String? mockHttpBaseUrl;
 
   /// Original diff text split by file for stateful stage/unstage tracking.
   String? _mockDiff;
@@ -23,7 +24,7 @@ class MockBridgeService extends BridgeService {
   Stream<ServerMessage> get messages => _mockMessageController.stream;
 
   @override
-  String? get httpBaseUrl => null;
+  String? get httpBaseUrl => mockHttpBaseUrl;
 
   @override
   bool get isConnected => true;
