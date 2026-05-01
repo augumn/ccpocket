@@ -4,11 +4,10 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import type { Provider } from "./parser.js";
 import { getStagedDiff } from "./git-operations.js";
+import { CODEX_ASSIST_MODEL } from "./codex-assist.js";
 
 const COMMIT_MESSAGE_PROMPT =
   "Write a single Conventional Commits message in English for the staged changes below. Output only the commit message, with no quotes or explanation.";
-const CODEX_COMMIT_MODEL = "gpt-5.4-mini";
-
 export interface GitAssistOptions {
   provider: Provider;
   projectPath: string;
@@ -61,7 +60,7 @@ function runCodexCommitAssist(
   try {
     execFileSync(
       "codex",
-      ["exec", "-m", CODEX_COMMIT_MODEL, "-o", outputPath, "-"],
+      ["exec", "-m", CODEX_ASSIST_MODEL, "-o", outputPath, "-"],
       {
         cwd,
         encoding: "utf-8",

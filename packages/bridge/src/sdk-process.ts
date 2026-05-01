@@ -222,6 +222,8 @@ export interface StartOptions {
   initialInput?: string;
   /** Enable OS-level sandbox for Claude Code. Details configured via .claude/settings.json. */
   sandboxEnabled?: boolean;
+  /** Generate a session name after the first completed turn. Bridge-only. */
+  autoRename?: boolean;
 }
 
 export interface RewindFilesResult {

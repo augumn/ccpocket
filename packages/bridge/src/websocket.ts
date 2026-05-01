@@ -377,6 +377,7 @@ export class BridgeWebSocketServer {
         }
       },
       this.worktreeStore,
+      () => this.broadcastSessionList(),
     );
 
     this.wss.on("connection", (ws, req) => {
@@ -941,6 +942,7 @@ export class BridgeWebSocketServer {
                     fallbackModel: msg.fallbackModel,
                     forkSession: msg.forkSession,
                     persistSession: msg.persistSession,
+                    autoRename: msg.autoRename,
                     ...(msg.sandboxMode
                       ? { sandboxEnabled: msg.sandboxMode === "on" }
                       : {}),
@@ -954,7 +956,7 @@ export class BridgeWebSocketServer {
               : {
                   sessionId: this.sessionManager.create(
                     projectPath,
-                    undefined,
+                    { autoRename: msg.autoRename },
                     undefined,
                     {
                       useWorktree: msg.useWorktree,

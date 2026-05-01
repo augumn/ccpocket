@@ -1,0 +1,139 @@
+import { execFileSync } from "node:child_process";
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join, resolve } from "node:path";
+import type { ServerMessage } from "./parser.js";
+import { CODEX_ASSIST_MODEL } from "./codex-assist.js";
+
+const AUTO_RENAME_PROMPT = `Write a concise name for this coding-agent session.
+
+Rules:
+- Output only the name. No quotes, JSON, markdown, or explanation.
+- Use the same language as the user's request when natural.
+- Prefer the user's actual goal over implementation details.
+- Use assistant text only to disambiguate the goal or target area.
+- Keep it short: 2-8 English words or about 8-24 Japanese/Chinese/Korean characters.
+- Avoid generic words such as Session, Chat, Task, Discussion.
+- Avoid trailing punctuation.`;
+
+const MAX_TRANSCRIPT_CHARS = 2400;
+const MAX_ASSISTANT_CHARS = 1200;
+const MAX_NAME_CHARS = 60;
+
+export interface AutoRenameTranscript {
+  userText: string;
+  assistantText?: string;
+}
+
+export function buildAutoRenameTranscript(
+  history: readonly ServerMessage[],
+): AutoRenameTranscript | null {
+  const userText = history
+    .filter((msg) => msg.type === "user_input")
+    .map((msg) => msg.text.trim())
+    .find(Boolean);
+  if (!userText) return null;
+
+  const assistantText = history
+    .filter((msg) => msg.type === "assistant")
+    .map((msg) =>
+      msg.message.content
+        .filter((content) => content.type === "text")
+        .map((content) => ("text" in content ? content.text : ""))
+        .join("\n")
+        .trim(),
+    )
+    .find(Boolean);
+
+  return {
+    userText: limitText(userText, MAX_TRANSCRIPT_CHARS),
+    ...(assistantText
+      ? { assistantText: limitText(assistantText, MAX_ASSISTANT_CHARS) }
+      : {}),
+  };
+}
+
+export function buildAutoRenamePrompt(
+  transcript: AutoRenameTranscript,
+): string {
+  const sections = [`USER:\n${transcript.userText}`];
+  if (transcript.assistantText) {
+    sections.push(`ASSISTANT:\n${transcript.assistantText}`);
+  }
+  return `${AUTO_RENAME_PROMPT}\n\nTranscript:\n${sections.join("\n\n")}`;
+}
+
+export function sanitizeAutoRenameName(output: string): string | null {
+  const line = output
+    .split("\n")
+    .map((part) => part.trim())
+    .find(Boolean);
+  if (!line) return null;
+
+  let name = line
+    .replace(/^```(?:\w+)?\s*/, "")
+    .replace(/\s*```$/, "")
+    .trim();
+  name = stripWrapping(name, '"');
+  name = stripWrapping(name, "'");
+  name = stripWrapping(name, "`");
+  name = stripWrapping(name, "「", "」");
+  name = stripWrapping(name, "『", "』");
+  name = name
+    .replace(/^[-*#\s]+/, "")
+    .replace(/[。．.!！?？、,，:：;；]+$/u, "")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  if (!name) return null;
+  if (/^[{[]/.test(name)) return null;
+  if (/^name\s*[:=]/i.test(name)) return null;
+
+  const chars = Array.from(name);
+  if (chars.length > MAX_NAME_CHARS) {
+    name = chars.slice(0, MAX_NAME_CHARS).join("").trim();
+  }
+  return name || null;
+}
+
+export function generateAutoRenameName(
+  projectPath: string,
+  transcript: AutoRenameTranscript,
+): string | null {
+  const outputDir = mkdtempSync(join(tmpdir(), "ccpocket-auto-rename-"));
+  const outputPath = join(outputDir, "session-name.txt");
+
+  try {
+    execFileSync(
+      "codex",
+      ["exec", "-m", CODEX_ASSIST_MODEL, "-o", outputPath, "-"],
+      {
+        cwd: resolve(projectPath),
+        encoding: "utf-8",
+        input: buildAutoRenamePrompt(transcript),
+        maxBuffer: 1024 * 1024,
+      },
+    );
+    return sanitizeAutoRenameName(readFileSync(outputPath, "utf-8"));
+  } finally {
+    rmSync(outputDir, { recursive: true, force: true });
+  }
+}
+
+function limitText(text: string, maxChars: number): string {
+  const normalized = text.replace(/\s+/g, " ").trim();
+  const chars = Array.from(normalized);
+  if (chars.length <= maxChars) return normalized;
+  return `${chars.slice(0, maxChars).join("").trim()}...`;
+}
+
+function stripWrapping(
+  value: string,
+  open: string,
+  close: string = open,
+): string {
+  if (value.startsWith(open) && value.endsWith(close)) {
+    return value.slice(open.length, value.length - close.length).trim();
+  }
+  return value;
+}

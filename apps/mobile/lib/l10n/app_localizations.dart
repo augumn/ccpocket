@@ -2832,6 +2832,18 @@ abstract class AppLocalizations {
   /// **'新規セッションで表示する AI ツールの選択肢と並び順を変更できます。'**
   String get settingsNewSessionTabsDescription;
 
+  /// No description provided for @autoRenameSessions.
+  ///
+  /// In ja, this message translates to:
+  /// **'自動Rename'**
+  String get autoRenameSessions;
+
+  /// No description provided for @autoRenameSessionsSubtitle.
+  ///
+  /// In ja, this message translates to:
+  /// **'最初のエージェント応答後に新規セッションへ自動で名前を付ける'**
+  String get autoRenameSessionsSubtitle;
+
   /// No description provided for @newSessionTabCodex.
   ///
   /// In ja, this message translates to:

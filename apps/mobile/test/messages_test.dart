@@ -146,6 +146,7 @@ void main() {
         networkAccessEnabled: true,
         webSearchMode: 'live',
         additionalWritableRoots: const ['/tmp/shared'],
+        autoRename: true,
       );
 
       final json = jsonDecode(msg.toJson()) as Map<String, dynamic>;
@@ -154,6 +155,7 @@ void main() {
       expect(json['networkAccessEnabled'], true);
       expect(json['webSearchMode'], 'live');
       expect(json['additionalWritableRoots'], ['/tmp/shared']);
+      expect(json['autoRename'], true);
     });
 
     test('ClientMessage.resumeSession serializes codex add-dir roots', () {

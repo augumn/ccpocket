@@ -27,6 +27,10 @@ import type { ImageRef, ImageStore } from "./image-store.js";
 import type { GalleryStore, GalleryImageMeta } from "./gallery-store.js";
 import { createWorktree, worktreeExists } from "./worktree.js";
 import type { WorktreeStore } from "./worktree-store.js";
+import {
+  buildAutoRenameTranscript,
+  generateAutoRenameName,
+} from "./auto-rename.js";
 
 export interface WorktreeOptions {
   useWorktree?: boolean;
@@ -73,6 +77,10 @@ export interface SessionInfo {
   sandboxEnabled?: boolean;
   /** Codex-only pending input waiting for the next turn. */
   codexQueuedInput?: QueuedCodexInput;
+  /** Whether to generate a session name after the first completed turn. */
+  autoRename?: boolean;
+  /** Prevents automatic rename from running more than once. */
+  autoRenameAttempted?: boolean;
 }
 
 export interface HistoryEntry {
@@ -147,6 +155,7 @@ export interface SessionSummary {
 const MAX_HISTORY_PER_SESSION = 100;
 
 export type GalleryImageCallback = (meta: GalleryImageMeta) => void;
+export type SessionUpdatedCallback = (sessionId: string) => void;
 
 function mergeCodexSettings(
   current: SessionInfo["codexSettings"],
@@ -209,6 +218,7 @@ export class SessionManager {
   private galleryStore: GalleryStore | null;
   private onGalleryImage: GalleryImageCallback | null;
   private worktreeStore: WorktreeStore | null;
+  private onSessionUpdated: SessionUpdatedCallback | null;
 
   /** Cache slash commands per project path for early loading on subsequent sessions. */
   private commandCache = new Map<
@@ -230,12 +240,14 @@ export class SessionManager {
     galleryStore?: GalleryStore,
     onGalleryImage?: GalleryImageCallback,
     worktreeStore?: WorktreeStore,
+    onSessionUpdated?: SessionUpdatedCallback,
   ) {
     this.onMessage = onMessage;
     this.imageStore = imageStore ?? null;
     this.galleryStore = galleryStore ?? null;
     this.onGalleryImage = onGalleryImage ?? null;
     this.worktreeStore = worktreeStore ?? null;
+    this.onSessionUpdated = onSessionUpdated ?? null;
   }
 
   create(
@@ -304,6 +316,11 @@ export class SessionManager {
       gitBranch,
       worktreePath: wtPath,
       worktreeBranch: wtBranch,
+      autoRename:
+        options?.autoRename === true &&
+        !options.sessionId &&
+        !options.continueMode &&
+        !codexOptions?.threadId,
       // Pre-populate claudeSessionId for resumed sessions so that get_history
       // can return it immediately (before the SDK sends a system/result event).
       claudeSessionId: options?.sessionId,
@@ -554,6 +571,7 @@ export class SessionManager {
         // conversation file always has them.
         if (msg.type === "result") {
           this.backfillUserUuidsFromDisk(session);
+          this.scheduleAutoRename(session);
         }
       } catch (err) {
         console.error(
@@ -815,6 +833,84 @@ export class SessionManager {
 
     session.historyLowWatermark =
       session.historyEntries[0]?.seq ?? session.historyRevision + 1;
+  }
+
+  private scheduleAutoRename(session: SessionInfo): void {
+    if (!this.shouldAutoRename(session)) return;
+    session.autoRenameAttempted = true;
+    setTimeout(() => {
+      void this.autoRenameSession(session).catch((err) => {
+        console.warn(
+          `[session] Failed to auto-rename session ${session.id}:`,
+          err,
+        );
+      });
+    }, 0);
+  }
+
+  private shouldAutoRename(session: SessionInfo): boolean {
+    if (!session.autoRename || session.autoRenameAttempted || session.name) {
+      return false;
+    }
+    if (this.isInternalAutoRenameSession(session)) return false;
+    return buildAutoRenameTranscript(session.history) !== null;
+  }
+
+  private isInternalAutoRenameSession(session: SessionInfo): boolean {
+    if (session.codexSettings?.model === "codex-auto-review") return true;
+    const firstUser = session.history.find((msg) => msg.type === "user_input");
+    return (
+      firstUser?.type === "user_input" &&
+      firstUser.text.startsWith(
+        "The following is the Codex agent history whose request action",
+      )
+    );
+  }
+
+  private async autoRenameSession(session: SessionInfo): Promise<void> {
+    if (session.name) return;
+    const transcript = buildAutoRenameTranscript(session.history);
+    if (!transcript) return;
+
+    const name = generateAutoRenameName(
+      session.worktreePath ?? session.projectPath,
+      transcript,
+    );
+    if (!name || session.name) return;
+
+    const persisted = await this.persistSessionName(session, name);
+    if (!persisted || session.name) return;
+    session.name = name;
+    this.onSessionUpdated?.(session.id);
+  }
+
+  private async persistSessionName(
+    session: SessionInfo,
+    name: string,
+  ): Promise<boolean> {
+    if (session.provider === "claude" && session.claudeSessionId) {
+      await renameClaudeSession(
+        session.worktreePath ?? session.projectPath,
+        session.claudeSessionId,
+        name,
+      );
+      return true;
+    }
+
+    if (session.provider !== "codex") return false;
+    if (session.process instanceof CodexProcess) {
+      try {
+        await session.process.renameThread(name);
+        return true;
+      } catch (err) {
+        console.warn(`[session] Failed to auto-rename Codex thread:`, err);
+      }
+    }
+    if (session.claudeSessionId) {
+      await renameCodexSession(session.claudeSessionId, name);
+      return true;
+    }
+    return false;
   }
 
   private extractLastMessage(s: SessionInfo): string {
@@ -1267,6 +1363,7 @@ export class SessionManager {
     const session = this.sessions.get(id);
     if (!session) return false;
     session.name = name ?? undefined;
+    session.autoRenameAttempted = true;
     return true;
   }
 

@@ -3370,6 +3370,7 @@ class ClientMessage {
     bool? networkAccessEnabled,
     String? webSearchMode,
     List<String>? additionalWritableRoots,
+    bool? autoRename,
   }) {
     return ClientMessage._(<String, dynamic>{
       'type': 'start',
@@ -3400,6 +3401,7 @@ class ClientMessage {
       'webSearchMode': ?webSearchMode,
       if (additionalWritableRoots != null && additionalWritableRoots.isNotEmpty)
         'additionalWritableRoots': additionalWritableRoots,
+      'autoRename': ?autoRename,
     });
   }
 

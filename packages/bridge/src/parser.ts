@@ -108,6 +108,7 @@ export type ClientMessage =
       useWorktree?: boolean;
       worktreeBranch?: string;
       existingWorktreePath?: string;
+      autoRename?: boolean;
     }
   | {
       type: "input";
@@ -860,6 +861,11 @@ export function parseClientMessage(data: string): ClientMessage | null {
         )
           return null;
         if (msg.planMode !== undefined && typeof msg.planMode !== "boolean")
+          return null;
+        if (
+          msg.autoRename !== undefined &&
+          typeof msg.autoRename !== "boolean"
+        )
           return null;
         if (
           msg.webSearchMode !== undefined &&

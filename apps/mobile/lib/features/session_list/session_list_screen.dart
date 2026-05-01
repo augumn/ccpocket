@@ -613,6 +613,7 @@ class _SessionListScreenState extends State<SessionListScreen>
 
   void _startNewSession(NewSessionParams result) {
     final bridge = context.read<BridgeService>();
+    final settings = context.read<SettingsCubit>().state;
     final isOffline = !bridge.isConnected;
     final useCodexProfile =
         result.provider == Provider.codex &&
@@ -679,6 +680,7 @@ class _SessionListScreenState extends State<SessionListScreen>
         additionalWritableRoots: result.provider == Provider.codex
             ? result.additionalWritableRoots
             : null,
+        autoRename: settings.autoRenameSessions,
       ),
     );
     if (isOffline) {

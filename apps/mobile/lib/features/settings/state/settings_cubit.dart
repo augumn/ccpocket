@@ -49,6 +49,7 @@ class SettingsCubit extends Cubit<SettingsState> {
   static const _keyTerminalApp = 'settings_terminal_app';
   static const _keyNewSessionTabs = 'settings_new_session_tabs';
   static const _keyUsageDisplayMode = 'settings_usage_display_mode';
+  static const _keyAutoRenameSessions = 'autoRenameSessions';
   static const _keyTextScale = 'settings_text_scale';
   static const minTextScale = 0.8;
   static const maxTextScale = 1.0;
@@ -182,6 +183,7 @@ class SettingsCubit extends Cubit<SettingsState> {
     final usageDisplayMode = _usageDisplayModeFromRaw(
       prefs.getString(_keyUsageDisplayMode),
     );
+    final autoRenameSessions = prefs.getBool(_keyAutoRenameSessions) ?? false;
 
     // Load terminal app config
     var terminalApp = TerminalAppConfig.empty;
@@ -222,6 +224,7 @@ class SettingsCubit extends Cubit<SettingsState> {
       terminalApp: terminalApp,
       newSessionTabs: newSessionTabs,
       usageDisplayMode: usageDisplayMode,
+      autoRenameSessions: autoRenameSessions,
     );
   }
 
@@ -346,6 +349,11 @@ class SettingsCubit extends Cubit<SettingsState> {
   void setUsageDisplayMode(UsageDisplayMode mode) {
     _prefs.setString(_keyUsageDisplayMode, mode.name);
     emit(state.copyWith(usageDisplayMode: mode));
+  }
+
+  void setAutoRenameSessions(bool enabled) {
+    _prefs.setBool(_keyAutoRenameSessions, enabled);
+    emit(state.copyWith(autoRenameSessions: enabled));
   }
 
   void toggleUsageDisplayMode() {

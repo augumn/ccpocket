@@ -119,7 +119,7 @@ describe("parseClientMessage", () => {
 
   it("parses start with optional fields", () => {
     const msg = parseClientMessage(
-      '{"type":"start","projectPath":"/p","sessionId":"s1","continue":true,"permissionMode":"acceptEdits","profile":"ccpocket","approvalPolicy":"on-request","approvalsReviewer":"auto_review","additionalWritableRoots":["/tmp/extra"]}',
+      '{"type":"start","projectPath":"/p","sessionId":"s1","continue":true,"permissionMode":"acceptEdits","profile":"ccpocket","approvalPolicy":"on-request","approvalsReviewer":"auto_review","additionalWritableRoots":["/tmp/extra"],"autoRename":true}',
     );
     expect(msg).toEqual({
       type: "start",
@@ -131,6 +131,7 @@ describe("parseClientMessage", () => {
       approvalPolicy: "on-request",
       approvalsReviewer: "auto_review",
       additionalWritableRoots: ["/tmp/extra"],
+      autoRename: true,
     });
   });
 

@@ -41,5 +41,25 @@ void main() {
 
       await cubit.close();
     });
+
+    test('persists auto rename setting', () async {
+      SharedPreferences.setMockInitialValues({});
+      final prefs = await SharedPreferences.getInstance();
+      final cubit = SettingsCubit(prefs);
+
+      expect(cubit.state.autoRenameSessions, isFalse);
+
+      cubit.setAutoRenameSessions(true);
+
+      expect(cubit.state.autoRenameSessions, isTrue);
+      expect(prefs.getBool('autoRenameSessions'), isTrue);
+
+      await cubit.close();
+
+      final restored = SettingsCubit(prefs);
+      expect(restored.state.autoRenameSessions, isTrue);
+
+      await restored.close();
+    });
   });
 }

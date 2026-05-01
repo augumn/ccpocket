@@ -488,6 +488,24 @@ class _SettingsScreenState extends State<SettingsScreen> {
                             .setNewSessionTabs(tabs),
                       ),
                     ),
+                    Divider(
+                      height: 1,
+                      indent: 16,
+                      endIndent: 16,
+                      color: cs.outlineVariant,
+                    ),
+                    SwitchListTile(
+                      secondary: Icon(
+                        Icons.drive_file_rename_outline,
+                        color: cs.primary,
+                      ),
+                      title: Text(l.autoRenameSessions),
+                      subtitle: Text(l.autoRenameSessionsSubtitle),
+                      value: state.autoRenameSessions,
+                      onChanged: (value) => context
+                          .read<SettingsCubit>()
+                          .setAutoRenameSessions(value),
+                    ),
                     if (FeatureFlags.current.isEnabled(
                       AppFeature.terminalAppIntegration,
                     )) ...[

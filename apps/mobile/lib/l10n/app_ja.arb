@@ -661,6 +661,8 @@
   "settingsClaudeSubscriptionUsage": "サブスクリプション利用状況",
   "settingsNewSessionTabs": "新規セッションタブ",
   "settingsNewSessionTabsDescription": "新規セッションで表示する AI ツールの選択肢と並び順を変更できます。",
+  "autoRenameSessions": "自動Rename",
+  "autoRenameSessionsSubtitle": "最初のエージェント応答後に新規セッションへ自動で名前を付ける",
   "newSessionTabCodex": "Codex",
   "newSessionTabClaudeCode": "Claude",
   "usageResetAt": "リセット: {time}",

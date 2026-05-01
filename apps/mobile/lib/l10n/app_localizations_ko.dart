@@ -1487,6 +1487,12 @@ class AppLocalizationsKo extends AppLocalizations {
   String get settingsNewSessionTabsDescription => '새 세션에 표시할 AI 도구와 순서를 선택하세요.';
 
   @override
+  String get autoRenameSessions => '자동 Rename';
+
+  @override
+  String get autoRenameSessionsSubtitle => '첫 에이전트 응답 후 새 세션 이름을 자동으로 지정합니다';
+
+  @override
   String get newSessionTabCodex => 'Codex';
 
   @override
