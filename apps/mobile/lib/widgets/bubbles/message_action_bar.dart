@@ -25,6 +25,7 @@ class MessageActionBar extends StatelessWidget {
   Widget build(BuildContext context) {
     final appColors = Theme.of(context).extension<AppColors>()!;
     final primaryColor = Theme.of(context).colorScheme.primary;
+    final l = AppLocalizations.of(context);
 
     return Padding(
       padding: const EdgeInsets.only(
@@ -71,12 +72,15 @@ class MessageActionBar extends StatelessWidget {
           ),
           if (onFork != null) ...[
             const SizedBox(width: 16),
-            _ActionIcon(
-              key: const ValueKey('fork_button'),
-              icon: Icons.call_split,
-              size: 18,
-              color: appColors.subtleText,
-              onTap: onFork,
+            Tooltip(
+              message: l.forkConversation,
+              child: _ActionIcon(
+                key: const ValueKey('fork_button'),
+                icon: Icons.call_split,
+                size: 18,
+                color: appColors.subtleText,
+                onTap: onFork,
+              ),
             ),
           ],
         ],

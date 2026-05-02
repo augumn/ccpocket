@@ -1,22 +1,24 @@
 import 'package:flutter/material.dart';
 
+import '../../../l10n/app_localizations.dart';
 import '../../../models/messages.dart';
 import '../../../theme/app_theme.dart';
 
 /// Rewind mode for the action sheet.
 enum RewindMode {
-  both('both', 'Restore conversation & code', Icons.restore),
-  conversation(
-    'conversation',
-    'Restore conversation only',
-    Icons.chat_bubble_outline,
-  ),
-  code('code', 'Restore code only', Icons.code);
+  both('both', Icons.restore),
+  conversation('conversation', Icons.chat_bubble_outline),
+  code('code', Icons.code);
 
   final String value;
-  final String label;
   final IconData icon;
-  const RewindMode(this.value, this.label, this.icon);
+  const RewindMode(this.value, this.icon);
+
+  String label(AppLocalizations l) => switch (this) {
+    RewindMode.both => l.rewindModeConversationAndCode,
+    RewindMode.conversation => l.rewindModeConversationOnly,
+    RewindMode.code => l.rewindModeCodeOnly,
+  };
 }
 
 /// Bottom sheet that shows rewind options for a selected user message.
@@ -49,6 +51,7 @@ class RewindActionSheet extends StatelessWidget {
   Widget build(BuildContext context) {
     final appColors = Theme.of(context).extension<AppColors>()!;
     final colorScheme = Theme.of(context).colorScheme;
+    final l = AppLocalizations.of(context);
 
     return SafeArea(
       child: Padding(
@@ -76,7 +79,7 @@ class RewindActionSheet extends StatelessWidget {
                 Icon(Icons.history, size: 20, color: colorScheme.primary),
                 const SizedBox(width: 8),
                 Text(
-                  'Rewind',
+                  l.rewind,
                   style: Theme.of(context).textTheme.titleMedium?.copyWith(
                     fontWeight: FontWeight.w600,
                   ),
@@ -128,6 +131,7 @@ class RewindActionSheet extends StatelessWidget {
               (mode) => _RewindOptionTile(
                 mode: mode,
                 preview: preview,
+                label: mode.label(l),
                 onSelected: () => _showConfirmation(context, mode),
               ),
             ),
@@ -138,21 +142,20 @@ class RewindActionSheet extends StatelessWidget {
   }
 
   void _showConfirmation(BuildContext context, RewindMode mode) {
+    final l = AppLocalizations.of(context);
     showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('Confirm Rewind'),
-        content: Text(
-          'This will ${mode.label.toLowerCase()}. This action cannot be undone.\n\nProceed?',
-        ),
+        title: Text(l.rewindConfirmTitle),
+        content: Text(l.rewindConfirmBody(mode.label(l))),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(ctx).pop(false),
-            child: const Text('Cancel'),
+            child: Text(l.cancel),
           ),
           FilledButton(
             onPressed: () => Navigator.of(ctx).pop(true),
-            child: const Text('Rewind'),
+            child: Text(l.rewind),
           ),
         ],
       ),
@@ -172,6 +175,7 @@ class _RewindPreviewInfo extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
+    final l = AppLocalizations.of(context);
 
     if (!preview.canRewind) {
       return Container(
@@ -187,7 +191,7 @@ class _RewindPreviewInfo extends StatelessWidget {
             const SizedBox(width: 8),
             Expanded(
               child: Text(
-                preview.error ?? 'Cannot rewind files',
+                preview.error ?? l.rewindCannotRewindFiles,
                 style: Theme.of(
                   context,
                 ).textTheme.bodySmall?.copyWith(color: colorScheme.error),
@@ -215,7 +219,7 @@ class _RewindPreviewInfo extends StatelessWidget {
           Icon(Icons.info_outline, size: 16, color: colorScheme.outline),
           const SizedBox(width: 8),
           Text(
-            '$fileCount file${fileCount == 1 ? '' : 's'}',
+            l.fileCount(fileCount),
             style: Theme.of(context).textTheme.bodySmall,
           ),
           if (insertions > 0 || deletions > 0) ...[
@@ -245,11 +249,13 @@ class _RewindPreviewInfo extends StatelessWidget {
 class _RewindOptionTile extends StatelessWidget {
   final RewindMode mode;
   final RewindPreviewMessage? preview;
+  final String label;
   final VoidCallback onSelected;
 
   const _RewindOptionTile({
     required this.mode,
     this.preview,
+    required this.label,
     required this.onSelected,
   });
 
@@ -275,7 +281,7 @@ class _RewindOptionTile extends StatelessWidget {
               : colorScheme.primary,
         ),
         title: Text(
-          mode.label,
+          label,
           style: Theme.of(context).textTheme.bodyMedium?.copyWith(
             color: codeDisabled
                 ? colorScheme.outline.withValues(alpha: 0.5)

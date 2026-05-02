@@ -47,10 +47,10 @@ import '../explore/state/explore_state.dart';
 import '../git/state/git_status_cubit.dart';
 import '../git/state/git_view_cache_service.dart';
 import '../../router/app_router.dart';
-import '../claude_session/widgets/rewind_action_sheet.dart';
 import '../claude_session/widgets/rewind_message_list_sheet.dart'
     show UserMessageHistorySheet;
 import 'state/codex_session_cubit.dart';
+import 'widgets/codex_rewind_dialog.dart';
 
 const _fileListRefreshToolNames = {
   'Edit',
@@ -1204,7 +1204,7 @@ class _CodexChatBody extends HookWidget {
                       projectPath: effectiveProjectPath,
                       onRetryMessage: null,
                       onRewindMessage: (entry) {
-                        _showCodexRewindActionSheet(
+                        _showCodexRewindDialog(
                           context,
                           entry,
                           sessionId: sessionId,
@@ -1580,7 +1580,7 @@ void _showUserMessageHistory(
       onScrollToMessage: (msg) {
         scrollToUserEntry.value = msg;
       },
-      onRewindMessage: (msg) => _showCodexRewindActionSheet(
+      onRewindMessage: (msg) => _showCodexRewindDialog(
         context,
         msg,
         sessionId: sessionId,
@@ -1591,7 +1591,7 @@ void _showUserMessageHistory(
   );
 }
 
-void _showCodexRewindActionSheet(
+void _showCodexRewindDialog(
   BuildContext context,
   UserChatEntry message, {
   required String sessionId,
@@ -1602,22 +1602,20 @@ void _showCodexRewindActionSheet(
 
   if (message.messageUuid == null) return;
 
-  showModalBottomSheet<void>(
+  showDialog<void>(
     context: context,
-    builder: (ctx) {
-      return RewindActionSheet(
-        userMessage: message,
-        availableModes: const [RewindMode.conversation],
-        showPreview: false,
-        onRewind: (mode) {
-          Navigator.of(ctx).pop();
+    builder: (dialogContext) {
+      return CodexRewindDialog(
+        messageText: message.text,
+        onConfirm: () {
+          Navigator.of(dialogContext).pop();
           _restoreRewindMessageToComposer(
             inputController: inputController,
             draftService: draftService,
             sessionId: sessionId,
             text: message.text,
           );
-          cubit.rewind(message.messageUuid!, mode.value);
+          cubit.rewind(message.messageUuid!, 'conversation');
         },
       );
     },
@@ -1629,14 +1627,15 @@ Future<void> _forkCodexFromAssistant(
   AssistantServerMessage message,
 ) async {
   final cubit = context.read<ChatSessionCubit>();
+  final l = AppLocalizations.of(context);
   final targetUuid = _previousUserUuidForAssistant(
     cubit.state.entries,
     message,
   );
   if (targetUuid == null) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Cannot find a user turn to fork from')),
-    );
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text(l.forkTargetNotFound)));
     return;
   }
 
@@ -1644,18 +1643,16 @@ Future<void> _forkCodexFromAssistant(
     context: context,
     builder: (dialogContext) {
       return AlertDialog(
-        title: const Text('Fork conversation?'),
-        content: const Text(
-          'Create a new Codex session from this response. The current session will remain unchanged.',
-        ),
+        title: Text(l.forkConversationTitle),
+        content: Text(l.forkConversationBody),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(dialogContext).pop(false),
-            child: const Text('Cancel'),
+            child: Text(l.cancel),
           ),
           FilledButton(
             onPressed: () => Navigator.of(dialogContext).pop(true),
-            child: const Text('Fork'),
+            child: Text(l.fork),
           ),
         ],
       );
