@@ -333,6 +333,32 @@
   },
 
   "messagePlaceholder": "Claude にメッセージ...",
+  "codexMessagePlaceholder": "Codex にメッセージ...",
+  "queuedInputForReconnect": "再接続待ちキュー",
+  "queuedInputPendingDelivery": "送信確認中",
+  "queuedInputForNextTurn": "次のターンに送信予定",
+  "queuedInputImageCount": "{count, plural, other{画像{count}枚}}",
+  "@queuedInputImageCount": {
+    "placeholders": {
+      "count": { "type": "int" }
+    }
+  },
+  "tooltipSteerQueuedMessage": "キュー中のメッセージを指示として送信",
+  "tooltipMoveQueuedMessageToInput": "キュー中のメッセージを入力欄へ移動",
+  "tooltipCancelQueuedMessage": "キュー中のメッセージをキャンセル",
+  "reconnecting": "再接続中...",
+  "reconnectingQueuedMessages": "再接続中... キュー内のメッセージは自動送信されます",
+  "disconnectedMessagesQueued": "切断中 - メッセージは再接続待ちキューに入れられます",
+  "sessionQueuedForReconnect": "セッションを再接続待ちキューに追加しました",
+  "resumeAlreadyQueued": "再開はすでにキューに入っています",
+  "resumeQueuedForReconnect": "再開を再接続待ちキューに追加しました",
+  "pendingActionWillCreateOnReconnect": "Bridge 再接続後に作成します",
+  "pendingActionWillResumeOnReconnect": "Bridge 再接続後に再開します",
+  "pendingActionStatus": "待機中",
+  "tooltipCancelPendingAction": "待機中の操作をキャンセル",
+  "queuedLocally": "ローカルでキュー中",
+  "offlinePendingNewSessionTitle": "新規セッション待機中",
+  "offlinePendingResumeTitle": "再開待機中",
   "diffLines": "{count} 行の diff",
   "@diffLines": {
     "placeholders": {

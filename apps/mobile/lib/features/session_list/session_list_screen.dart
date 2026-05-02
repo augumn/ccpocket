@@ -702,7 +702,9 @@ class _SessionListScreenState extends State<SessionListScreen>
     );
     if (isOffline) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Session queued for reconnect')),
+        SnackBar(
+          content: Text(AppLocalizations.of(context).sessionQueuedForReconnect),
+        ),
       );
       return;
     }
@@ -1237,9 +1239,11 @@ class _SessionListScreenState extends State<SessionListScreen>
   void _resumeSession(RecentSession session) async {
     final bridge = context.read<BridgeService>();
     if (_isResumePending(bridge, session)) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('Resume is already queued')));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(AppLocalizations.of(context).resumeAlreadyQueued),
+        ),
+      );
       return;
     }
     final resumeProjectPath = session.resumeCwd ?? session.projectPath;
@@ -1364,7 +1368,9 @@ class _SessionListScreenState extends State<SessionListScreen>
     );
     if (!bridge.isConnected) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Resume queued for reconnect')),
+        SnackBar(
+          content: Text(AppLocalizations.of(context).resumeQueuedForReconnect),
+        ),
       );
     }
 
@@ -1407,9 +1413,11 @@ class _SessionListScreenState extends State<SessionListScreen>
   ) {
     final bridge = context.read<BridgeService>();
     if (_isResumePending(bridge, session)) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('Resume is already queued')));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(AppLocalizations.of(context).resumeAlreadyQueued),
+        ),
+      );
       return;
     }
     final resumeProjectPath = session.resumeCwd ?? session.projectPath;
@@ -1468,7 +1476,9 @@ class _SessionListScreenState extends State<SessionListScreen>
     );
     if (!bridge.isConnected) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Resume queued for reconnect')),
+        SnackBar(
+          content: Text(AppLocalizations.of(context).resumeQueuedForReconnect),
+        ),
       );
     }
 

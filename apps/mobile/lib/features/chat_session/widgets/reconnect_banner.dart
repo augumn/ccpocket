@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../../l10n/app_localizations.dart';
 import '../../../models/messages.dart';
 
 class ReconnectBanner extends StatelessWidget {
@@ -10,6 +11,7 @@ class ReconnectBanner extends StatelessWidget {
   Widget build(BuildContext context) {
     final isReconnecting = bridgeState == BridgeConnectionState.reconnecting;
     final errorColor = Theme.of(context).colorScheme.error;
+    final l = AppLocalizations.of(context);
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
@@ -28,8 +30,8 @@ class ReconnectBanner extends StatelessWidget {
           Expanded(
             child: Text(
               isReconnecting
-                  ? 'Reconnecting... queued messages will be sent automatically'
-                  : 'Disconnected - messages can be queued for reconnect',
+                  ? l.reconnectingQueuedMessages
+                  : l.disconnectedMessagesQueued,
               style: TextStyle(
                 fontSize: 13,
                 fontWeight: FontWeight.w500,

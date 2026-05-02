@@ -761,6 +761,76 @@ class AppLocalizationsJa extends AppLocalizations {
   String get messagePlaceholder => 'Claude にメッセージ...';
 
   @override
+  String get codexMessagePlaceholder => 'Codex にメッセージ...';
+
+  @override
+  String get queuedInputForReconnect => '再接続待ちキュー';
+
+  @override
+  String get queuedInputPendingDelivery => '送信確認中';
+
+  @override
+  String get queuedInputForNextTurn => '次のターンに送信予定';
+
+  @override
+  String queuedInputImageCount(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '画像$count枚',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get tooltipSteerQueuedMessage => 'キュー中のメッセージを指示として送信';
+
+  @override
+  String get tooltipMoveQueuedMessageToInput => 'キュー中のメッセージを入力欄へ移動';
+
+  @override
+  String get tooltipCancelQueuedMessage => 'キュー中のメッセージをキャンセル';
+
+  @override
+  String get reconnecting => '再接続中...';
+
+  @override
+  String get reconnectingQueuedMessages => '再接続中... キュー内のメッセージは自動送信されます';
+
+  @override
+  String get disconnectedMessagesQueued => '切断中 - メッセージは再接続待ちキューに入れられます';
+
+  @override
+  String get sessionQueuedForReconnect => 'セッションを再接続待ちキューに追加しました';
+
+  @override
+  String get resumeAlreadyQueued => '再開はすでにキューに入っています';
+
+  @override
+  String get resumeQueuedForReconnect => '再開を再接続待ちキューに追加しました';
+
+  @override
+  String get pendingActionWillCreateOnReconnect => 'Bridge 再接続後に作成します';
+
+  @override
+  String get pendingActionWillResumeOnReconnect => 'Bridge 再接続後に再開します';
+
+  @override
+  String get pendingActionStatus => '待機中';
+
+  @override
+  String get tooltipCancelPendingAction => '待機中の操作をキャンセル';
+
+  @override
+  String get queuedLocally => 'ローカルでキュー中';
+
+  @override
+  String get offlinePendingNewSessionTitle => '新規セッション待機中';
+
+  @override
+  String get offlinePendingResumeTitle => '再開待機中';
+
+  @override
   String diffLines(int count) {
     return '$count 行の diff';
   }

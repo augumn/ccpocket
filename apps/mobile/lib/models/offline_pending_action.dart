@@ -25,9 +25,4 @@ class OfflinePendingAction {
     final parts = normalized.split('/').where((part) => part.isNotEmpty);
     return parts.isEmpty ? normalized : parts.last;
   }
-
-  String get title => switch (kind) {
-    OfflinePendingActionKind.start => 'New session pending',
-    OfflinePendingActionKind.resume => 'Resume pending',
-  };
 }

@@ -747,14 +747,17 @@ class OfflinePendingSessionCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
     final appColors = Theme.of(context).extension<AppColors>()!;
+    final l = AppLocalizations.of(context);
     final provider = providerFromRaw(action.provider);
     final providerStyle = providerStyleFor(context, provider);
     final statusColor = colorScheme.tertiary;
     final subtitle = switch (action.kind) {
-      OfflinePendingActionKind.start =>
-        'Will create when the bridge reconnects',
-      OfflinePendingActionKind.resume =>
-        'Will resume when the bridge reconnects',
+      OfflinePendingActionKind.start => l.pendingActionWillCreateOnReconnect,
+      OfflinePendingActionKind.resume => l.pendingActionWillResumeOnReconnect,
+    };
+    final title = switch (action.kind) {
+      OfflinePendingActionKind.start => l.offlinePendingNewSessionTitle,
+      OfflinePendingActionKind.resume => l.offlinePendingResumeTitle,
     };
 
     return Card(
@@ -785,7 +788,7 @@ class OfflinePendingSessionCard extends StatelessWidget {
                 ),
                 const SizedBox(width: 8),
                 Text(
-                  'Pending',
+                  l.pendingActionStatus,
                   style: TextStyle(
                     fontSize: 11,
                     fontWeight: FontWeight.w700,
@@ -808,7 +811,7 @@ class OfflinePendingSessionCard extends StatelessWidget {
                   IconButton(
                     key: const ValueKey('pending_session_cancel_button'),
                     onPressed: onCancel,
-                    tooltip: 'Cancel pending action',
+                    tooltip: l.tooltipCancelPendingAction,
                     icon: const Icon(Icons.close),
                     iconSize: 18,
                     visualDensity: VisualDensity.compact,
@@ -855,7 +858,7 @@ class OfflinePendingSessionCard extends StatelessWidget {
                 ),
                 const SizedBox(height: 6),
                 Text(
-                  action.title,
+                  title,
                   style: const TextStyle(
                     fontSize: 13,
                     fontWeight: FontWeight.w600,
@@ -874,7 +877,7 @@ class OfflinePendingSessionCard extends StatelessWidget {
                     const SizedBox(width: 4),
                     Expanded(
                       child: Text(
-                        'Queued locally',
+                        l.queuedLocally,
                         style: TextStyle(
                           fontSize: 11,
                           color: appColors.subtleText,

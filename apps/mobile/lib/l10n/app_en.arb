@@ -305,6 +305,34 @@
   },
 
   "messagePlaceholder": "Message Claude...",
+  "codexMessagePlaceholder": "Message Codex...",
+  "queuedInputForReconnect": "Queued for reconnect",
+  "queuedInputPendingDelivery": "Pending delivery",
+  "queuedInputForNextTurn": "Queued for next turn",
+  "queuedInputImageCount": "{count, plural, =1{{count} image} other{{count} images}}",
+  "@queuedInputImageCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "tooltipSteerQueuedMessage": "Steer queued message",
+  "tooltipMoveQueuedMessageToInput": "Move queued message to input",
+  "tooltipCancelQueuedMessage": "Cancel queued message",
+  "reconnecting": "Reconnecting...",
+  "reconnectingQueuedMessages": "Reconnecting... queued messages will be sent automatically",
+  "disconnectedMessagesQueued": "Disconnected - messages can be queued for reconnect",
+  "sessionQueuedForReconnect": "Session queued for reconnect",
+  "resumeAlreadyQueued": "Resume is already queued",
+  "resumeQueuedForReconnect": "Resume queued for reconnect",
+  "pendingActionWillCreateOnReconnect": "Will create when the bridge reconnects",
+  "pendingActionWillResumeOnReconnect": "Will resume when the bridge reconnects",
+  "pendingActionStatus": "Pending",
+  "tooltipCancelPendingAction": "Cancel pending action",
+  "queuedLocally": "Queued locally",
+  "offlinePendingNewSessionTitle": "New session pending",
+  "offlinePendingResumeTitle": "Resume pending",
   "diffLines": "{count} diff lines",
   "changedLines": "{count, plural, =1{{count} changed line} other{{count} changed lines}}",
   "@changedLines": {

@@ -530,6 +530,7 @@ class _CodexChatBody extends HookWidget {
   @override
   Widget build(BuildContext context) {
     final appColors = Theme.of(context).extension<AppColors>()!;
+    final l = AppLocalizations.of(context);
     final shell = WorkspaceShellScreen.maybeOf(context);
     final presentationListenable = shell?.presentationListenable;
     // Mutable branch state (refreshed from Bridge)
@@ -1226,7 +1227,7 @@ class _CodexChatBody extends HookWidget {
                     status: status,
                     onScrollToBottom: scroll.scrollToBottom,
                     inputController: chatInputController,
-                    hintText: 'Message Codex...',
+                    hintText: l.codexMessagePlaceholder,
                     inputBlocked: queuedInput != null,
                     initialDiffSelection: diffSelectionFromNav.value,
                     onDiffSelectionConsumed: () {},
@@ -1575,12 +1576,15 @@ class CodexQueuedInputPanel extends StatelessWidget {
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
     final textTheme = Theme.of(context).textTheme;
-    final imageLabel = item.imageCount > 0 ? ' · ${item.imageCount} image' : '';
+    final l = AppLocalizations.of(context);
+    final imageLabel = item.imageCount > 0
+        ? ' · ${l.queuedInputImageCount(item.imageCount)}'
+        : '';
     final title = isOfflinePending
-        ? 'Queued for reconnect$imageLabel'
+        ? '${l.queuedInputForReconnect}$imageLabel'
         : isDeliveryPending
-        ? 'Pending delivery$imageLabel'
-        : 'Queued for next turn$imageLabel';
+        ? '${l.queuedInputPendingDelivery}$imageLabel'
+        : '${l.queuedInputForNextTurn}$imageLabel';
 
     return Material(
       key: const ValueKey('codex_queue_panel'),
@@ -1625,19 +1629,19 @@ class CodexQueuedInputPanel extends StatelessWidget {
               if (!isDeliveryPending)
                 IconButton(
                   key: const ValueKey('codex_queue_steer_button'),
-                  tooltip: 'Steer queued message',
+                  tooltip: l.tooltipSteerQueuedMessage,
                   icon: const Icon(Icons.subdirectory_arrow_left, size: 20),
                   onPressed: onSteer,
                 ),
               IconButton(
                 key: const ValueKey('codex_queue_edit_button'),
-                tooltip: 'Move queued message to input',
+                tooltip: l.tooltipMoveQueuedMessageToInput,
                 icon: const Icon(Icons.edit_outlined, size: 20),
                 onPressed: onEdit,
               ),
               IconButton(
                 key: const ValueKey('codex_queue_cancel_button'),
-                tooltip: 'Cancel queued message',
+                tooltip: l.tooltipCancelQueuedMessage,
                 icon: const Icon(Icons.close, size: 20),
                 onPressed: onCancel,
               ),

@@ -751,6 +751,76 @@ class AppLocalizationsZh extends AppLocalizations {
   String get messagePlaceholder => '给 Claude 发消息...';
 
   @override
+  String get codexMessagePlaceholder => '给 Codex 发消息...';
+
+  @override
+  String get queuedInputForReconnect => '已加入重连队列';
+
+  @override
+  String get queuedInputPendingDelivery => '等待发送确认';
+
+  @override
+  String get queuedInputForNextTurn => '已排队到下一轮';
+
+  @override
+  String queuedInputImageCount(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count 张图片',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get tooltipSteerQueuedMessage => '将排队消息作为指令发送';
+
+  @override
+  String get tooltipMoveQueuedMessageToInput => '将排队消息移到输入框';
+
+  @override
+  String get tooltipCancelQueuedMessage => '取消排队消息';
+
+  @override
+  String get reconnecting => '正在重新连接...';
+
+  @override
+  String get reconnectingQueuedMessages => '正在重新连接... 排队消息将自动发送';
+
+  @override
+  String get disconnectedMessagesQueued => '已断开连接 - 消息可排队等待重连';
+
+  @override
+  String get sessionQueuedForReconnect => '会话已加入重连队列';
+
+  @override
+  String get resumeAlreadyQueued => '恢复已在队列中';
+
+  @override
+  String get resumeQueuedForReconnect => '恢复已加入重连队列';
+
+  @override
+  String get pendingActionWillCreateOnReconnect => 'Bridge 重连后将创建';
+
+  @override
+  String get pendingActionWillResumeOnReconnect => 'Bridge 重连后将恢复';
+
+  @override
+  String get pendingActionStatus => '等待中';
+
+  @override
+  String get tooltipCancelPendingAction => '取消等待中的操作';
+
+  @override
+  String get queuedLocally => '已在本地排队';
+
+  @override
+  String get offlinePendingNewSessionTitle => '新会话等待中';
+
+  @override
+  String get offlinePendingResumeTitle => '恢复等待中';
+
+  @override
   String diffLines(int count) {
     return '$count 行 diff';
   }

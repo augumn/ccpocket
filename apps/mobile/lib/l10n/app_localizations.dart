@@ -1512,6 +1512,132 @@ abstract class AppLocalizations {
   /// **'Claude にメッセージ...'**
   String get messagePlaceholder;
 
+  /// No description provided for @codexMessagePlaceholder.
+  ///
+  /// In ja, this message translates to:
+  /// **'Codex にメッセージ...'**
+  String get codexMessagePlaceholder;
+
+  /// No description provided for @queuedInputForReconnect.
+  ///
+  /// In ja, this message translates to:
+  /// **'再接続待ちキュー'**
+  String get queuedInputForReconnect;
+
+  /// No description provided for @queuedInputPendingDelivery.
+  ///
+  /// In ja, this message translates to:
+  /// **'送信確認中'**
+  String get queuedInputPendingDelivery;
+
+  /// No description provided for @queuedInputForNextTurn.
+  ///
+  /// In ja, this message translates to:
+  /// **'次のターンに送信予定'**
+  String get queuedInputForNextTurn;
+
+  /// No description provided for @queuedInputImageCount.
+  ///
+  /// In ja, this message translates to:
+  /// **'{count, plural, other{画像{count}枚}}'**
+  String queuedInputImageCount(int count);
+
+  /// No description provided for @tooltipSteerQueuedMessage.
+  ///
+  /// In ja, this message translates to:
+  /// **'キュー中のメッセージを指示として送信'**
+  String get tooltipSteerQueuedMessage;
+
+  /// No description provided for @tooltipMoveQueuedMessageToInput.
+  ///
+  /// In ja, this message translates to:
+  /// **'キュー中のメッセージを入力欄へ移動'**
+  String get tooltipMoveQueuedMessageToInput;
+
+  /// No description provided for @tooltipCancelQueuedMessage.
+  ///
+  /// In ja, this message translates to:
+  /// **'キュー中のメッセージをキャンセル'**
+  String get tooltipCancelQueuedMessage;
+
+  /// No description provided for @reconnecting.
+  ///
+  /// In ja, this message translates to:
+  /// **'再接続中...'**
+  String get reconnecting;
+
+  /// No description provided for @reconnectingQueuedMessages.
+  ///
+  /// In ja, this message translates to:
+  /// **'再接続中... キュー内のメッセージは自動送信されます'**
+  String get reconnectingQueuedMessages;
+
+  /// No description provided for @disconnectedMessagesQueued.
+  ///
+  /// In ja, this message translates to:
+  /// **'切断中 - メッセージは再接続待ちキューに入れられます'**
+  String get disconnectedMessagesQueued;
+
+  /// No description provided for @sessionQueuedForReconnect.
+  ///
+  /// In ja, this message translates to:
+  /// **'セッションを再接続待ちキューに追加しました'**
+  String get sessionQueuedForReconnect;
+
+  /// No description provided for @resumeAlreadyQueued.
+  ///
+  /// In ja, this message translates to:
+  /// **'再開はすでにキューに入っています'**
+  String get resumeAlreadyQueued;
+
+  /// No description provided for @resumeQueuedForReconnect.
+  ///
+  /// In ja, this message translates to:
+  /// **'再開を再接続待ちキューに追加しました'**
+  String get resumeQueuedForReconnect;
+
+  /// No description provided for @pendingActionWillCreateOnReconnect.
+  ///
+  /// In ja, this message translates to:
+  /// **'Bridge 再接続後に作成します'**
+  String get pendingActionWillCreateOnReconnect;
+
+  /// No description provided for @pendingActionWillResumeOnReconnect.
+  ///
+  /// In ja, this message translates to:
+  /// **'Bridge 再接続後に再開します'**
+  String get pendingActionWillResumeOnReconnect;
+
+  /// No description provided for @pendingActionStatus.
+  ///
+  /// In ja, this message translates to:
+  /// **'待機中'**
+  String get pendingActionStatus;
+
+  /// No description provided for @tooltipCancelPendingAction.
+  ///
+  /// In ja, this message translates to:
+  /// **'待機中の操作をキャンセル'**
+  String get tooltipCancelPendingAction;
+
+  /// No description provided for @queuedLocally.
+  ///
+  /// In ja, this message translates to:
+  /// **'ローカルでキュー中'**
+  String get queuedLocally;
+
+  /// No description provided for @offlinePendingNewSessionTitle.
+  ///
+  /// In ja, this message translates to:
+  /// **'新規セッション待機中'**
+  String get offlinePendingNewSessionTitle;
+
+  /// No description provided for @offlinePendingResumeTitle.
+  ///
+  /// In ja, this message translates to:
+  /// **'再開待機中'**
+  String get offlinePendingResumeTitle;
+
   /// No description provided for @diffLines.
   ///
   /// In ja, this message translates to:

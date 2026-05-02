@@ -1,7 +1,16 @@
 import 'package:ccpocket/features/codex_session/codex_session_screen.dart';
+import 'package:ccpocket/l10n/app_localizations.dart';
 import 'package:ccpocket/models/messages.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+
+Widget _wrap(Widget child) {
+  return MaterialApp(
+    localizationsDelegates: AppLocalizations.localizationsDelegates,
+    supportedLocales: AppLocalizations.supportedLocales,
+    home: Scaffold(body: child),
+  );
+}
 
 void main() {
   testWidgets('CodexQueuedInputPanel exposes steer edit and cancel actions', (
@@ -12,18 +21,16 @@ void main() {
     var canceled = false;
 
     await tester.pumpWidget(
-      MaterialApp(
-        home: Scaffold(
-          body: CodexQueuedInputPanel(
-            item: const QueuedInputItem(
-              itemId: 'q1',
-              text: 'Follow up after this turn',
-              createdAt: '2026-04-25T00:00:00.000Z',
-            ),
-            onSteer: () => steered = true,
-            onEdit: () => edited = true,
-            onCancel: () => canceled = true,
+      _wrap(
+        CodexQueuedInputPanel(
+          item: const QueuedInputItem(
+            itemId: 'q1',
+            text: 'Follow up after this turn',
+            createdAt: '2026-04-25T00:00:00.000Z',
           ),
+          onSteer: () => steered = true,
+          onEdit: () => edited = true,
+          onCancel: () => canceled = true,
         ),
       ),
     );
@@ -52,19 +59,17 @@ void main() {
     var canceled = false;
 
     await tester.pumpWidget(
-      MaterialApp(
-        home: Scaffold(
-          body: CodexQueuedInputPanel(
-            item: const QueuedInputItem(
-              itemId: 'offline:cm1',
-              text: 'Offline pending message',
-              createdAt: '2026-04-25T00:00:00.000Z',
-            ),
-            isOfflinePending: true,
-            onSteer: null,
-            onEdit: () => edited = true,
-            onCancel: () => canceled = true,
+      _wrap(
+        CodexQueuedInputPanel(
+          item: const QueuedInputItem(
+            itemId: 'offline:cm1',
+            text: 'Offline pending message',
+            createdAt: '2026-04-25T00:00:00.000Z',
           ),
+          isOfflinePending: true,
+          onSteer: null,
+          onEdit: () => edited = true,
+          onCancel: () => canceled = true,
         ),
       ),
     );
@@ -89,19 +94,17 @@ void main() {
     var canceled = false;
 
     await tester.pumpWidget(
-      MaterialApp(
-        home: Scaffold(
-          body: CodexQueuedInputPanel(
-            item: const QueuedInputItem(
-              itemId: 'pending:cm1',
-              text: 'Slow delivery message',
-              createdAt: '2026-04-25T00:00:00.000Z',
-            ),
-            isDeliveryPending: true,
-            onSteer: null,
-            onEdit: () => edited = true,
-            onCancel: () => canceled = true,
+      _wrap(
+        CodexQueuedInputPanel(
+          item: const QueuedInputItem(
+            itemId: 'pending:cm1',
+            text: 'Slow delivery message',
+            createdAt: '2026-04-25T00:00:00.000Z',
           ),
+          isDeliveryPending: true,
+          onSteer: null,
+          onEdit: () => edited = true,
+          onCancel: () => canceled = true,
         ),
       ),
     );

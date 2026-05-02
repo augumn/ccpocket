@@ -758,6 +758,76 @@ class AppLocalizationsKo extends AppLocalizations {
   String get messagePlaceholder => 'Claude에게 메시지...';
 
   @override
+  String get codexMessagePlaceholder => 'Codex에게 메시지...';
+
+  @override
+  String get queuedInputForReconnect => '재연결 대기열에 추가됨';
+
+  @override
+  String get queuedInputPendingDelivery => '전송 확인 중';
+
+  @override
+  String get queuedInputForNextTurn => '다음 턴 대기열에 추가됨';
+
+  @override
+  String queuedInputImageCount(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '이미지 $count개',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get tooltipSteerQueuedMessage => '대기 중인 메시지를 지시로 보내기';
+
+  @override
+  String get tooltipMoveQueuedMessageToInput => '대기 중인 메시지를 입력창으로 이동';
+
+  @override
+  String get tooltipCancelQueuedMessage => '대기 중인 메시지 취소';
+
+  @override
+  String get reconnecting => '재연결 중...';
+
+  @override
+  String get reconnectingQueuedMessages => '재연결 중... 대기 중인 메시지는 자동으로 전송됩니다';
+
+  @override
+  String get disconnectedMessagesQueued => '연결 끊김 - 메시지를 재연결 대기열에 추가할 수 있습니다';
+
+  @override
+  String get sessionQueuedForReconnect => '세션을 재연결 대기열에 추가했습니다';
+
+  @override
+  String get resumeAlreadyQueued => '재개가 이미 대기열에 있습니다';
+
+  @override
+  String get resumeQueuedForReconnect => '재개를 재연결 대기열에 추가했습니다';
+
+  @override
+  String get pendingActionWillCreateOnReconnect => 'Bridge가 재연결되면 생성합니다';
+
+  @override
+  String get pendingActionWillResumeOnReconnect => 'Bridge가 재연결되면 재개합니다';
+
+  @override
+  String get pendingActionStatus => '대기 중';
+
+  @override
+  String get tooltipCancelPendingAction => '대기 중인 작업 취소';
+
+  @override
+  String get queuedLocally => '로컬에서 대기 중';
+
+  @override
+  String get offlinePendingNewSessionTitle => '새 세션 대기 중';
+
+  @override
+  String get offlinePendingResumeTitle => '재개 대기 중';
+
+  @override
   String diffLines(int count) {
     return 'diff $count줄';
   }

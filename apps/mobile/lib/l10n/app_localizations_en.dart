@@ -786,6 +786,81 @@ class AppLocalizationsEn extends AppLocalizations {
   String get messagePlaceholder => 'Message Claude...';
 
   @override
+  String get codexMessagePlaceholder => 'Message Codex...';
+
+  @override
+  String get queuedInputForReconnect => 'Queued for reconnect';
+
+  @override
+  String get queuedInputPendingDelivery => 'Pending delivery';
+
+  @override
+  String get queuedInputForNextTurn => 'Queued for next turn';
+
+  @override
+  String queuedInputImageCount(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count images',
+      one: '$count image',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get tooltipSteerQueuedMessage => 'Steer queued message';
+
+  @override
+  String get tooltipMoveQueuedMessageToInput => 'Move queued message to input';
+
+  @override
+  String get tooltipCancelQueuedMessage => 'Cancel queued message';
+
+  @override
+  String get reconnecting => 'Reconnecting...';
+
+  @override
+  String get reconnectingQueuedMessages =>
+      'Reconnecting... queued messages will be sent automatically';
+
+  @override
+  String get disconnectedMessagesQueued =>
+      'Disconnected - messages can be queued for reconnect';
+
+  @override
+  String get sessionQueuedForReconnect => 'Session queued for reconnect';
+
+  @override
+  String get resumeAlreadyQueued => 'Resume is already queued';
+
+  @override
+  String get resumeQueuedForReconnect => 'Resume queued for reconnect';
+
+  @override
+  String get pendingActionWillCreateOnReconnect =>
+      'Will create when the bridge reconnects';
+
+  @override
+  String get pendingActionWillResumeOnReconnect =>
+      'Will resume when the bridge reconnects';
+
+  @override
+  String get pendingActionStatus => 'Pending';
+
+  @override
+  String get tooltipCancelPendingAction => 'Cancel pending action';
+
+  @override
+  String get queuedLocally => 'Queued locally';
+
+  @override
+  String get offlinePendingNewSessionTitle => 'New session pending';
+
+  @override
+  String get offlinePendingResumeTitle => 'Resume pending';
+
+  @override
   String diffLines(int count) {
     return '$count diff lines';
   }
