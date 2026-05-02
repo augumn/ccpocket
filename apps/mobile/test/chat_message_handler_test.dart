@@ -372,6 +372,35 @@ void main() {
   });
 
   group('History handling — pending state restoration', () {
+    test('restores project path from session metadata in history', () {
+      final update = handler.handle(
+        const HistoryMessage(
+          messages: [
+            SystemMessage(subtype: 'session_created', projectPath: '/repo'),
+            StatusMessage(status: ProcessStatus.idle),
+          ],
+        ),
+        isBackground: false,
+      );
+
+      expect(update.projectPath, '/repo');
+    });
+
+    test('ignores empty project path metadata in history', () {
+      final update = handler.handle(
+        const HistoryMessage(
+          messages: [
+            SystemMessage(subtype: 'session_created', projectPath: '/repo'),
+            SystemMessage(subtype: 'set_permission_mode', projectPath: ''),
+            StatusMessage(status: ProcessStatus.idle),
+          ],
+        ),
+        isBackground: false,
+      );
+
+      expect(update.projectPath, '/repo');
+    });
+
     test('restores pending permission when status is waitingApproval', () {
       final update = handler.handle(
         const HistoryMessage(

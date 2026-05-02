@@ -187,5 +187,86 @@ void main() {
 
       expect(bridge.requestedFileLists, ['/tmp/project']);
     });
+
+    testWidgets('Claude restores app bar project actions from history', (
+      tester,
+    ) async {
+      final bridge = _RecordingBridgeService();
+      addTearDown(bridge.dispose);
+
+      await tester.pumpWidget(
+        await _wrap(
+          const ClaudeSessionScreen(sessionId: 'claude-session'),
+          bridge,
+        ),
+      );
+      await tester.pump();
+
+      expect(find.byKey(const ValueKey('appbar_explore_button')), findsNothing);
+      expect(find.byKey(const ValueKey('appbar_view_changes')), findsNothing);
+
+      bridge.emitMessage(
+        const HistoryMessage(
+          messages: [
+            SystemMessage(
+              subtype: 'session_created',
+              sessionId: 'claude-session',
+              projectPath: '/tmp/project',
+            ),
+            StatusMessage(status: ProcessStatus.idle),
+          ],
+        ),
+        sessionId: 'claude-session',
+      );
+      await tester.pump();
+
+      expect(
+        find.byKey(const ValueKey('appbar_explore_button')),
+        findsOneWidget,
+      );
+      expect(find.byKey(const ValueKey('appbar_view_changes')), findsOneWidget);
+      expect(bridge.requestedFileLists, contains('/tmp/project'));
+    });
+
+    testWidgets('Codex restores app bar project actions from history', (
+      tester,
+    ) async {
+      final bridge = _RecordingBridgeService();
+      addTearDown(bridge.dispose);
+
+      await tester.pumpWidget(
+        await _wrap(
+          const CodexSessionScreen(sessionId: 'codex-session'),
+          bridge,
+        ),
+      );
+      await tester.pump();
+
+      expect(find.byKey(const ValueKey('appbar_explore_button')), findsNothing);
+      expect(find.byKey(const ValueKey('appbar_view_changes')), findsNothing);
+
+      bridge.emitMessage(
+        const HistoryMessage(
+          messages: [
+            SystemMessage(
+              subtype: 'session_created',
+              sessionId: 'codex-session',
+              provider: 'codex',
+              projectPath: '/tmp/project',
+            ),
+            StatusMessage(status: ProcessStatus.idle),
+          ],
+        ),
+        sessionId: 'codex-session',
+      );
+      await tester.pump();
+
+      expect(
+        find.byKey(const ValueKey('appbar_explore_button')),
+        findsOneWidget,
+      );
+      expect(find.byKey(const ValueKey('appbar_view_changes')), findsOneWidget);
+      expect(bridge.requestedFileLists, contains('/tmp/project'));
+    });
   });
 }

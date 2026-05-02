@@ -502,15 +502,8 @@ class _ChatScreenBody extends HookWidget {
 
     // Mutable branch state (refreshed from Bridge)
     final currentBranch = useState(gitBranch);
-    final gitProjectPath = worktreePath ?? projectPath;
     final showRemoteGitStatusBadge = context.select(
       (SettingsCubit cubit) => cubit.state.showRemoteGitStatusBadge,
-    );
-    final gitBadgeTone = _gitBadgeToneOf(
-      context,
-      sessionId,
-      gitProjectPath,
-      showRemoteGitStatusBadge: showRemoteGitStatusBadge,
     );
 
     // Custom hooks
@@ -572,6 +565,17 @@ class _ChatScreenBody extends HookWidget {
     final chatSessionCubit = context.read<ChatSessionCubit>();
     final sessionState = context.watch<ChatSessionCubit>().state;
     final bridgeState = context.watch<ConnectionCubit>().state;
+    final effectiveProjectPath = _firstNonEmptyProjectPath(
+      projectPath,
+      sessionState.projectPath,
+    );
+    final gitProjectPath = worktreePath ?? effectiveProjectPath;
+    final gitBadgeTone = _gitBadgeToneOf(
+      context,
+      sessionId,
+      gitProjectPath,
+      showRemoteGitStatusBadge: showRemoteGitStatusBadge,
+    );
     final parentState = context
         .findAncestorStateOfType<_ClaudeSessionScreenState>();
     void handleExploreResult(ExploreScreenResult result) {
@@ -631,55 +635,71 @@ class _ChatScreenBody extends HookWidget {
     }, [sessionId]);
 
     // --- Initial requests on mount ---
-    useEffect(() {
-      final bridge = context.read<BridgeService>();
-      final path = gitProjectPath;
-      if (projectPath != null && projectPath!.isNotEmpty) {
-        bridge.requestFileList(projectPath!);
-      }
-      if (path != null && path.isNotEmpty) {
-        try {
-          context.read<GitStatusCubit>().refresh(
-            sessionId: sessionId,
-            projectPath: path,
-            includeRemote: showRemoteGitStatusBadge,
-          );
-        } catch (_) {}
-      }
-      bridge.requestSessionList();
-      bridge.refreshBranch(sessionId);
-      return null;
-    }, [sessionId, projectPath, gitProjectPath, showRemoteGitStatusBadge]);
-
-    useEffect(() {
-      if (projectPath == null || projectPath!.isEmpty) return null;
-
-      final bridge = context.read<BridgeService>();
-      GitStatusCubit? gitStatusCubit;
-      GitViewCacheService? gitViewCache;
-      try {
-        gitStatusCubit = context.read<GitStatusCubit>();
-        gitViewCache = context.read<GitViewCacheService>();
-      } catch (_) {}
-      final sub = bridge.messagesForSession(sessionId).listen((msg) {
-        if (msg case ToolResultMessage(
-          :final toolName,
-        ) when _fileListRefreshToolNames.contains(toolName)) {
-          bridge.requestFileList(projectPath!);
-        } else if (msg case ResultMessage(:final fileEdits)) {
-          if ((fileEdits ?? 0) > 0) {
-            bridge.requestFileList(projectPath!);
-          }
-          gitStatusCubit?.refresh(
-            sessionId: sessionId,
-            projectPath: gitProjectPath!,
-            includeRemote: showRemoteGitStatusBadge,
-          );
-          gitViewCache?.refreshIfPresent(sessionId);
+    useEffect(
+      () {
+        final bridge = context.read<BridgeService>();
+        final path = gitProjectPath;
+        if (effectiveProjectPath != null) {
+          bridge.requestFileList(effectiveProjectPath);
         }
-      });
-      return sub.cancel;
-    }, [sessionId, projectPath, gitProjectPath, showRemoteGitStatusBadge]);
+        if (path != null && path.isNotEmpty) {
+          try {
+            context.read<GitStatusCubit>().refresh(
+              sessionId: sessionId,
+              projectPath: path,
+              includeRemote: showRemoteGitStatusBadge,
+            );
+          } catch (_) {}
+        }
+        bridge.requestSessionList();
+        bridge.refreshBranch(sessionId);
+        return null;
+      },
+      [
+        sessionId,
+        effectiveProjectPath,
+        gitProjectPath,
+        showRemoteGitStatusBadge,
+      ],
+    );
+
+    useEffect(
+      () {
+        if (effectiveProjectPath == null) return null;
+
+        final bridge = context.read<BridgeService>();
+        GitStatusCubit? gitStatusCubit;
+        GitViewCacheService? gitViewCache;
+        try {
+          gitStatusCubit = context.read<GitStatusCubit>();
+          gitViewCache = context.read<GitViewCacheService>();
+        } catch (_) {}
+        final sub = bridge.messagesForSession(sessionId).listen((msg) {
+          if (msg case ToolResultMessage(
+            :final toolName,
+          ) when _fileListRefreshToolNames.contains(toolName)) {
+            bridge.requestFileList(effectiveProjectPath);
+          } else if (msg case ResultMessage(:final fileEdits)) {
+            if ((fileEdits ?? 0) > 0) {
+              bridge.requestFileList(effectiveProjectPath);
+            }
+            gitStatusCubit?.refresh(
+              sessionId: sessionId,
+              projectPath: gitProjectPath!,
+              includeRemote: showRemoteGitStatusBadge,
+            );
+            gitViewCache?.refreshIfPresent(sessionId);
+          }
+        });
+        return sub.cancel;
+      },
+      [
+        sessionId,
+        effectiveProjectPath,
+        gitProjectPath,
+        showRemoteGitStatusBadge,
+      ],
+    );
 
     // --- Listen for branch updates ---
     useEffect(() {
@@ -840,7 +860,7 @@ class _ChatScreenBody extends HookWidget {
                     title: chrome.wrapTitle(
                       SessionNameTitle(
                         sessionId: sessionId,
-                        projectPath: projectPath,
+                        projectPath: effectiveProjectPath,
                       ),
                     ),
                     flexibleSpace: StatusLineFlexibleSpace(
@@ -848,7 +868,7 @@ class _ChatScreenBody extends HookWidget {
                       inPlanMode: inPlanMode,
                     ),
                     actions: [
-                      if ((projectPath ?? '').isNotEmpty)
+                      if (effectiveProjectPath != null)
                         IconButton(
                           key: const ValueKey('appbar_explore_button'),
                           icon: Icon(
@@ -875,7 +895,7 @@ class _ChatScreenBody extends HookWidget {
                             if (shell?.canOpenToolPane ?? false) {
                               shell!.openExplorePane(
                                 sessionId: sessionId,
-                                projectPath: projectPath!,
+                                projectPath: effectiveProjectPath,
                                 initialFiles: context
                                     .read<FileListCubit>()
                                     .state,
@@ -888,7 +908,7 @@ class _ChatScreenBody extends HookWidget {
                             final result = await context.router.push(
                               ExploreRoute(
                                 sessionId: sessionId,
-                                projectPath: projectPath!,
+                                projectPath: effectiveProjectPath,
                                 initialFiles: context
                                     .read<FileListCubit>()
                                     .state,
@@ -903,7 +923,7 @@ class _ChatScreenBody extends HookWidget {
                             handleExploreResult(result);
                           },
                         ),
-                      if ((projectPath ?? '').isNotEmpty)
+                      if (effectiveProjectPath != null)
                         IconButton(
                           key: const ValueKey('appbar_view_changes'),
                           icon: Badge(
@@ -929,7 +949,7 @@ class _ChatScreenBody extends HookWidget {
                           onPressed: () {
                             _openGitScreen(
                               context,
-                              worktreePath ?? projectPath!,
+                              worktreePath ?? effectiveProjectPath,
                               diffSelectionFromNav,
                               sessionId: sessionId,
                               worktreePath: worktreePath,
@@ -957,11 +977,11 @@ class _ChatScreenBody extends HookWidget {
                                 scrollToUserEntry,
                               );
                             case 'screenshot':
-                              if (projectPath == null) return;
+                              if (effectiveProjectPath == null) return;
                               showScreenshotSheet(
                                 context: context,
                                 bridge: context.read<BridgeService>(),
-                                projectPath: projectPath!,
+                                projectPath: effectiveProjectPath,
                                 sessionId: sessionId,
                               );
                             case 'gallery':
@@ -969,7 +989,7 @@ class _ChatScreenBody extends HookWidget {
                             case 'rename':
                               _renameSession(context, sessionId);
                             case 'terminal':
-                              _openInTerminal(context, projectPath);
+                              _openInTerminal(context, effectiveProjectPath);
                           }
                         },
                         itemBuilder: (context) {
@@ -1004,7 +1024,7 @@ class _ChatScreenBody extends HookWidget {
                                 contentPadding: EdgeInsets.zero,
                               ),
                             ),
-                            if (projectPath != null)
+                            if (effectiveProjectPath != null)
                               PopupMenuItem(
                                 key: const ValueKey('menu_screenshot'),
                                 value: 'screenshot',
@@ -1035,7 +1055,7 @@ class _ChatScreenBody extends HookWidget {
                                   AppFeature.terminalAppIntegration,
                                 ) &&
                                 terminalConfig.isConfigured &&
-                                projectPath != null)
+                                effectiveProjectPath != null)
                               PopupMenuItem(
                                 key: const ValueKey('menu_terminal'),
                                 value: 'terminal',
@@ -1167,7 +1187,7 @@ class _ChatScreenBody extends HookWidget {
                       sessionId: sessionId,
                       scrollController: scroll.controller,
                       httpBaseUrl: context.read<BridgeService>().httpBaseUrl,
-                      projectPath: projectPath,
+                      projectPath: effectiveProjectPath,
                       onRetryMessage: (entry) {
                         context.read<ChatSessionCubit>().retryMessage(entry);
                       },
@@ -1197,10 +1217,10 @@ class _ChatScreenBody extends HookWidget {
                     },
                     onDiffSelectionCleared: () =>
                         diffSelectionFromNav.value = null,
-                    onOpenGitScreen: projectPath != null
+                    onOpenGitScreen: effectiveProjectPath != null
                         ? (_) => _openGitScreen(
                             context,
-                            worktreePath ?? projectPath!,
+                            worktreePath ?? effectiveProjectPath,
                             diffSelectionFromNav,
                             sessionId: sessionId,
                             worktreePath: worktreePath,
@@ -1273,6 +1293,12 @@ WorkspacePaneChrome _resolveSessionPaneChrome(
 }
 
 enum _GitBadgeTone { dirty, remote }
+
+String? _firstNonEmptyProjectPath(String? primary, String? fallback) {
+  if (primary?.trim().isNotEmpty == true) return primary;
+  if (fallback?.trim().isNotEmpty == true) return fallback;
+  return null;
+}
 
 _GitBadgeTone? _gitBadgeToneOf(
   BuildContext context,

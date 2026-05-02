@@ -526,6 +526,7 @@ class ChatMessageHandler {
     String? lastAskToolUseId;
     Map<String, dynamic>? lastAskInput;
     String? claudeSessionId;
+    String? projectPath;
     QueuedInputItem? queuedInput;
     var clearQueuedInput = false;
 
@@ -608,6 +609,9 @@ class ChatMessageHandler {
             claudeSessionId = m.sessionId;
           }
         }
+        if (m is SystemMessage && m.projectPath?.trim().isNotEmpty == true) {
+          projectPath = m.projectPath;
+        }
         // Track pending permission request
         if (m is PermissionRequestMessage) {
           if (m.usesAskUserUi) {
@@ -669,6 +673,7 @@ class ChatMessageHandler {
       askToolUseId: isWaiting ? lastAskToolUseId : null,
       askInput: isWaiting ? lastAskInput : null,
       claudeSessionId: claudeSessionId,
+      projectPath: projectPath,
       queuedInput: queuedInput,
       clearQueuedInput: clearQueuedInput,
     );

@@ -203,6 +203,28 @@ void main() {
       expect(cubit.state.projectPath, '/Users/me/Workspace/ccpocket');
     });
 
+    test('history message restores project path metadata', () async {
+      final cubit = createCubit('s1');
+      addTearDown(cubit.close);
+      await Future.microtask(() {});
+
+      mockBridge.emitMessage(
+        const HistoryMessage(
+          messages: [
+            SystemMessage(
+              subtype: 'session_created',
+              projectPath: '/Users/me/Workspace/ccpocket',
+            ),
+            StatusMessage(status: ProcessStatus.idle),
+          ],
+        ),
+        sessionId: 's1',
+      );
+      await Future.microtask(() {});
+
+      expect(cubit.state.projectPath, '/Users/me/Workspace/ccpocket');
+    });
+
     test(
       'codex explicit execution mode wins over legacy permission mode',
       () async {
