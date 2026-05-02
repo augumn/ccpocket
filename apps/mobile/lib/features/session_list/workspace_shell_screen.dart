@@ -27,6 +27,8 @@ const _twoPaneBreakpoint = 600.0;
 const _threePaneBreakpoint = 1100.0;
 const _twoPaneDividerWidth = 1.0;
 const _paneResizeHandleWidth = _twoPaneDividerWidth;
+const _paneResizePointerHandleWidth = 12.0;
+const _paneResizeTouchHandleWidth = 44.0;
 const _minCenterPaneWidth = 360.0;
 const _minRightPaneWidth = 320.0;
 
@@ -68,6 +70,15 @@ double _maxRightPaneWidth({
 double _minAllowedRightPaneWidth(double maxWidth) {
   if (maxWidth <= 0) return 0;
   return maxWidth < _minRightPaneWidth ? maxWidth : _minRightPaneWidth;
+}
+
+double _resizeHandleHitWidth(TargetPlatform platform) {
+  if (platform == TargetPlatform.macOS ||
+      platform == TargetPlatform.windows ||
+      platform == TargetPlatform.linux) {
+    return _paneResizePointerHandleWidth;
+  }
+  return _paneResizeTouchHandleWidth;
 }
 
 _WorkspaceLayoutMode _layoutModeForWidth(double width) {
@@ -733,6 +744,9 @@ class WorkspaceShellScreenState extends State<WorkspaceShellScreen> {
                       .toDouble();
                 })()
               : _rightPaneWidth(constraints.maxWidth, layoutMode);
+          final resizeHandleHitWidth = _resizeHandleHitWidth(
+            Theme.of(context).platform,
+          );
           final children = <Widget>[
             if (showLeftPane)
               SizedBox(
@@ -758,10 +772,8 @@ class WorkspaceShellScreenState extends State<WorkspaceShellScreen> {
               ),
             ),
             if (showRightPane)
-              _WorkspaceResizeDivider(
+              _WorkspacePaneDivider(
                 color: Theme.of(context).dividerColor.withValues(alpha: 0.18),
-                onDragUpdate: (delta) =>
-                    resizeRightPane(rightWidth - delta, constraints.maxWidth),
               ),
             if (showRightPane)
               SizedBox(
@@ -776,7 +788,29 @@ class WorkspaceShellScreenState extends State<WorkspaceShellScreen> {
               ),
           ];
 
-          return Row(children: children);
+          return Stack(
+            children: [
+              Row(children: children),
+              if (showRightPane)
+                Positioned(
+                  top: 0,
+                  right:
+                      rightWidth -
+                      ((resizeHandleHitWidth - _twoPaneDividerWidth) / 2),
+                  bottom: 0,
+                  width: resizeHandleHitWidth,
+                  child: _WorkspaceResizeHandle(
+                    color: Theme.of(
+                      context,
+                    ).dividerColor.withValues(alpha: 0.18),
+                    onDragUpdate: (delta) => resizeRightPane(
+                      rightWidth - delta,
+                      constraints.maxWidth,
+                    ),
+                  ),
+                ),
+            ],
+          );
         },
       ),
     );
@@ -834,26 +868,53 @@ class _WorkspacePaneDivider extends StatelessWidget {
   }
 }
 
-class _WorkspaceResizeDivider extends StatelessWidget {
+class _WorkspaceResizeHandle extends StatefulWidget {
   final Color color;
   final ValueChanged<double> onDragUpdate;
 
-  const _WorkspaceResizeDivider({
+  const _WorkspaceResizeHandle({
     required this.color,
     required this.onDragUpdate,
   });
 
   @override
+  State<_WorkspaceResizeHandle> createState() => _WorkspaceResizeHandleState();
+}
+
+class _WorkspaceResizeHandleState extends State<_WorkspaceResizeHandle> {
+  bool _dragging = false;
+
+  void _setDragging(bool dragging) {
+    if (_dragging == dragging) return;
+    setState(() => _dragging = dragging);
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final activeColor = Theme.of(
+      context,
+    ).colorScheme.primary.withValues(alpha: 0.55);
+
     return MouseRegion(
       cursor: SystemMouseCursors.resizeColumn,
-      child: GestureDetector(
-        behavior: HitTestBehavior.translucent,
-        onHorizontalDragUpdate: (details) => onDragUpdate(details.delta.dx),
-        child: SizedBox(
-          width: _paneResizeHandleWidth,
+      child: Semantics(
+        label: 'Resize right pane',
+        hint: 'Drag horizontally to resize',
+        enabled: true,
+        onIncrease: () => widget.onDragUpdate(-48),
+        onDecrease: () => widget.onDragUpdate(48),
+        child: GestureDetector(
+          behavior: HitTestBehavior.translucent,
+          onHorizontalDragStart: (_) => _setDragging(true),
+          onHorizontalDragUpdate: (details) =>
+              widget.onDragUpdate(details.delta.dx),
+          onHorizontalDragEnd: (_) => _setDragging(false),
+          onHorizontalDragCancel: () => _setDragging(false),
           child: Center(
-            child: Container(width: _twoPaneDividerWidth, color: color),
+            child: Container(
+              width: _twoPaneDividerWidth,
+              color: _dragging ? activeColor : widget.color,
+            ),
           ),
         ),
       ),
