@@ -4,6 +4,14 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.89.2] - 2026-05-03
+
+### Changed
+- Require Bridge 1.53.1 for the latest Bridge compatibility fixes.
+
+### Fixed
+- Preserve existing prompt text when using voice input.
+
 ## [1.89.1] - 2026-05-03
 
 ### Fixed
