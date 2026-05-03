@@ -779,6 +779,12 @@ class BridgeService implements BridgeServiceBase {
     final text = json['text'] as String?;
     if (text == null) return;
     final images = json['images'] as List?;
+    if (images != null && images.isNotEmpty) {
+      // The ack does not include ImageStore URLs. Let the next history delta
+      // fetch the canonical user_input so image-only messages remain visible
+      // after leaving and re-entering the running session.
+      return;
+    }
 
     _runtimeStore.applyServerMessage(
       sessionId,

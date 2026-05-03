@@ -1041,6 +1041,23 @@ export class BridgeWebSocketServer {
 
     for (const raw of messages) {
       const msg = raw as Record<string, unknown>;
+      if (msg.role === "user") {
+        const images = await this.registerPastUserMessageImages(session, msg);
+        pastMessages.push(
+          images.length > 0
+            ? {
+                ...msg,
+                images,
+                imageCount:
+                  typeof msg.imageCount === "number"
+                    ? Math.max(msg.imageCount, images.length)
+                    : images.length,
+              }
+            : raw,
+        );
+        continue;
+      }
+
       if (msg.role !== "tool_result") {
         pastMessages.push(raw);
         continue;
@@ -1099,6 +1116,65 @@ export class BridgeWebSocketServer {
     }
 
     return { pastMessages, historyMessages };
+  }
+
+  private async registerPastUserMessageImages(
+    session: SessionInfo,
+    msg: Record<string, unknown>,
+  ): Promise<ImageRef[]> {
+    if (!this.imageStore) return [];
+
+    const existingImages = Array.isArray(msg.images)
+      ? (msg.images as ImageRef[])
+      : [];
+    const refs: ImageRef[] = [...existingImages];
+
+    if (Array.isArray(msg.imageBase64)) {
+      for (const image of msg.imageBase64) {
+        const rawImage = image as Record<string, unknown>;
+        if (
+          typeof rawImage.data !== "string" ||
+          typeof rawImage.mimeType !== "string"
+        ) {
+          continue;
+        }
+        const ref = this.imageStore.registerFromBase64(
+          rawImage.data,
+          rawImage.mimeType,
+        );
+        if (ref) refs.push(ref);
+      }
+    }
+
+    const messageUuid = typeof msg.uuid === "string" ? msg.uuid : undefined;
+    const providerSessionId = session.claudeSessionId;
+    if (
+      refs.length === existingImages.length &&
+      messageUuid &&
+      providerSessionId
+    ) {
+      try {
+        const extracted = await extractMessageImages(
+          providerSessionId,
+          messageUuid,
+        );
+        for (const image of extracted) {
+          const ref = this.imageStore.registerFromBase64(
+            image.base64,
+            image.mimeType,
+          );
+          if (ref) refs.push(ref);
+        }
+      } catch (err) {
+        console.warn(
+          `[ws] Failed to restore user message images for ${messageUuid}: ${
+            err instanceof Error ? err.message : String(err)
+          }`,
+        );
+      }
+    }
+
+    return refs;
   }
 
   private async getCodexThreadHistoryFromRpc(

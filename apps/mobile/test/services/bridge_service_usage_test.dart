@@ -386,6 +386,120 @@ void main() {
       },
     );
 
+    test(
+      'image input ack does not hide canonical history image refs',
+      () async {
+        final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+        final socketReady = Completer<WebSocket>();
+
+        server.transform(WebSocketTransformer()).listen((socket) {
+          socketReady.complete(socket);
+        });
+
+        final outgoing = <ClientMessage>[];
+        final bridge = BridgeService()..onOutgoingMessage = outgoing.add;
+        bridge.connect('ws://127.0.0.1:${server.port}');
+        final socket = await socketReady.future;
+        await Future<void>.delayed(const Duration(milliseconds: 50));
+
+        socket.add(
+          jsonEncode({
+            'type': 'history_delta',
+            'sessionId': 's1',
+            'fromSeq': 1,
+            'toSeq': 7,
+            'messages': List.generate(7, (index) {
+              return {
+                'seq': index + 1,
+                'message': {'type': 'status', 'status': 'running'},
+              };
+            }),
+          }),
+        );
+        await Future<void>.delayed(const Duration(milliseconds: 50));
+
+        bridge.send(
+          ClientMessage.input(
+            '',
+            sessionId: 's1',
+            clientMessageId: 'cm-img',
+            images: const [
+              {'base64': 'aW1hZ2U=', 'mimeType': 'image/png'},
+            ],
+          ),
+        );
+        socket.add(
+          jsonEncode({
+            'type': 'input_ack',
+            'sessionId': 's1',
+            'clientMessageId': 'cm-img',
+            'acceptedSeq': 8,
+            'queued': false,
+          }),
+        );
+        await Future<void>.delayed(const Duration(milliseconds: 50));
+
+        expect(
+          bridge.cachedSessionMessages('s1').whereType<UserInputMessage>(),
+          isEmpty,
+        );
+        expect(bridge.cachedSessionHistorySeq('s1'), 7);
+
+        outgoing.clear();
+        bridge.requestSessionHistory('s1');
+        await Future<void>.delayed(const Duration(milliseconds: 50));
+        final historyRequest =
+            jsonDecode(outgoing.single.toJson()) as Map<String, dynamic>;
+        expect(historyRequest, {
+          'type': 'get_history_delta',
+          'sessionId': 's1',
+          'sinceSeq': 7,
+        });
+
+        socket.add(
+          jsonEncode({
+            'type': 'history_delta',
+            'sessionId': 's1',
+            'fromSeq': 8,
+            'toSeq': 8,
+            'messages': [
+              {
+                'seq': 8,
+                'message': {
+                  'type': 'user_input',
+                  'text': '',
+                  'clientMessageId': 'cm-img',
+                  'imageCount': 1,
+                  'images': [
+                    {
+                      'id': 'img-1',
+                      'url': '/images/img-1',
+                      'mimeType': 'image/png',
+                    },
+                  ],
+                },
+              },
+            ],
+          }),
+        );
+        await Future<void>.delayed(const Duration(milliseconds: 50));
+
+        final cachedUserInputs = bridge
+            .cachedSessionMessages('s1')
+            .whereType<UserInputMessage>()
+            .toList();
+        expect(cachedUserInputs, hasLength(1));
+        expect(cachedUserInputs.single.imageCount, 1);
+        expect(cachedUserInputs.single.imageUrls, ['/images/img-1']);
+        expect(bridge.cachedSessionHistorySeq('s1'), 8);
+
+        bridge.disconnect();
+        await socket.close();
+        await server.close(force: true);
+        bridge.dispose();
+      },
+    );
+
     test('unacked in-flight input is requeued when socket closes', () async {
       final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
       final socketReady = Completer<WebSocket>();

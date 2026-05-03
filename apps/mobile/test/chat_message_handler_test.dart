@@ -294,6 +294,35 @@ void main() {
       expect(userEntry.status, MessageStatus.sent);
     });
 
+    test('restores past user message images inline', () {
+      final update = handler.handle(
+        const PastHistoryMessage(
+          claudeSessionId: 'sess-1',
+          messages: [
+            PastMessage(
+              role: 'user',
+              uuid: 'user-1',
+              imageCount: 1,
+              images: [
+                ImageRef(
+                  id: 'img-1',
+                  url: '/images/img-1',
+                  mimeType: 'image/png',
+                ),
+              ],
+              content: [TextContent(text: 'What is in this image?')],
+            ),
+          ],
+        ),
+        isBackground: false,
+      );
+
+      final userEntry = update.entriesToPrepend[0] as UserChatEntry;
+      expect(userEntry.messageUuid, 'user-1');
+      expect(userEntry.imageCount, 1);
+      expect(userEntry.imageUrls, ['/images/img-1']);
+    });
+
     test('restores past tool result messages', () {
       final update = handler.handle(
         const PastHistoryMessage(

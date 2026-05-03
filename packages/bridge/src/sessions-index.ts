@@ -2613,45 +2613,104 @@ async function extractCodexMessageImages(
     return [];
   }
 
-  // Codex doesn't have per-message UUIDs in the same way.
-  // We scan for event_msg with user_message that has images and match by line index
-  // encoded in the UUID (format: "codex-line-{index}").
+  // Codex doesn't have per-message UUIDs in the same way. Newer app history
+  // uses a stable turn ordinal (codex:user-turn:N); older builds encoded the
+  // JSONL line index (codex-line:N).
   const lineIndex = messageUuid.startsWith("codex-line-")
     ? parseInt(messageUuid.slice("codex-line-".length), 10)
     : -1;
-  if (lineIndex < 0) return [];
-
   const lines = raw.split("\n");
-  if (lineIndex >= lines.length) return [];
+  if (lineIndex >= 0) {
+    if (lineIndex >= lines.length) return [];
 
-  const line = lines[lineIndex];
-  if (!line?.trim()) return [];
+    const line = lines[lineIndex];
+    if (!line?.trim()) return [];
 
-  let entry: Record<string, unknown>;
-  try {
-    entry = JSON.parse(line) as Record<string, unknown>;
-  } catch {
-    return [];
+    let entry: Record<string, unknown>;
+    try {
+      entry = JSON.parse(line) as Record<string, unknown>;
+    } catch {
+      return [];
+    }
+
+    if (entry.type !== "event_msg") return [];
+    const payload = asObject(entry.payload);
+    if (!payload || payload.type !== "user_message") return [];
+    return extractCodexUserMessagePayloadImages(payload);
   }
 
-  if (entry.type !== "event_msg") return [];
-  const payload = asObject(entry.payload);
-  if (!payload || payload.type !== "user_message") return [];
+  const turnMatch = messageUuid.match(/^codex:user-turn:(\d+)$/);
+  const targetOrdinal = turnMatch ? Number(turnMatch[1]) : -1;
+  if (!Number.isInteger(targetOrdinal) || targetOrdinal <= 0) return [];
 
-  const images: ExtractedImage[] = [];
-
-  // Parse payload.images (Data URI format: "data:image/png;base64,...")
-  if (Array.isArray(payload.images)) {
-    for (const img of payload.images) {
-      if (typeof img !== "string") continue;
-      const match = (img as string).match(/^data:(image\/[^;]+);base64,(.+)$/);
-      if (match) {
-        images.push({ base64: match[2], mimeType: match[1] });
-      }
+  let ordinal = 0;
+  for (const line of lines) {
+    if (!line.trim()) continue;
+    let entry: Record<string, unknown>;
+    try {
+      entry = JSON.parse(line) as Record<string, unknown>;
+    } catch {
+      continue;
+    }
+    if (entry.type !== "event_msg") continue;
+    const payload = asObject(entry.payload);
+    if (!payload || payload.type !== "user_message") continue;
+    if (!codexUserMessagePayloadHasDisplayContent(payload)) continue;
+    ordinal += 1;
+    if (ordinal === targetOrdinal) {
+      return extractCodexUserMessagePayloadImages(payload);
     }
   }
 
+  return [];
+}
+
+function extractCodexUserMessagePayloadImages(
+  payload: Record<string, unknown>,
+): ExtractedImage[] {
+  const images: ExtractedImage[] = [];
+  if (Array.isArray(payload.images)) {
+    for (const img of payload.images) {
+      if (typeof img === "string") {
+        const match = img.match(/^data:(image\/[^;]+);base64,(.+)$/);
+        if (match) {
+          images.push({ base64: match[2], mimeType: match[1] });
+        }
+        continue;
+      }
+      const item = asObject(img);
+      if (!item) continue;
+      const base64 =
+        typeof item.base64 === "string"
+          ? item.base64
+          : typeof item.data === "string"
+            ? item.data
+            : undefined;
+      const mimeType =
+        typeof item.mimeType === "string"
+          ? item.mimeType
+          : typeof item.mime_type === "string"
+            ? item.mime_type
+            : typeof item.media_type === "string"
+              ? item.media_type
+              : undefined;
+      if (base64 && mimeType) {
+        images.push({ base64, mimeType });
+      }
+    }
+  }
   return images;
+}
+
+function codexUserMessagePayloadHasDisplayContent(
+  payload: Record<string, unknown>,
+): boolean {
+  const message = typeof payload.message === "string" ? payload.message : "";
+  const images = Array.isArray(payload.images) ? payload.images.length : 0;
+  const localImages = Array.isArray(payload.local_images)
+    ? payload.local_images.length
+    : 0;
+  return message.trim().length > 0 || images + localImages > 0;
 }
 
 export async function getCodexSessionHistory(
