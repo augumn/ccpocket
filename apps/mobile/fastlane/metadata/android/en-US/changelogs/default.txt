@@ -1,5 +1,5 @@
-• Prompt History now syncs through Bridge.
-• New sessions can be automatically named from the first assistant response.
-• Session badges now show when a workspace has uncommitted changes or an unsynced branch.
-• You can now peek at file contents directly from Git Diff.
-• Minor fixes and stability improvements.
+• Rewind Codex conversations and continue from an earlier point.
+• Fork a new session from the latest Codex response when you want a fresh path.
+• Image files now open as previews in File Peek.
+• Voice input no longer clears text you already typed.
+• Smaller fixes and stability improvements.
