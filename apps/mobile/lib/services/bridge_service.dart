@@ -10,6 +10,7 @@ import 'package:web_socket_channel/web_socket_channel.dart';
 import '../core/logger.dart';
 import '../models/messages.dart';
 import '../models/offline_pending_action.dart';
+import '../utils/codex_plan_update.dart';
 import 'bridge_service_base.dart';
 import 'session_runtime_store.dart';
 
@@ -1711,8 +1712,8 @@ class BridgeService implements BridgeServiceBase {
     final current = _sessions[idx];
     final messageModel = sanitizeCodexModelName(message.model) ?? '';
     final text = message.content
-        .whereType<TextContent>()
-        .map((c) => c.text)
+        .map(_assistantContentPreviewText)
+        .where((text) => text.isNotEmpty)
         .join(' ')
         .replaceAll(RegExp(r'\s+'), ' ')
         .trim();
@@ -1728,6 +1729,16 @@ class BridgeService implements BridgeServiceBase {
         codexModel: shouldPatchModel ? messageModel : null,
       );
     _sessionListController.add(_sessions);
+  }
+
+  String _assistantContentPreviewText(AssistantContent content) {
+    return switch (content) {
+      TextContent(:final text) => text,
+      ToolUseContent(:final name, :final input)
+          when isCodexUpdatePlanTool(name) =>
+        codexPlanUpdateTextFromInput(input) ?? '',
+      _ => '',
+    };
   }
 
   /// Clear pending permission from a cached session after the user has

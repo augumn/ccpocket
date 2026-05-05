@@ -226,6 +226,37 @@ void main() {
       );
       expect(update.inPlanMode, isTrue);
     });
+
+    test('detects Codex structured plan update as plan mode', () {
+      final update = handler.handle(
+        AssistantServerMessage(
+          message: AssistantMessage(
+            id: 'msg-codex-structured-plan',
+            role: 'assistant',
+            content: const [
+              ToolUseContent(
+                id: 'update_plan_1',
+                name: 'UpdatePlan',
+                input: {
+                  'title': 'Plan update',
+                  'todos': [
+                    {
+                      'content': 'Gather requirements',
+                      'status': 'in_progress',
+                      'activeForm': '',
+                    },
+                  ],
+                },
+              ),
+            ],
+            model: 'codex',
+          ),
+        ),
+        isBackground: false,
+        isCodex: true,
+      );
+      expect(update.inPlanMode, isTrue);
+    });
   });
 
   group('SystemMessage handling', () {

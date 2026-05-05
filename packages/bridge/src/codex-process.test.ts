@@ -1716,7 +1716,7 @@ describe("CodexProcess (app-server)", () => {
     proc.stop();
   });
 
-  it("emits plan notifications as regular stream messages", async () => {
+  it("emits plan notifications as structured checklist messages", async () => {
     const proc = new CodexProcess("linux");
     const messages: unknown[] = [];
     proc.on("message", (msg) => messages.push(msg));
@@ -1785,10 +1785,19 @@ describe("CodexProcess (app-server)", () => {
           role: "assistant",
           content: expect.arrayContaining([
             expect.objectContaining({
-              type: "text",
-              text: expect.stringContaining(
-                "Plan update: Initial plan drafted",
-              ),
+              type: "tool_use",
+              name: "UpdatePlan",
+              input: expect.objectContaining({
+                title: "Plan update",
+                explanation: "Initial plan drafted",
+                todos: [
+                  {
+                    content: "Gather requirements",
+                    status: "in_progress",
+                    activeForm: "",
+                  },
+                ],
+              }),
             }),
           ]),
         }),

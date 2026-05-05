@@ -1895,15 +1895,23 @@ export class CodexProcess extends EventEmitter<CodexProcessEvents> {
       }
 
       case "turn/plan/updated": {
-        // Default mode's update_plan tool output — always show as informational text
-        const text = formatPlanUpdateText(params);
-        if (!text) break;
+        // Default mode's update_plan tool output. Keep it structured so clients
+        // can render it with the same checklist UI used for Claude TodoWrite.
+        const input = buildPlanUpdateToolUseInput(params);
+        if (!input) break;
         this.emitMessage({
           type: "assistant",
           message: {
             id: randomUUID(),
             role: "assistant",
-            content: [{ type: "text", text }],
+            content: [
+              {
+                type: "tool_use",
+                id: `update_plan_${randomUUID()}`,
+                name: "UpdatePlan",
+                input,
+              },
+            ],
             model: this.getMessageModel(),
           },
         });
@@ -3575,33 +3583,38 @@ function asRecord(value: unknown): Record<string, unknown> | undefined {
     : undefined;
 }
 
-function formatPlanUpdateText(params: Record<string, unknown>): string {
+function buildPlanUpdateToolUseInput(
+  params: Record<string, unknown>,
+): Record<string, unknown> | null {
   const stepsRaw = params.plan;
-  if (!Array.isArray(stepsRaw) || stepsRaw.length === 0) return "";
+  if (!Array.isArray(stepsRaw) || stepsRaw.length === 0) return null;
 
   const explanation =
     typeof params.explanation === "string" ? params.explanation.trim() : "";
-  const lines = stepsRaw
+  const todos = stepsRaw
     .filter(
       (entry): entry is Record<string, unknown> =>
         !!entry && typeof entry === "object",
     )
     .map((entry, index) => {
-      const step =
+      const content =
         typeof entry.step === "string" ? entry.step : `Step ${index + 1}`;
       const status = normalizePlanStatus(entry.status);
-      return `${index + 1}. [${status}] ${step}`;
+      return { content, status, activeForm: "" };
     });
 
-  if (lines.length === 0) return "";
-  const header = explanation ? `Plan update: ${explanation}` : "Plan update:";
-  return `${header}\n${lines.join("\n")}`;
+  if (todos.length === 0) return null;
+  return {
+    title: "Plan update",
+    ...(explanation ? { explanation } : {}),
+    todos,
+  };
 }
 
 function normalizePlanStatus(raw: unknown): string {
   switch (raw) {
     case "inProgress":
-      return "in progress";
+      return "in_progress";
     case "completed":
       return "completed";
     case "pending":

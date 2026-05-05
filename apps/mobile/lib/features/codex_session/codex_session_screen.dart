@@ -19,6 +19,7 @@ import '../../widgets/rename_session_dialog.dart';
 import '../../services/chat_message_handler.dart';
 import '../../services/draft_service.dart';
 import '../../utils/composer_tokens.dart';
+import '../../utils/codex_plan_update.dart';
 import '../../services/notification_service.dart';
 import '../../widgets/session_name_title.dart';
 import '../../widgets/workspace_pane_chrome.dart';
@@ -1862,6 +1863,13 @@ String? _extractPlanText(
     if (entry is! ServerChatEntry) continue;
     final msg = entry.message;
     if (msg is! AssistantServerMessage) continue;
+
+    for (final content in msg.message.content) {
+      if (content is ToolUseContent && isCodexUpdatePlanTool(content.name)) {
+        final text = codexPlanUpdateTextFromInput(content.input);
+        if (text != null) return text;
+      }
+    }
 
     final text = msg.message.content
         .whereType<TextContent>()

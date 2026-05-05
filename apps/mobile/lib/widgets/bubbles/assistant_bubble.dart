@@ -16,6 +16,7 @@ import '../../theme/markdown_style.dart';
 import '../../utils/structured_error_inference.dart';
 import '../../utils/diff_parser.dart';
 import '../../utils/tool_categories.dart';
+import '../../utils/codex_plan_update.dart';
 import '../../features/file_peek/file_path_syntax.dart';
 import 'error_bubble.dart';
 import '../plan_detail_sheet.dart';
@@ -210,41 +211,13 @@ class _DefaultLayout extends StatelessWidget {
       children: [
         for (final content in contents)
           switch (content) {
-            TextContent(:final text) => Padding(
-              padding: const EdgeInsets.symmetric(
-                vertical: AppSpacing.bubbleMarginV,
-                horizontal: AppSpacing.bubbleMarginH,
-              ),
-              child: plainTextMode
-                  ? SelectableText(
-                      text,
-                      style: Theme.of(context).textTheme.bodyMedium,
-                      contextMenuBuilder:
-                          googleSearchSelectableTextContextMenuBuilder,
-                    )
-                  : GoogleSearchSelectionArea(
-                      child: MarkdownBody(
-                        data: text,
-                        selectable: !googleSearchSelectionMenuEnabled,
-                        styleSheet: buildMarkdownStyle(context),
-                        onTapLink: handleMarkdownLink,
-                        inlineSyntaxes: [
-                          if (onFileTap != null) ...[
-                            FilePathSyntax(knownPathSuffixes: fileSuffixes),
-                            BareFilePathSyntax(knownPathSuffixes: fileSuffixes),
-                          ],
-                          ...colorCodeInlineSyntaxes,
-                        ],
-                        builders: {
-                          if (onFileTap != null)
-                            'filePath': FilePathBuilder(onTap: onFileTap),
-                          ...markdownBuilders,
-                        },
-                      ),
-                    ),
+            TextContent(:final text) => _buildTextContent(
+              context,
+              text,
+              fileSuffixes,
             ),
             ToolUseContent(:final id, :final name, :final input) =>
-              name == 'TodoWrite'
+              name == 'TodoWrite' || isCodexUpdatePlanTool(name)
                   ? TodoWriteWidget(input: input)
                   : ToolUseTile(toolUseId: id, name: name, input: input),
             ThinkingContent(:final thinking) => ThinkingBubble(
@@ -259,6 +232,50 @@ class _DefaultLayout extends StatelessWidget {
             onTogglePlainText: onTogglePlainText,
           ),
       ],
+    );
+  }
+
+  Widget _buildTextContent(
+    BuildContext context,
+    String text,
+    Set<String> fileSuffixes,
+  ) {
+    final planInput = plainTextMode ? null : codexPlanUpdateInputFromText(text);
+    if (planInput != null) {
+      return TodoWriteWidget(input: planInput);
+    }
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(
+        vertical: AppSpacing.bubbleMarginV,
+        horizontal: AppSpacing.bubbleMarginH,
+      ),
+      child: plainTextMode
+          ? SelectableText(
+              text,
+              style: Theme.of(context).textTheme.bodyMedium,
+              contextMenuBuilder: googleSearchSelectableTextContextMenuBuilder,
+            )
+          : GoogleSearchSelectionArea(
+              child: MarkdownBody(
+                data: text,
+                selectable: !googleSearchSelectionMenuEnabled,
+                styleSheet: buildMarkdownStyle(context),
+                onTapLink: handleMarkdownLink,
+                inlineSyntaxes: [
+                  if (onFileTap != null) ...[
+                    FilePathSyntax(knownPathSuffixes: fileSuffixes),
+                    BareFilePathSyntax(knownPathSuffixes: fileSuffixes),
+                  ],
+                  ...colorCodeInlineSyntaxes,
+                ],
+                builders: {
+                  if (onFileTap != null)
+                    'filePath': FilePathBuilder(onTap: onFileTap),
+                  ...markdownBuilders,
+                },
+              ),
+            ),
     );
   }
 }
