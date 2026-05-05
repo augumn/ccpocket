@@ -2,6 +2,11 @@
 
 All notable changes to `@ccpocket/bridge` will be documented in this file.
 
+## [1.56.0] - 2026-05-06
+
+### Added
+- Load available Codex models from the app-server `model/list` RPC, with the bundled model list kept as a fallback.
+
 ## [1.55.1] - 2026-05-05
 
 ### Fixed
