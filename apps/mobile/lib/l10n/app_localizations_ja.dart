@@ -2118,4 +2118,31 @@ class AppLocalizationsJa extends AppLocalizations {
   String supporterRestoreFailed(String message) {
     return '復元に失敗しました: $message';
   }
+
+  @override
+  String get gitDiscardAllChangesTitle => 'すべての変更を破棄しますか';
+
+  @override
+  String get gitDiscardVisibleUnstagedChangesMessage => '表示中の未ステージ変更をすべて破棄します。';
+
+  @override
+  String get gitDiscardChangeTitle => 'この変更を破棄しますか';
+
+  @override
+  String get gitDiscardFileUnstagedChangesMessage => 'このファイルの未ステージ変更をすべて破棄します。';
+
+  @override
+  String get gitDiscardHunkUnstagedChangesMessage => 'このハンクの未ステージ変更を破棄します。';
+
+  @override
+  String get googleSearchSelectionAction => 'Google で検索';
+
+  @override
+  String get approvalQuestionNotificationTitle => '質問があります - ccpocket';
+
+  @override
+  String get approvalRequiredNotificationTitle => '承認待ち - ccpocket';
+
+  @override
+  String get exitPlanModeNotificationBody => '作成したプランの確認が必要です';
 }

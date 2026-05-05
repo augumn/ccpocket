@@ -4001,6 +4001,60 @@ abstract class AppLocalizations {
   /// In ja, this message translates to:
   /// **'復元に失敗しました: {message}'**
   String supporterRestoreFailed(String message);
+
+  /// No description provided for @gitDiscardAllChangesTitle.
+  ///
+  /// In ja, this message translates to:
+  /// **'すべての変更を破棄しますか'**
+  String get gitDiscardAllChangesTitle;
+
+  /// No description provided for @gitDiscardVisibleUnstagedChangesMessage.
+  ///
+  /// In ja, this message translates to:
+  /// **'表示中の未ステージ変更をすべて破棄します。'**
+  String get gitDiscardVisibleUnstagedChangesMessage;
+
+  /// No description provided for @gitDiscardChangeTitle.
+  ///
+  /// In ja, this message translates to:
+  /// **'この変更を破棄しますか'**
+  String get gitDiscardChangeTitle;
+
+  /// No description provided for @gitDiscardFileUnstagedChangesMessage.
+  ///
+  /// In ja, this message translates to:
+  /// **'このファイルの未ステージ変更をすべて破棄します。'**
+  String get gitDiscardFileUnstagedChangesMessage;
+
+  /// No description provided for @gitDiscardHunkUnstagedChangesMessage.
+  ///
+  /// In ja, this message translates to:
+  /// **'このハンクの未ステージ変更を破棄します。'**
+  String get gitDiscardHunkUnstagedChangesMessage;
+
+  /// No description provided for @googleSearchSelectionAction.
+  ///
+  /// In ja, this message translates to:
+  /// **'Google で検索'**
+  String get googleSearchSelectionAction;
+
+  /// No description provided for @approvalQuestionNotificationTitle.
+  ///
+  /// In ja, this message translates to:
+  /// **'質問があります - ccpocket'**
+  String get approvalQuestionNotificationTitle;
+
+  /// No description provided for @approvalRequiredNotificationTitle.
+  ///
+  /// In ja, this message translates to:
+  /// **'承認待ち - ccpocket'**
+  String get approvalRequiredNotificationTitle;
+
+  /// No description provided for @exitPlanModeNotificationBody.
+  ///
+  /// In ja, this message translates to:
+  /// **'作成したプランの確認が必要です'**
+  String get exitPlanModeNotificationBody;
 }
 
 class _AppLocalizationsDelegate

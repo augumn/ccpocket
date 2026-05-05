@@ -2202,4 +2202,36 @@ class AppLocalizationsEn extends AppLocalizations {
   String supporterRestoreFailed(String message) {
     return 'Restore failed: $message';
   }
+
+  @override
+  String get gitDiscardAllChangesTitle => 'Discard all changes?';
+
+  @override
+  String get gitDiscardVisibleUnstagedChangesMessage =>
+      'Discard all visible unstaged changes.';
+
+  @override
+  String get gitDiscardChangeTitle => 'Discard this change?';
+
+  @override
+  String get gitDiscardFileUnstagedChangesMessage =>
+      'Discard all unstaged changes in this file.';
+
+  @override
+  String get gitDiscardHunkUnstagedChangesMessage =>
+      'Discard unstaged changes in this hunk.';
+
+  @override
+  String get googleSearchSelectionAction => 'Search with Google';
+
+  @override
+  String get approvalQuestionNotificationTitle => 'Question - ccpocket';
+
+  @override
+  String get approvalRequiredNotificationTitle =>
+      'Approval Required - ccpocket';
+
+  @override
+  String get exitPlanModeNotificationBody =>
+      'The generated plan needs your review';
 }

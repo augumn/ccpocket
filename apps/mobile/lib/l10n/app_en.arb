@@ -900,5 +900,14 @@
     "placeholders": {
       "message": { "type": "String" }
     }
-  }
+  },
+  "gitDiscardAllChangesTitle": "Discard all changes?",
+  "gitDiscardVisibleUnstagedChangesMessage": "Discard all visible unstaged changes.",
+  "gitDiscardChangeTitle": "Discard this change?",
+  "gitDiscardFileUnstagedChangesMessage": "Discard all unstaged changes in this file.",
+  "gitDiscardHunkUnstagedChangesMessage": "Discard unstaged changes in this hunk.",
+  "googleSearchSelectionAction": "Search with Google",
+  "approvalQuestionNotificationTitle": "Question - ccpocket",
+  "approvalRequiredNotificationTitle": "Approval Required - ccpocket",
+  "exitPlanModeNotificationBody": "The generated plan needs your review"
 }

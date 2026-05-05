@@ -1,3 +1,5 @@
+// ignore_for_file: altive_lints/avoid_hardcoded_japanese
+
 import '../models/messages.dart';
 
 /// Mock recent sessions for testing project filter and picker UI.

@@ -2093,4 +2093,31 @@ class AppLocalizationsZh extends AppLocalizations {
   String supporterRestoreFailed(String message) {
     return '恢复失败：$message';
   }
+
+  @override
+  String get gitDiscardAllChangesTitle => '要放弃所有更改吗？';
+
+  @override
+  String get gitDiscardVisibleUnstagedChangesMessage => '放弃当前显示的所有未暂存更改。';
+
+  @override
+  String get gitDiscardChangeTitle => '要放弃此更改吗？';
+
+  @override
+  String get gitDiscardFileUnstagedChangesMessage => '放弃此文件中的所有未暂存更改。';
+
+  @override
+  String get gitDiscardHunkUnstagedChangesMessage => '放弃此代码块中的未暂存更改。';
+
+  @override
+  String get googleSearchSelectionAction => '用 Google 搜索';
+
+  @override
+  String get approvalQuestionNotificationTitle => '有一个问题 - ccpocket';
+
+  @override
+  String get approvalRequiredNotificationTitle => '等待审批 - ccpocket';
+
+  @override
+  String get exitPlanModeNotificationBody => '生成的计划需要你确认';
 }

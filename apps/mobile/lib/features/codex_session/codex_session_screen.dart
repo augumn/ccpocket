@@ -655,6 +655,7 @@ class _CodexChatBody extends HookWidget {
           sessionId: sessionId,
           isBackground: isBackground,
           approval: chatSessionCubit.state.approval,
+          l: l,
           collapseToolResults: collapseToolResults,
           planFeedbackController: planFeedbackController,
           scrollToBottom: scroll.scrollToBottom,
@@ -1464,6 +1465,7 @@ void _executeSideEffects(
   required String sessionId,
   required bool isBackground,
   required ApprovalState approval,
+  required AppLocalizations l,
   required TextEditingController planFeedbackController,
   required ValueNotifier<int> collapseToolResults,
   required VoidCallback scrollToBottom,
@@ -1486,6 +1488,7 @@ void _executeSideEffects(
           if (permission != null) {
             NotificationService.instance.showApprovalNotification(
               permission,
+              l: l,
               id: 1,
               payload: sessionId,
             );
@@ -1497,6 +1500,7 @@ void _executeSideEffects(
           if (permission != null) {
             NotificationService.instance.showApprovalNotification(
               permission,
+              l: l,
               id: 2,
               payload: sessionId,
             );

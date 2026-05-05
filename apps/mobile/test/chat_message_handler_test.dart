@@ -1,7 +1,9 @@
 import 'package:flutter_test/flutter_test.dart';
 
+import 'package:ccpocket/l10n/app_localizations_ja.dart';
 import 'package:ccpocket/models/messages.dart';
 import 'package:ccpocket/services/chat_message_handler.dart';
+import 'package:ccpocket/services/notification_service.dart';
 
 void main() {
   late ChatMessageHandler handler;
@@ -1216,9 +1218,14 @@ void main() {
         },
       );
 
-      expect(perm.notificationCopy.title, '承認待ち - ccpocket');
+      final notificationCopy = ApprovalNotificationCopy.from(
+        perm,
+        l: AppLocalizationsJa(),
+      );
+
+      expect(notificationCopy.title, '承認待ち - ccpocket');
       expect(
-        perm.notificationCopy.body,
+        notificationCopy.body,
         'Verify whether Flutter 3.41.6 finished installing',
       );
     });
@@ -1241,8 +1248,13 @@ void main() {
         },
       );
 
-      expect(perm.notificationCopy.title, '承認待ち - ccpocket');
-      expect(perm.notificationCopy.body, 'Allow this request?');
+      final notificationCopy = ApprovalNotificationCopy.from(
+        perm,
+        l: AppLocalizationsJa(),
+      );
+
+      expect(notificationCopy.title, '承認待ち - ccpocket');
+      expect(notificationCopy.body, 'Allow this request?');
     });
   });
 

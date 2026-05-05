@@ -2138,4 +2138,34 @@ class AppLocalizationsKo extends AppLocalizations {
   String supporterRestoreFailed(String message) {
     return '복원 실패: $message';
   }
+
+  @override
+  String get gitDiscardAllChangesTitle => '모든 변경 사항을 버릴까요?';
+
+  @override
+  String get gitDiscardVisibleUnstagedChangesMessage =>
+      '현재 표시된 모든 스테이징되지 않은 변경 사항을 버립니다.';
+
+  @override
+  String get gitDiscardChangeTitle => '이 변경 사항을 버릴까요?';
+
+  @override
+  String get gitDiscardFileUnstagedChangesMessage =>
+      '이 파일의 모든 스테이징되지 않은 변경 사항을 버립니다.';
+
+  @override
+  String get gitDiscardHunkUnstagedChangesMessage =>
+      '이 헝크의 스테이징되지 않은 변경 사항을 버립니다.';
+
+  @override
+  String get googleSearchSelectionAction => 'Google 검색';
+
+  @override
+  String get approvalQuestionNotificationTitle => '질문이 있습니다 - ccpocket';
+
+  @override
+  String get approvalRequiredNotificationTitle => '승인 대기 중 - ccpocket';
+
+  @override
+  String get exitPlanModeNotificationBody => '작성된 계획을 확인해야 합니다';
 }

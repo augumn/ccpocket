@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../core/logger.dart';
+import '../l10n/app_localizations.dart';
 
 bool get _isMacOSNative =>
     !kIsWeb && defaultTargetPlatform == TargetPlatform.macOS;
@@ -104,12 +105,7 @@ List<ContextMenuButtonItem> _withGoogleSearchItem({
 }
 
 String _searchWithGoogleLabel(BuildContext context) {
-  return switch (Localizations.localeOf(context).languageCode) {
-    'ja' => 'Google で検索',
-    'ko' => 'Google 검색',
-    'zh' => '用 Google 搜索',
-    _ => 'Search with Google',
-  };
+  return AppLocalizations.of(context).googleSearchSelectionAction;
 }
 
 Future<void> _openGoogleSearch(String selectedText) async {
