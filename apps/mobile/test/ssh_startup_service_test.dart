@@ -133,7 +133,11 @@ class _FakeRemoteClient implements SshRemoteClient {
 }
 
 void main() {
-  Future<MachineManagerService> createManager(Machine machine) async {
+  Future<MachineManagerService> createManager(
+    Machine machine, {
+    String? sshJumpPassword,
+    String? sshJumpPrivateKey,
+  }) async {
     SharedPreferences.setMockInitialValues({});
     final prefs = await SharedPreferences.getInstance();
     final manager = MachineManagerService(prefs, _FakeSecureStorage());
@@ -143,6 +147,8 @@ void main() {
       sshPrivateKey: machine.sshAuthType == SshAuthType.privateKey
           ? 'private-key'
           : null,
+      sshJumpPassword: sshJumpPassword,
+      sshJumpPrivateKey: sshJumpPrivateKey,
     );
     return manager;
   }
@@ -236,7 +242,34 @@ void main() {
       expect(jump!.host, 'jump.example.com');
       expect(jump.port, 2222);
       expect(jump.username, 'jump-user');
+      expect(jump.authType, SshAuthType.password);
+      expect(jump.jumpPassword, 'pw');
       expect(gateway.clients.single.closed, isTrue);
+    });
+
+    test('passes separate jump host credentials when saved', () async {
+      final manager = await createManager(
+        const Machine(
+          id: 'm5',
+          host: 'target.internal',
+          sshEnabled: true,
+          sshUsername: 'target-user',
+          sshJumpHost: 'jump.example.com',
+          sshJumpUsername: 'jump-user',
+          sshJumpAuthType: SshAuthType.password,
+        ),
+        sshJumpPassword: 'jump-pw',
+      );
+      final gateway = _RecordingConnectionGateway();
+      final service = SshStartupService(manager, connectionGateway: gateway);
+
+      final result = await service.testConnection('m5', password: 'target-pw');
+
+      expect(result.success, isTrue);
+      final jump = gateway.calls.single.jump;
+      expect(jump, isNotNull);
+      expect(jump!.authType, SshAuthType.password);
+      expect(jump.jumpPassword, 'jump-pw');
     });
 
     test('start, stop, and update use the shared SSH route', () async {
@@ -300,5 +333,36 @@ void main() {
         expect(gateway.calls, isEmpty);
       },
     );
+
+    test('inline credential test passes separate jump password', () async {
+      final manager = await createManager(
+        const Machine(
+          id: 'm6',
+          host: 'target.example.com',
+          sshEnabled: true,
+          sshUsername: 'target-user',
+        ),
+      );
+      final gateway = _RecordingConnectionGateway();
+      final service = SshStartupService(manager, connectionGateway: gateway);
+
+      final result = await service.testConnectionWithCredentials(
+        host: 'target.example.com',
+        sshPort: 22,
+        username: 'target-user',
+        authType: SshAuthType.password,
+        password: 'target-pw',
+        jumpHost: 'jump.example.com',
+        jumpUsername: 'jump-user',
+        jumpAuthType: SshAuthType.password,
+        jumpPassword: 'jump-pw',
+      );
+
+      expect(result.success, isTrue);
+      final jump = gateway.calls.single.jump;
+      expect(jump, isNotNull);
+      expect(jump!.username, 'jump-user');
+      expect(jump.jumpPassword, 'jump-pw');
+    });
   });
 }

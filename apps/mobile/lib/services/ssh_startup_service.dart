@@ -27,8 +27,18 @@ class SshJumpConfig {
   final String host;
   final int port;
   final String? username;
+  final SshAuthType authType;
+  final String? jumpPassword;
+  final String? jumpPrivateKey;
 
-  const SshJumpConfig({required this.host, required this.port, this.username});
+  const SshJumpConfig({
+    required this.host,
+    required this.port,
+    this.username,
+    this.authType = SshAuthType.password,
+    this.jumpPassword,
+    this.jumpPrivateKey,
+  });
 }
 
 class SshCommandResult {
@@ -111,12 +121,17 @@ class DartSshConnectionGateway implements SshConnectionGateway {
       jump.port,
       timeout: connectionTimeout,
     );
+    final jumpIdentities = _validateCredentials(
+      jump.authType,
+      jump.jumpPassword,
+      jump.jumpPrivateKey,
+    );
     final jumpClient = _createClient(
       jumpSocket,
       username: jump.username ?? username,
-      authType: authType,
-      password: password,
-      identities: identities,
+      authType: jump.authType,
+      password: jump.jumpPassword,
+      identities: jumpIdentities,
     );
 
     try {
@@ -682,6 +697,9 @@ ${_startCommand.trim()}
     String? jumpHost,
     int jumpPort = 22,
     String? jumpUsername,
+    SshAuthType? jumpAuthType,
+    String? jumpPassword,
+    String? jumpPrivateKey,
     String? password,
     String? privateKey,
   }) async {
@@ -706,6 +724,12 @@ ${_startCommand.trim()}
           host: jumpHost,
           port: jumpPort,
           username: jumpUsername,
+          targetAuthType: authType,
+          targetPassword: password,
+          targetPrivateKey: privateKey,
+          jumpAuthType: jumpAuthType,
+          jumpPassword: jumpPassword,
+          jumpPrivateKey: jumpPrivateKey,
         ),
       );
 
@@ -836,7 +860,7 @@ ${_startCommand.trim()}
     Machine machine, {
     String? password,
     String? privateKey,
-  }) {
+  }) async {
     return _connectionGateway.connect(
       host: machine.host,
       port: machine.sshPort,
@@ -844,15 +868,39 @@ ${_startCommand.trim()}
       authType: machine.sshAuthType,
       password: password,
       privateKey: privateKey,
-      jump: _machineJumpConfig(machine),
+      jump: await _machineJumpConfig(
+        machine,
+        targetPassword: password,
+        targetPrivateKey: privateKey,
+      ),
     );
   }
 
-  SshJumpConfig? _machineJumpConfig(Machine machine) {
+  Future<SshJumpConfig?> _machineJumpConfig(
+    Machine machine, {
+    String? targetPassword,
+    String? targetPrivateKey,
+  }) async {
+    String? jumpPassword;
+    String? jumpPrivateKey;
+    if (machine.hasJumpCredentials) {
+      if (machine.sshJumpAuthType == SshAuthType.password) {
+        jumpPassword = await _machineManager.getSshJumpPassword(machine.id);
+      } else {
+        jumpPrivateKey = await _machineManager.getSshJumpPrivateKey(machine.id);
+      }
+    }
+
     return _inlineJumpConfig(
       host: machine.sshJumpHost,
       port: machine.sshJumpPort,
       username: machine.sshJumpUsername,
+      targetAuthType: machine.sshAuthType,
+      targetPassword: targetPassword,
+      targetPrivateKey: targetPrivateKey,
+      jumpAuthType: machine.hasJumpCredentials ? machine.sshJumpAuthType : null,
+      jumpPassword: jumpPassword,
+      jumpPrivateKey: jumpPrivateKey,
     );
   }
 
@@ -860,16 +908,38 @@ ${_startCommand.trim()}
     required String? host,
     required int port,
     required String? username,
+    required SshAuthType targetAuthType,
+    String? targetPassword,
+    String? targetPrivateKey,
+    SshAuthType? jumpAuthType,
+    String? jumpPassword,
+    String? jumpPrivateKey,
   }) {
     final trimmedHost = host?.trim();
     if (trimmedHost == null || trimmedHost.isEmpty) return null;
     final trimmedUsername = username?.trim();
+    final resolvedAuthType =
+        (jumpPassword != null && jumpPassword.isNotEmpty) ||
+            (jumpPrivateKey != null && jumpPrivateKey.isNotEmpty)
+        ? (jumpAuthType ?? targetAuthType)
+        : targetAuthType;
     return SshJumpConfig(
       host: trimmedHost,
       port: port,
       username: trimmedUsername == null || trimmedUsername.isEmpty
           ? null
           : trimmedUsername,
+      authType: resolvedAuthType,
+      jumpPassword: resolvedAuthType == SshAuthType.password
+          ? (jumpPassword != null && jumpPassword.isNotEmpty
+                ? jumpPassword
+                : targetPassword)
+          : null,
+      jumpPrivateKey: resolvedAuthType == SshAuthType.privateKey
+          ? (jumpPrivateKey != null && jumpPrivateKey.isNotEmpty
+                ? jumpPrivateKey
+                : targetPrivateKey)
+          : null,
     );
   }
 }
