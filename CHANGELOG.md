@@ -4,6 +4,14 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.92.0] - 2026-05-06
+
+### Added
+- Add SSH jump host credential support for remote machine connections.
+
+### Fixed
+- Keep Codex approval defaults separate from Claude approval defaults.
+
 ## [1.91.2] - 2026-05-05
 
 ### Fixed
