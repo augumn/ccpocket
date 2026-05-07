@@ -4,6 +4,20 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.93.0] - 2026-05-07
+
+### Added
+- Show the connected Bridge name in the session list.
+
+### Changed
+- Require Bridge 1.56.1 for the latest Git diff compatibility fixes.
+
+### Fixed
+- Clear stale Bridge connection state when switching machines.
+- Support Bridge actions that use SSH private keys.
+- Pass jump host passwords in the SSH smoke test.
+- Handle non-ASCII untracked file paths in diff views.
+
 ## [1.92.0] - 2026-05-06
 
 ### Added
