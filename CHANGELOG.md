@@ -4,6 +4,15 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.96.0] - 2026-05-09
+
+### Added
+- Support mentioning directories from file mention completions.
+
+### Changed
+- Improve file mention filtering so path-based fuzzy queries can match full paths.
+- Require Bridge 1.57.0 for directory mention candidates.
+
 ## [1.95.0] - 2026-05-09
 
 ### Added
