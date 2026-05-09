@@ -72,12 +72,13 @@ Future<void> openFilePeek(
 
 /// Returns project file paths whose suffix matches [filePath].
 List<String> _resolveFilePath(String filePath, List<String> projectFiles) {
+  final filesOnly = projectFiles.where((f) => !f.endsWith('/'));
   // Exact match first.
-  if (projectFiles.contains(filePath)) return [filePath];
+  if (filesOnly.contains(filePath)) return [filePath];
 
   // Suffix match: e.g. "lib/main.dart" matches "apps/mobile/lib/main.dart".
   final suffix = filePath.startsWith('/') ? filePath : '/$filePath';
-  final candidates = projectFiles.where((f) => '/$f'.endsWith(suffix)).toList();
+  final candidates = filesOnly.where((f) => '/$f'.endsWith(suffix)).toList();
 
   return candidates;
 }

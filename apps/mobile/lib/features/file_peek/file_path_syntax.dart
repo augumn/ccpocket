@@ -35,6 +35,7 @@ class FilePathSyntax extends md.InlineSyntax {
   static Set<String> buildSuffixSet(Iterable<String> filePaths) {
     final suffixes = <String>{};
     for (final filePath in filePaths) {
+      if (filePath.endsWith('/')) continue;
       final parts = filePath.split('/');
       for (var i = 0; i < parts.length; i++) {
         suffixes.add(parts.sublist(i).join('/'));

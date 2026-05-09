@@ -618,7 +618,11 @@ class ChatInputWithOverlays extends HookWidget {
       final messageToSend = finalText.isEmpty
           ? 'What is in this image?'
           : finalText;
-      cubit.sendMessage(messageToSend, images: images);
+      cubit.sendMessage(
+        messageToSend,
+        images: images,
+        mentionablePaths: projectFiles,
+      );
       inputController.clear();
       final draftService = context.read<DraftService>();
       draftService.deleteDraft(sessionId);
@@ -1181,14 +1185,17 @@ String _detectMimeType(Uint8List bytes, String fallbackPath) {
 /// Lower score = better match. Returns -1 if no match.
 int _fileScore(String path, String query) {
   final lower = path.toLowerCase();
-  final fileName = lower.split('/').last;
+  final displayPath = lower.endsWith('/')
+      ? lower.substring(0, lower.length - 1)
+      : lower;
+  final fileName = displayPath.split('/').last;
   final nameWithoutExt = fileName.split('.').first;
   if (nameWithoutExt == query) return 0;
   if (fileName.startsWith(query)) return 1;
   if (nameWithoutExt.startsWith(query)) return 1;
   if (fileName.contains(query)) return 2;
-  if (lower.split('/').any((s) => s.startsWith(query))) return 3;
-  if (lower.contains(query)) return 4;
+  if (displayPath.split('/').any((s) => s.startsWith(query))) return 3;
+  if (displayPath.contains(query)) return 4;
   return -1;
 }
 

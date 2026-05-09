@@ -986,6 +986,7 @@ class ChatSessionCubit extends Cubit<ChatSessionState> {
   void sendMessage(
     String text, {
     List<({Uint8List bytes, String mimeType})>? images,
+    Iterable<String>? mentionablePaths,
   }) {
     if (text.trim().isEmpty && (images == null || images.isEmpty)) return;
     if (isCodex && state.queuedInput != null) return;
@@ -996,7 +997,10 @@ class ChatSessionCubit extends Cubit<ChatSessionState> {
         ? _bridge.cachedSessionHistorySeq(sessionId)
         : null;
     final structuredMentions = isCodex
-        ? _extractCodexStructuredInputs(text)
+        ? _extractCodexStructuredInputs(
+            text,
+            mentionablePaths: mentionablePaths,
+          )
         : (
             skills: const <Map<String, String>>[],
             mentions: const <Map<String, String>>[],
@@ -1635,7 +1639,10 @@ class ChatSessionCubit extends Cubit<ChatSessionState> {
   }
 
   ({List<Map<String, String>> skills, List<Map<String, String>> mentions})
-  _extractCodexStructuredInputs(String text) {
+  _extractCodexStructuredInputs(
+    String text, {
+    Iterable<String>? mentionablePaths,
+  }) {
     final skills = <Map<String, String>>[];
     final mentions = <Map<String, String>>[];
     final seenSkills = <String>{};
@@ -1671,7 +1678,68 @@ class ChatSessionCubit extends Cubit<ChatSessionState> {
       final key = '${payload['name']}|${payload['path']}';
       if (seenMentions.add(key)) mentions.add(payload);
     }
+    final projectMentionPaths = _normalizeProjectMentionPaths(
+      mentionablePaths ?? const <String>[],
+    );
+    if (projectMentionPaths.isNotEmpty) {
+      final projectMatches = RegExp(
+        r'(?<![A-Za-z0-9_:/.-])@(\S+)',
+      ).allMatches(text);
+      for (final match in projectMatches) {
+        final rawPath = match.group(1)!;
+        final token = '@$rawPath';
+        if (entityByToken[token]?.pluginInfo != null) continue;
+
+        final mentionPath = _resolveProjectMentionPath(
+          rawPath,
+          projectMentionPaths,
+        );
+        if (mentionPath == null) continue;
+
+        final payloadPath = _resolveProjectMentionPayloadPath(
+          mentionPath,
+          state.projectPath,
+        );
+        final payload = {'name': mentionPath, 'path': payloadPath};
+        final key = '${payload['name']}|${payload['path']}';
+        if (seenMentions.add(key)) mentions.add(payload);
+      }
+    }
     return (skills: skills, mentions: mentions);
+  }
+
+  Set<String> _normalizeProjectMentionPaths(Iterable<String> paths) {
+    final normalized = <String>{};
+    for (final path in paths) {
+      final trimmed = path.trim();
+      if (trimmed.isEmpty) continue;
+      normalized.add(trimmed);
+    }
+    return normalized;
+  }
+
+  String? _resolveProjectMentionPath(String rawPath, Set<String> paths) {
+    if (paths.contains(rawPath)) return rawPath;
+
+    final stripped = rawPath.replaceFirst(RegExp(r'[,.;:!?]+$'), '');
+    if (stripped != rawPath && paths.contains(stripped)) return stripped;
+
+    if (!rawPath.endsWith('/') && paths.contains('$rawPath/')) {
+      return '$rawPath/';
+    }
+    return null;
+  }
+
+  String _resolveProjectMentionPayloadPath(
+    String mentionPath,
+    String? projectPath,
+  ) {
+    if (mentionPath.startsWith('/') || projectPath == null) {
+      return mentionPath;
+    }
+    final root = projectPath.trim();
+    if (root.isEmpty) return mentionPath;
+    return root.endsWith('/') ? '$root$mentionPath' : '$root/$mentionPath';
   }
 
   @override

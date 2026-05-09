@@ -892,6 +892,41 @@ void main() {
       },
     );
 
+    test(
+      'codex sendMessage includes structured file and directory mentions',
+      () async {
+        final cubit = createCubit(
+          's1',
+          provider: Provider.codex,
+          initialProjectPath: '/tmp/project',
+        );
+        addTearDown(cubit.close);
+        await Future.microtask(() {});
+
+        cubit.sendMessage(
+          'Review @apps/mobile/ and @apps/mobile/lib/main.dart',
+          mentionablePaths: const [
+            'apps/',
+            'apps/mobile/',
+            'apps/mobile/lib/',
+            'apps/mobile/lib/main.dart',
+          ],
+        );
+
+        expect(mockBridge.sentMessages, hasLength(1));
+        final json =
+            jsonDecode(mockBridge.sentMessages.single.toJson())
+                as Map<String, dynamic>;
+        expect(json['mentions'], [
+          {'name': 'apps/mobile/', 'path': '/tmp/project/apps/mobile/'},
+          {
+            'name': 'apps/mobile/lib/main.dart',
+            'path': '/tmp/project/apps/mobile/lib/main.dart',
+          },
+        ]);
+      },
+    );
+
     test('approve clears approval state and sends message', () async {
       final cubit = createCubit('s1');
       addTearDown(cubit.close);

@@ -60,7 +60,7 @@ import {
   unstageHunks,
   gitCommit,
   gitPush,
-  listProjectFiles,
+  listProjectFilesAndDirectories,
   listBranches,
   createBranch,
   checkoutBranch,
@@ -3718,7 +3718,9 @@ export class BridgeWebSocketServer {
         }
         void (async () => {
           try {
-            const files = await listProjectFiles(msg.projectPath);
+            const files = await listProjectFilesAndDirectories(
+              msg.projectPath,
+            );
             this.send(ws, { type: "file_list", files } as Record<
               string,
               unknown
