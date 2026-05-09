@@ -1,3 +1,4 @@
-• Added a focused review mode for Git diffs.
-• The session list now shows which Bridge you are connected to.
-• Fixed bugs and improved overall stability.
+• Improved command completions so suggestions appear in a more useful order.
+• Added a setting for choosing the code display font.
+• File mentions now support directory mentions and path-based search.
+• Improved rendering performance for long Markdown histories.
