@@ -10,6 +10,7 @@ import 'package:super_drag_and_drop/super_drag_and_drop.dart';
 import '../../../l10n/app_localizations.dart';
 import '../../../utils/composer_tokens.dart';
 import '../../../utils/command_completion_matcher.dart';
+import '../../../utils/file_mention_matcher.dart';
 import '../../../utils/platform_helper.dart';
 import '../../../hooks/use_list_auto_complete.dart';
 import '../../../hooks/use_voice_input.dart';
@@ -321,7 +322,7 @@ class ChatInputWithOverlays extends HookWidget {
             );
             final scored =
                 projectFiles
-                    .map((f) => (file: f, score: _fileScore(f, q)))
+                    .map((f) => (file: f, score: scoreFileMentionPath(f, q)))
                     .where((e) => e.score >= 0)
                     .toList()
                   ..sort((a, b) {
@@ -1179,24 +1180,6 @@ String _detectMimeType(Uint8List bytes, String fallbackPath) {
     'webp' => 'image/webp',
     _ => 'image/jpeg',
   };
-}
-
-/// Score a file path against a query for @-mention ranking.
-/// Lower score = better match. Returns -1 if no match.
-int _fileScore(String path, String query) {
-  final lower = path.toLowerCase();
-  final displayPath = lower.endsWith('/')
-      ? lower.substring(0, lower.length - 1)
-      : lower;
-  final fileName = displayPath.split('/').last;
-  final nameWithoutExt = fileName.split('.').first;
-  if (nameWithoutExt == query) return 0;
-  if (fileName.startsWith(query)) return 1;
-  if (nameWithoutExt.startsWith(query)) return 1;
-  if (fileName.contains(query)) return 2;
-  if (displayPath.split('/').any((s) => s.startsWith(query))) return 3;
-  if (displayPath.contains(query)) return 4;
-  return -1;
 }
 
 /// Extract the file query after the last '@' before cursor position.
