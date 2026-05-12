@@ -292,7 +292,7 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get machineEditSavedPrivateKeyIndicator =>
-      '저장된 Private Key를 사용합니다. 새로 입력하면 교체됩니다.';
+      'Private Key가 저장되어 있습니다. 새로 입력하면 교체됩니다.';
 
   @override
   String get machineEditUseSshJumpHost => 'SSH Jump Host 사용';
@@ -331,14 +331,14 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get machineEditSavedJumpHostPasswordIndicator =>
-      '저장된 Jump Host 비밀번호를 사용합니다. 새로 입력하면 교체됩니다.';
+      'Jump Host 비밀번호가 저장되어 있습니다. 새로 입력하면 교체됩니다.';
 
   @override
   String get machineEditJumpPrivateKeyPem => 'Jump Private Key (PEM)';
 
   @override
   String get machineEditSavedJumpHostPrivateKeyIndicator =>
-      '저장된 Jump Host Private Key를 사용합니다. 새로 입력하면 교체됩니다.';
+      'Jump Host Private Key가 저장되어 있습니다. 새로 입력하면 교체됩니다.';
 
   @override
   String get machineEditTesting => '테스트 중...';

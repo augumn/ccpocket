@@ -285,7 +285,9 @@ void main() {
       );
       expect(find.text('jump-pw'), findsNothing);
       expect(
-        find.text('A saved jump host password will be used unless replaced.'),
+        find.text(
+          'Jump host password is saved. Enter a new one to replace it.',
+        ),
         findsOneWidget,
       );
 
@@ -382,7 +384,9 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(
-        find.text('A saved jump host password will be used unless replaced.'),
+        find.text(
+          'Jump host password is saved. Enter a new one to replace it.',
+        ),
         findsNothing,
       );
 
@@ -436,7 +440,7 @@ void main() {
       expect(find.text('saved-jump-private-key'), findsNothing);
       expect(
         find.text(
-          'A saved jump host private key will be used unless replaced.',
+          'Jump host private key is saved. Enter a new one to replace it.',
         ),
         findsOneWidget,
       );
@@ -484,9 +488,9 @@ void main() {
       expect(find.text('マシンを編集'), findsOneWidget);
       expect(find.text('saved-private-key'), findsNothing);
       expect(find.text('saved-jump-private-key'), findsNothing);
-      expect(find.text('保存済みの Private Key を使います。入力すると置き換えます。'), findsOneWidget);
+      expect(find.text('Private Key は保存済みです。新しく入力すると置き換えます。'), findsOneWidget);
       expect(
-        find.text('保存済みの Jump Host Private Key を使います。入力すると置き換えます。'),
+        find.text('Jump Host Private Key は保存済みです。新しく入力すると置き換えます。'),
         findsOneWidget,
       );
     });
@@ -523,7 +527,7 @@ void main() {
 
       expect(find.text('saved-private-key'), findsNothing);
       expect(
-        find.text('A saved private key will be used unless replaced.'),
+        find.text('Private key is saved. Enter a new one to replace it.'),
         findsOneWidget,
       );
 
@@ -577,7 +581,7 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(
-        find.text('A saved private key will be used unless replaced.'),
+        find.text('Private key is saved. Enter a new one to replace it.'),
         findsNothing,
       );
 

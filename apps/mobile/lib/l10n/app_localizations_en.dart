@@ -296,7 +296,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get machineEditSavedPrivateKeyIndicator =>
-      'A saved private key will be used unless replaced.';
+      'Private key is saved. Enter a new one to replace it.';
 
   @override
   String get machineEditUseSshJumpHost => 'Use SSH jump host';
@@ -335,14 +335,14 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get machineEditSavedJumpHostPasswordIndicator =>
-      'A saved jump host password will be used unless replaced.';
+      'Jump host password is saved. Enter a new one to replace it.';
 
   @override
   String get machineEditJumpPrivateKeyPem => 'Jump Private Key (PEM)';
 
   @override
   String get machineEditSavedJumpHostPrivateKeyIndicator =>
-      'A saved jump host private key will be used unless replaced.';
+      'Jump host private key is saved. Enter a new one to replace it.';
 
   @override
   String get machineEditTesting => 'Testing...';

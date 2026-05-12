@@ -645,7 +645,7 @@ abstract class AppLocalizations {
   /// No description provided for @machineEditSavedPrivateKeyIndicator.
   ///
   /// In ja, this message translates to:
-  /// **'保存済みの Private Key を使います。入力すると置き換えます。'**
+  /// **'Private Key は保存済みです。新しく入力すると置き換えます。'**
   String get machineEditSavedPrivateKeyIndicator;
 
   /// No description provided for @machineEditUseSshJumpHost.
@@ -717,7 +717,7 @@ abstract class AppLocalizations {
   /// No description provided for @machineEditSavedJumpHostPasswordIndicator.
   ///
   /// In ja, this message translates to:
-  /// **'保存済みの Jump Host パスワードを使います。入力すると置き換えます。'**
+  /// **'Jump Host パスワードは保存済みです。新しく入力すると置き換えます。'**
   String get machineEditSavedJumpHostPasswordIndicator;
 
   /// No description provided for @machineEditJumpPrivateKeyPem.
@@ -729,7 +729,7 @@ abstract class AppLocalizations {
   /// No description provided for @machineEditSavedJumpHostPrivateKeyIndicator.
   ///
   /// In ja, this message translates to:
-  /// **'保存済みの Jump Host Private Key を使います。入力すると置き換えます。'**
+  /// **'Jump Host Private Key は保存済みです。新しく入力すると置き換えます。'**
   String get machineEditSavedJumpHostPrivateKeyIndicator;
 
   /// No description provided for @machineEditTesting.

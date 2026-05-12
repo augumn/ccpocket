@@ -290,7 +290,7 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get machineEditSavedPrivateKeyIndicator =>
-      '将使用已保存的 Private Key。输入新内容会替换它。';
+      'Private Key 已保存。输入新内容会替换它。';
 
   @override
   String get machineEditUseSshJumpHost => '使用 SSH Jump Host';
@@ -327,14 +327,14 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get machineEditSavedJumpHostPasswordIndicator =>
-      '将使用已保存的 Jump Host 密码。输入新内容会替换它。';
+      'Jump Host 密码已保存。输入新内容会替换它。';
 
   @override
   String get machineEditJumpPrivateKeyPem => 'Jump Private Key (PEM)';
 
   @override
   String get machineEditSavedJumpHostPrivateKeyIndicator =>
-      '将使用已保存的 Jump Host Private Key。输入新内容会替换它。';
+      'Jump Host Private Key 已保存。输入新内容会替换它。';
 
   @override
   String get machineEditTesting => '正在测试...';

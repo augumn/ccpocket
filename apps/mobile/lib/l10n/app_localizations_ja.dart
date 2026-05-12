@@ -292,7 +292,7 @@ class AppLocalizationsJa extends AppLocalizations {
 
   @override
   String get machineEditSavedPrivateKeyIndicator =>
-      '保存済みの Private Key を使います。入力すると置き換えます。';
+      'Private Key は保存済みです。新しく入力すると置き換えます。';
 
   @override
   String get machineEditUseSshJumpHost => 'SSH Jump Host を使う';
@@ -330,14 +330,14 @@ class AppLocalizationsJa extends AppLocalizations {
 
   @override
   String get machineEditSavedJumpHostPasswordIndicator =>
-      '保存済みの Jump Host パスワードを使います。入力すると置き換えます。';
+      'Jump Host パスワードは保存済みです。新しく入力すると置き換えます。';
 
   @override
   String get machineEditJumpPrivateKeyPem => 'Jump Private Key (PEM)';
 
   @override
   String get machineEditSavedJumpHostPrivateKeyIndicator =>
-      '保存済みの Jump Host Private Key を使います。入力すると置き換えます。';
+      'Jump Host Private Key は保存済みです。新しく入力すると置き換えます。';
 
   @override
   String get machineEditTesting => 'テスト中...';
