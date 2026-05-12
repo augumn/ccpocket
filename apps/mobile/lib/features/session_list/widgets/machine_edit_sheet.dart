@@ -77,6 +77,10 @@ class MachineEditSheet extends StatefulWidget {
 }
 
 class _MachineEditSheetState extends State<MachineEditSheet> {
+  static const _keyboardInsetAnimationDuration = Duration(milliseconds: 180);
+  static const _footerClearance = 88.0;
+  static const _focusedFieldClearance = 160.0;
+
   late final TextEditingController _nameController;
   late final TextEditingController _hostController;
   late final TextEditingController _portController;
@@ -345,299 +349,167 @@ class _MachineEditSheetState extends State<MachineEditSheet> {
     }
   }
 
+  EdgeInsets _fieldScrollPadding(BuildContext context) {
+    return EdgeInsets.only(
+      top: 24,
+      bottom: MediaQuery.viewInsetsOf(context).bottom + _focusedFieldClearance,
+    );
+  }
+
+  Future<void> _ensureFieldVisible(BuildContext fieldContext) async {
+    await Future<void>.delayed(_keyboardInsetAnimationDuration);
+    if (!mounted || !fieldContext.mounted) return;
+
+    await Scrollable.ensureVisible(
+      fieldContext,
+      duration: const Duration(milliseconds: 220),
+      curve: Curves.easeOut,
+      alignment: 0.25,
+      alignmentPolicy: ScrollPositionAlignmentPolicy.keepVisibleAtEnd,
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
     final appColors = theme.extension<AppColors>()!;
     final l = AppLocalizations.of(context);
+    final keyboardInset = MediaQuery.viewInsetsOf(context).bottom;
+    final bottomSafeArea = MediaQuery.paddingOf(context).bottom;
+    final listBottomPadding =
+        32 + _footerClearance + keyboardInset + bottomSafeArea;
 
-    return DraggableScrollableSheet(
-      initialChildSize: 0.85,
-      minChildSize: 0.5,
-      maxChildSize: 0.95,
-      expand: false,
-      builder: (context, scrollController) {
-        return Container(
-          decoration: BoxDecoration(
-            color: colorScheme.surface,
-            borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
-          ),
-          child: Column(
-            children: [
-              // Handle
-              Center(
-                child: Container(
-                  margin: const EdgeInsets.only(top: 12, bottom: 8),
-                  width: 48,
-                  height: 6,
-                  decoration: BoxDecoration(
-                    color: colorScheme.outlineVariant.withValues(alpha: 0.5),
-                    borderRadius: BorderRadius.circular(3),
+    return AnimatedPadding(
+      key: const ValueKey('machine_edit_keyboard_avoidance_padding'),
+      duration: _keyboardInsetAnimationDuration,
+      curve: Curves.easeOut,
+      padding: EdgeInsets.only(bottom: keyboardInset),
+      child: DraggableScrollableSheet(
+        initialChildSize: 0.85,
+        minChildSize: 0.5,
+        maxChildSize: 0.95,
+        expand: false,
+        builder: (context, scrollController) {
+          return Container(
+            decoration: BoxDecoration(
+              color: colorScheme.surface,
+              borderRadius: const BorderRadius.vertical(
+                top: Radius.circular(16),
+              ),
+            ),
+            child: Column(
+              children: [
+                // Handle
+                Center(
+                  child: Container(
+                    margin: const EdgeInsets.only(top: 12, bottom: 8),
+                    width: 48,
+                    height: 6,
+                    decoration: BoxDecoration(
+                      color: colorScheme.outlineVariant.withValues(alpha: 0.5),
+                      borderRadius: BorderRadius.circular(3),
+                    ),
                   ),
                 ),
-              ),
 
-              // Header
-              Padding(
-                padding: const EdgeInsets.all(16),
-                child: Row(
-                  children: [
-                    Text(
-                      isEditing
-                          ? l.machineEditEditTitle
-                          : l.machineEditAddTitle,
-                      style: theme.textTheme.titleLarge,
-                    ),
-                    const Spacer(),
-                    IconButton(
-                      key: const ValueKey('dismiss_keyboard_button'),
-                      tooltip: l.machineEditDismissKeyboardTooltip,
-                      onPressed: () =>
-                          FocusManager.instance.primaryFocus?.unfocus(),
-                      icon: const Icon(Icons.keyboard_hide),
-                    ),
-                    IconButton(
-                      onPressed: () => Navigator.of(context).pop(),
-                      icon: const Icon(Icons.close),
-                    ),
-                  ],
-                ),
-              ),
-
-              const Divider(height: 1),
-
-              // Form
-              Expanded(
-                child: ListView(
-                  controller: scrollController,
-                  keyboardDismissBehavior:
-                      ScrollViewKeyboardDismissBehavior.onDrag,
+                // Header
+                Padding(
                   padding: const EdgeInsets.all(16),
-                  children: [
-                    // Basic Info
-                    _SectionHeader(title: l.machineEditBasicInfo),
-                    const SizedBox(height: 12),
-
-                    TextField(
-                      controller: _nameController,
-                      decoration: InputDecoration(
-                        labelText: l.machineEditName,
-                        hintText: l.machineEditNameHint,
-                        prefixIcon: const Icon(Icons.label),
-                        border: OutlineInputBorder(),
+                  child: Row(
+                    children: [
+                      Text(
+                        isEditing
+                            ? l.machineEditEditTitle
+                            : l.machineEditAddTitle,
+                        style: theme.textTheme.titleLarge,
                       ),
-                    ),
-                    const SizedBox(height: 12),
-
-                    TextField(
-                      controller: _hostController,
-                      decoration: InputDecoration(
-                        labelText: l.machineEditHostLabel,
-                        hintText: l.machineEditHostHint,
-                        prefixIcon: const Icon(Icons.computer),
-                        border: OutlineInputBorder(),
+                      const Spacer(),
+                      IconButton(
+                        key: const ValueKey('dismiss_keyboard_button'),
+                        tooltip: l.machineEditDismissKeyboardTooltip,
+                        onPressed: () =>
+                            FocusManager.instance.primaryFocus?.unfocus(),
+                        icon: const Icon(Icons.keyboard_hide),
                       ),
-                    ),
-                    const SizedBox(height: 12),
+                      IconButton(
+                        onPressed: () => Navigator.of(context).pop(),
+                        icon: const Icon(Icons.close),
+                      ),
+                    ],
+                  ),
+                ),
 
-                    Row(
-                      children: [
-                        Expanded(
-                          child: TextField(
-                            controller: _portController,
-                            decoration: InputDecoration(
-                              labelText: l.machineEditPort,
-                              hintText: l.machineEditBridgePortHint,
-                              prefixIcon: const Icon(Icons.numbers),
-                              border: OutlineInputBorder(),
-                            ),
-                            keyboardType: TextInputType.number,
-                          ),
-                        ),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: TextField(
-                            controller: _apiKeyController,
-                            decoration: InputDecoration(
-                              labelText: l.machineEditApiKey,
-                              hintText: l.machineEditOptional,
-                              prefixIcon: const Icon(Icons.key),
-                              border: OutlineInputBorder(),
-                            ),
-                            obscureText: true,
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 12),
+                const Divider(height: 1),
 
-                    Container(
-                      decoration: BoxDecoration(
-                        color: colorScheme.surfaceContainerHigh,
-                        borderRadius: BorderRadius.circular(16),
-                        border: Border.all(
-                          color: colorScheme.outlineVariant.withValues(
-                            alpha: 0.5,
-                          ),
+                // Form
+                Expanded(
+                  child: ListView(
+                    controller: scrollController,
+                    keyboardDismissBehavior:
+                        ScrollViewKeyboardDismissBehavior.onDrag,
+                    padding: EdgeInsets.fromLTRB(16, 16, 16, listBottomPadding),
+                    children: [
+                      // Basic Info
+                      _SectionHeader(title: l.machineEditBasicInfo),
+                      const SizedBox(height: 12),
+
+                      TextField(
+                        controller: _nameController,
+                        scrollPadding: _fieldScrollPadding(context),
+                        decoration: InputDecoration(
+                          labelText: l.machineEditName,
+                          hintText: l.machineEditNameHint,
+                          prefixIcon: const Icon(Icons.label),
+                          border: OutlineInputBorder(),
                         ),
                       ),
-                      child: SwitchListTile(
-                        title: Text(
-                          l.machineEditUseSecureConnection,
-                          style: const TextStyle(fontWeight: FontWeight.w500),
-                        ),
-                        subtitle: Text(
-                          l.machineEditUseSecureConnectionSubtitle,
-                          style: theme.textTheme.bodySmall?.copyWith(
-                            color: colorScheme.onSurfaceVariant,
-                          ),
-                        ),
-                        value: _useSsl,
-                        onChanged: (v) => setState(() => _useSsl = v),
-                        secondary: const Icon(Icons.lock),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(16),
+                      const SizedBox(height: 12),
+
+                      TextField(
+                        controller: _hostController,
+                        scrollPadding: _fieldScrollPadding(context),
+                        decoration: InputDecoration(
+                          labelText: l.machineEditHostLabel,
+                          hintText: l.machineEditHostHint,
+                          prefixIcon: const Icon(Icons.computer),
+                          border: OutlineInputBorder(),
                         ),
                       ),
-                    ),
-
-                    const SizedBox(height: 24),
-
-                    // SSH Configuration
-                    _SectionHeader(title: l.machineEditSshConfiguration),
-                    const SizedBox(height: 12),
-
-                    Container(
-                      decoration: BoxDecoration(
-                        color: colorScheme.surfaceContainerHigh,
-                        borderRadius: BorderRadius.circular(16),
-                        border: Border.all(
-                          color: colorScheme.outlineVariant.withValues(
-                            alpha: 0.5,
-                          ),
-                        ),
-                      ),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          SwitchListTile(
-                            title: Text(
-                              l.machineEditEnableSshRemoteStartup,
-                              style: const TextStyle(
-                                fontWeight: FontWeight.w500,
-                              ),
-                            ),
-                            subtitle: Text(
-                              l.machineEditEnableSshRemoteStartupSubtitle,
-                              style: theme.textTheme.bodySmall?.copyWith(
-                                color: colorScheme.onSurfaceVariant,
-                              ),
-                            ),
-                            value: _sshEnabled,
-                            onChanged: (v) => setState(() => _sshEnabled = v),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(16),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-
-                    if (_sshEnabled) ...[
                       const SizedBox(height: 12),
 
                       Row(
                         children: [
                           Expanded(
-                            flex: 2,
                             child: TextField(
-                              controller: _sshUsernameController,
+                              controller: _portController,
+                              scrollPadding: _fieldScrollPadding(context),
                               decoration: InputDecoration(
-                                labelText: l.machineEditSshUsername,
-                                hintText: l.machineEditSshUsernameHint,
-                                prefixIcon: const Icon(Icons.person),
-                                border: OutlineInputBorder(),
-                              ),
-                            ),
-                          ),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            child: TextField(
-                              controller: _sshPortController,
-                              decoration: InputDecoration(
-                                labelText: l.machineEditSshPort,
-                                hintText: l.machineEditSshPortHint,
+                                labelText: l.machineEditPort,
+                                hintText: l.machineEditBridgePortHint,
+                                prefixIcon: const Icon(Icons.numbers),
                                 border: OutlineInputBorder(),
                               ),
                               keyboardType: TextInputType.number,
                             ),
                           ),
-                        ],
-                      ),
-                      const SizedBox(height: 12),
-
-                      _SectionHeader(title: l.machineEditTargetAuthentication),
-                      const SizedBox(height: 12),
-
-                      SegmentedButton<SshAuthType>(
-                        key: const ValueKey('ssh_auth_type_selector'),
-                        segments: [
-                          ButtonSegment(
-                            value: SshAuthType.password,
-                            label: Text(l.password),
-                            icon: const Icon(Icons.password),
-                          ),
-                          ButtonSegment(
-                            value: SshAuthType.privateKey,
-                            label: Text(l.machineEditPrivateKey),
-                            icon: const Icon(Icons.vpn_key),
-                          ),
-                        ],
-                        selected: {_sshAuthType},
-                        onSelectionChanged: (set) {
-                          setState(() => _sshAuthType = set.first);
-                        },
-                      ),
-                      const SizedBox(height: 12),
-
-                      if (_sshAuthType == SshAuthType.password)
-                        TextField(
-                          controller: _sshPasswordController,
-                          decoration: InputDecoration(
-                            labelText: l.sshPassword,
-                            prefixIcon: const Icon(Icons.lock),
-                            border: OutlineInputBorder(),
-                          ),
-                          obscureText: true,
-                        )
-                      else
-                        Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            TextField(
-                              key: const ValueKey('ssh_private_key_field'),
-                              controller: _sshPrivateKeyController,
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: TextField(
+                              controller: _apiKeyController,
+                              scrollPadding: _fieldScrollPadding(context),
                               decoration: InputDecoration(
-                                labelText: l.machineEditSshPrivateKeyPem,
-                                hintText: l.machineEditOpenSshPrivateKeyHint,
-                                prefixIcon: const Icon(Icons.vpn_key),
+                                labelText: l.machineEditApiKey,
+                                hintText: l.machineEditOptional,
+                                prefixIcon: const Icon(Icons.key),
                                 border: OutlineInputBorder(),
                               ),
-                              maxLines: 4,
-                              onChanged: (_) => setState(() {}),
+                              obscureText: true,
                             ),
-                            if (_hasExistingSshPrivateKey &&
-                                _sshPrivateKeyController.text.isEmpty) ...[
-                              const SizedBox(height: 8),
-                              _SavedCredentialIndicator(
-                                label: l.machineEditSavedPrivateKeyIndicator,
-                              ),
-                            ],
-                          ],
-                        ),
-
-                      const SizedBox(height: 16),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 12),
 
                       Container(
                         decoration: BoxDecoration(
@@ -650,30 +522,68 @@ class _MachineEditSheetState extends State<MachineEditSheet> {
                           ),
                         ),
                         child: SwitchListTile(
-                          key: const ValueKey('ssh_jump_toggle'),
                           title: Text(
-                            l.machineEditUseSshJumpHost,
+                            l.machineEditUseSecureConnection,
                             style: const TextStyle(fontWeight: FontWeight.w500),
                           ),
                           subtitle: Text(
-                            l.machineEditUseSshJumpHostSubtitle,
+                            l.machineEditUseSecureConnectionSubtitle,
                             style: theme.textTheme.bodySmall?.copyWith(
                               color: colorScheme.onSurfaceVariant,
                             ),
                           ),
-                          value: _sshJumpEnabled,
-                          onChanged: (v) => setState(() => _sshJumpEnabled = v),
-                          secondary: const Icon(Icons.hub),
+                          value: _useSsl,
+                          onChanged: (v) => setState(() => _useSsl = v),
+                          secondary: const Icon(Icons.lock),
                           shape: RoundedRectangleBorder(
                             borderRadius: BorderRadius.circular(16),
                           ),
                         ),
                       ),
 
-                      if (_sshJumpEnabled) ...[
-                        const SizedBox(height: 12),
+                      const SizedBox(height: 24),
 
-                        _SectionHeader(title: l.machineEditSshJumpHost),
+                      // SSH Configuration
+                      _SectionHeader(title: l.machineEditSshConfiguration),
+                      const SizedBox(height: 12),
+
+                      Container(
+                        decoration: BoxDecoration(
+                          color: colorScheme.surfaceContainerHigh,
+                          borderRadius: BorderRadius.circular(16),
+                          border: Border.all(
+                            color: colorScheme.outlineVariant.withValues(
+                              alpha: 0.5,
+                            ),
+                          ),
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            SwitchListTile(
+                              title: Text(
+                                l.machineEditEnableSshRemoteStartup,
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.w500,
+                                ),
+                              ),
+                              subtitle: Text(
+                                l.machineEditEnableSshRemoteStartupSubtitle,
+                                style: theme.textTheme.bodySmall?.copyWith(
+                                  color: colorScheme.onSurfaceVariant,
+                                ),
+                              ),
+                              value: _sshEnabled,
+                              onChanged: (v) => setState(() => _sshEnabled = v),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(16),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+
+                      if (_sshEnabled) ...[
                         const SizedBox(height: 12),
 
                         Row(
@@ -681,12 +591,12 @@ class _MachineEditSheetState extends State<MachineEditSheet> {
                             Expanded(
                               flex: 2,
                               child: TextField(
-                                key: const ValueKey('ssh_jump_host_field'),
-                                controller: _sshJumpHostController,
+                                controller: _sshUsernameController,
+                                scrollPadding: _fieldScrollPadding(context),
                                 decoration: InputDecoration(
-                                  labelText: l.machineEditJumpHost,
-                                  hintText: l.machineEditJumpHostHint,
-                                  prefixIcon: const Icon(Icons.hub),
+                                  labelText: l.machineEditSshUsername,
+                                  hintText: l.machineEditSshUsernameHint,
+                                  prefixIcon: const Icon(Icons.person),
                                   border: OutlineInputBorder(),
                                 ),
                               ),
@@ -694,10 +604,10 @@ class _MachineEditSheetState extends State<MachineEditSheet> {
                             const SizedBox(width: 12),
                             Expanded(
                               child: TextField(
-                                key: const ValueKey('ssh_jump_port_field'),
-                                controller: _sshJumpPortController,
+                                controller: _sshPortController,
+                                scrollPadding: _fieldScrollPadding(context),
                                 decoration: InputDecoration(
-                                  labelText: l.machineEditJumpPort,
+                                  labelText: l.machineEditSshPort,
                                   hintText: l.machineEditSshPortHint,
                                   border: OutlineInputBorder(),
                                 ),
@@ -708,26 +618,13 @@ class _MachineEditSheetState extends State<MachineEditSheet> {
                         ),
                         const SizedBox(height: 12),
 
-                        TextField(
-                          key: const ValueKey('ssh_jump_username_field'),
-                          controller: _sshJumpUsernameController,
-                          decoration: InputDecoration(
-                            labelText: l.machineEditJumpUsername,
-                            hintText: l.machineEditJumpUsernameHint,
-                            prefixIcon: const Icon(Icons.person_pin),
-                            border: OutlineInputBorder(),
-                          ),
-                        ),
-                        const SizedBox(height: 12),
-
                         _SectionHeader(
-                          title: l.machineEditJumpHostAuthentication,
-                          subtitle: l.machineEditJumpHostAuthenticationSubtitle,
+                          title: l.machineEditTargetAuthentication,
                         ),
                         const SizedBox(height: 12),
 
                         SegmentedButton<SshAuthType>(
-                          key: const ValueKey('ssh_jump_auth_type_selector'),
+                          key: const ValueKey('ssh_auth_type_selector'),
                           segments: [
                             ButtonSegment(
                               value: SshAuthType.password,
@@ -740,195 +637,375 @@ class _MachineEditSheetState extends State<MachineEditSheet> {
                               icon: const Icon(Icons.vpn_key),
                             ),
                           ],
-                          selected: {_sshJumpAuthType},
+                          selected: {_sshAuthType},
                           onSelectionChanged: (set) {
-                            setState(() => _sshJumpAuthType = set.first);
+                            setState(() => _sshAuthType = set.first);
                           },
                         ),
                         const SizedBox(height: 12),
 
-                        if (_sshJumpAuthType == SshAuthType.password)
-                          Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              TextField(
-                                key: const ValueKey('ssh_jump_password_field'),
-                                controller: _sshJumpPasswordController,
-                                decoration: InputDecoration(
-                                  labelText: l.machineEditJumpPassword,
-                                  prefixIcon: const Icon(Icons.lock),
-                                  border: OutlineInputBorder(),
-                                ),
-                                obscureText: true,
-                                onChanged: (_) => setState(() {}),
-                              ),
-                              if (_hasExistingSshJumpPassword &&
-                                  _sshJumpPasswordController.text.isEmpty) ...[
-                                const SizedBox(height: 8),
-                                _SavedCredentialIndicator(
-                                  label: l
-                                      .machineEditSavedJumpHostPasswordIndicator,
-                                ),
-                              ],
-                            ],
+                        if (_sshAuthType == SshAuthType.password)
+                          TextField(
+                            controller: _sshPasswordController,
+                            scrollPadding: _fieldScrollPadding(context),
+                            decoration: InputDecoration(
+                              labelText: l.sshPassword,
+                              prefixIcon: const Icon(Icons.lock),
+                              border: OutlineInputBorder(),
+                            ),
+                            obscureText: true,
                           )
                         else
                           Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              TextField(
-                                key: const ValueKey(
-                                  'ssh_jump_private_key_field',
+                              Builder(
+                                builder: (fieldContext) => TextField(
+                                  key: const ValueKey('ssh_private_key_field'),
+                                  controller: _sshPrivateKeyController,
+                                  scrollPadding: _fieldScrollPadding(context),
+                                  decoration: InputDecoration(
+                                    labelText: l.machineEditSshPrivateKeyPem,
+                                    hintText:
+                                        l.machineEditOpenSshPrivateKeyHint,
+                                    prefixIcon: const Icon(Icons.vpn_key),
+                                    border: OutlineInputBorder(),
+                                  ),
+                                  maxLines: 4,
+                                  onTap: () =>
+                                      _ensureFieldVisible(fieldContext),
+                                  onChanged: (_) => setState(() {}),
                                 ),
-                                controller: _sshJumpPrivateKeyController,
-                                decoration: InputDecoration(
-                                  labelText: l.machineEditJumpPrivateKeyPem,
-                                  hintText: l.machineEditOpenSshPrivateKeyHint,
-                                  prefixIcon: const Icon(Icons.vpn_key),
-                                  border: OutlineInputBorder(),
-                                ),
-                                maxLines: 4,
-                                onChanged: (_) => setState(() {}),
                               ),
-                              if (_hasExistingSshJumpPrivateKey &&
-                                  _sshJumpPrivateKeyController
-                                      .text
-                                      .isEmpty) ...[
+                              if (_hasExistingSshPrivateKey &&
+                                  _sshPrivateKeyController.text.isEmpty) ...[
                                 const SizedBox(height: 8),
                                 _SavedCredentialIndicator(
-                                  label: l
-                                      .machineEditSavedJumpHostPrivateKeyIndicator,
+                                  label: l.machineEditSavedPrivateKeyIndicator,
                                 ),
                               ],
                             ],
                           ),
-                      ],
 
-                      const SizedBox(height: 16),
+                        const SizedBox(height: 16),
 
-                      // Test connection button
-                      SizedBox(
-                        width: double.infinity,
-                        child: OutlinedButton.icon(
-                          onPressed: _isTesting ? null : _testConnection,
-                          icon: _isTesting
-                              ? const SizedBox(
-                                  width: 16,
-                                  height: 16,
-                                  child: CircularProgressIndicator(
-                                    strokeWidth: 2,
-                                  ),
-                                )
-                              : const Icon(Icons.wifi_find),
-                          label: Text(
-                            _isTesting
-                                ? l.machineEditTesting
-                                : l.machineEditTestConnection,
+                        Container(
+                          decoration: BoxDecoration(
+                            color: colorScheme.surfaceContainerHigh,
+                            borderRadius: BorderRadius.circular(16),
+                            border: Border.all(
+                              color: colorScheme.outlineVariant.withValues(
+                                alpha: 0.5,
+                              ),
+                            ),
+                          ),
+                          child: SwitchListTile(
+                            key: const ValueKey('ssh_jump_toggle'),
+                            title: Text(
+                              l.machineEditUseSshJumpHost,
+                              style: const TextStyle(
+                                fontWeight: FontWeight.w500,
+                              ),
+                            ),
+                            subtitle: Text(
+                              l.machineEditUseSshJumpHostSubtitle,
+                              style: theme.textTheme.bodySmall?.copyWith(
+                                color: colorScheme.onSurfaceVariant,
+                              ),
+                            ),
+                            value: _sshJumpEnabled,
+                            onChanged: (v) =>
+                                setState(() => _sshJumpEnabled = v),
+                            secondary: const Icon(Icons.hub),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(16),
+                            ),
                           ),
                         ),
-                      ),
 
-                      if (_testResult != null) ...[
-                        const SizedBox(height: 8),
-                        Container(
-                          padding: const EdgeInsets.all(12),
-                          decoration: BoxDecoration(
-                            color: _testSuccess
-                                ? appColors.statusOnline.withValues(alpha: 0.1)
-                                : colorScheme.error.withValues(alpha: 0.1),
-                            borderRadius: BorderRadius.circular(8),
-                          ),
-                          child: Row(
+                        if (_sshJumpEnabled) ...[
+                          const SizedBox(height: 12),
+
+                          _SectionHeader(title: l.machineEditSshJumpHost),
+                          const SizedBox(height: 12),
+
+                          Row(
                             children: [
-                              Icon(
-                                _testSuccess ? Icons.check_circle : Icons.error,
-                                color: _testSuccess
-                                    ? appColors.statusOnline
-                                    : colorScheme.error,
-                                size: 20,
-                              ),
-                              const SizedBox(width: 8),
                               Expanded(
-                                child: Text(
-                                  _testResult!,
-                                  style: TextStyle(
-                                    color: _testSuccess
-                                        ? appColors.statusOnline
-                                        : colorScheme.error,
+                                flex: 2,
+                                child: TextField(
+                                  key: const ValueKey('ssh_jump_host_field'),
+                                  controller: _sshJumpHostController,
+                                  scrollPadding: _fieldScrollPadding(context),
+                                  decoration: InputDecoration(
+                                    labelText: l.machineEditJumpHost,
+                                    hintText: l.machineEditJumpHostHint,
+                                    prefixIcon: const Icon(Icons.hub),
+                                    border: OutlineInputBorder(),
                                   ),
+                                ),
+                              ),
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: TextField(
+                                  key: const ValueKey('ssh_jump_port_field'),
+                                  controller: _sshJumpPortController,
+                                  scrollPadding: _fieldScrollPadding(context),
+                                  decoration: InputDecoration(
+                                    labelText: l.machineEditJumpPort,
+                                    hintText: l.machineEditSshPortHint,
+                                    border: OutlineInputBorder(),
+                                  ),
+                                  keyboardType: TextInputType.number,
                                 ),
                               ),
                             ],
                           ),
-                        ),
-                      ],
-                    ],
+                          const SizedBox(height: 12),
 
-                    const SizedBox(height: 32),
-                  ],
-                ),
-              ),
+                          TextField(
+                            key: const ValueKey('ssh_jump_username_field'),
+                            controller: _sshJumpUsernameController,
+                            scrollPadding: _fieldScrollPadding(context),
+                            decoration: InputDecoration(
+                              labelText: l.machineEditJumpUsername,
+                              hintText: l.machineEditJumpUsernameHint,
+                              prefixIcon: const Icon(Icons.person_pin),
+                              border: OutlineInputBorder(),
+                            ),
+                          ),
+                          const SizedBox(height: 12),
 
-              // Footer
-              Container(
-                padding: EdgeInsets.fromLTRB(
-                  24,
-                  16,
-                  24,
-                  16 + MediaQuery.of(context).padding.bottom,
-                ),
-                decoration: BoxDecoration(
-                  color: colorScheme.surface,
-                  boxShadow: [
-                    BoxShadow(
-                      color: colorScheme.shadow.withValues(alpha: 0.05),
-                      blurRadius: 10,
-                      offset: const Offset(0, -4),
-                    ),
-                  ],
-                ),
-                child: Row(
-                  children: [
-                    Expanded(
-                      child: TextButton(
-                        onPressed: () => Navigator.of(context).pop(),
-                        style: TextButton.styleFrom(
-                          foregroundColor: colorScheme.onSurfaceVariant,
-                        ),
-                        child: Text(l.cancel),
-                      ),
-                    ),
-                    const SizedBox(width: 16),
-                    Expanded(
-                      flex: 2,
-                      child: FilledButton(
-                        style: FilledButton.styleFrom(elevation: 0),
-                        onPressed: _isValid && !_isSaving ? _save : null,
-                        child: _isSaving
-                            ? SizedBox(
-                                width: 20,
-                                height: 20,
-                                child: CircularProgressIndicator(
-                                  strokeWidth: 2,
-                                  color: colorScheme.onPrimary,
-                                ),
-                              )
-                            : Text(
-                                isEditing
-                                    ? l.save
-                                    : widget.onSaveAndConnect != null
-                                    ? l.machineEditAddAndConnect
-                                    : l.add,
+                          _SectionHeader(
+                            title: l.machineEditJumpHostAuthentication,
+                            subtitle:
+                                l.machineEditJumpHostAuthenticationSubtitle,
+                          ),
+                          const SizedBox(height: 12),
+
+                          SegmentedButton<SshAuthType>(
+                            key: const ValueKey('ssh_jump_auth_type_selector'),
+                            segments: [
+                              ButtonSegment(
+                                value: SshAuthType.password,
+                                label: Text(l.password),
+                                icon: const Icon(Icons.password),
                               ),
-                      ),
-                    ),
-                  ],
+                              ButtonSegment(
+                                value: SshAuthType.privateKey,
+                                label: Text(l.machineEditPrivateKey),
+                                icon: const Icon(Icons.vpn_key),
+                              ),
+                            ],
+                            selected: {_sshJumpAuthType},
+                            onSelectionChanged: (set) {
+                              setState(() => _sshJumpAuthType = set.first);
+                            },
+                          ),
+                          const SizedBox(height: 12),
+
+                          if (_sshJumpAuthType == SshAuthType.password)
+                            Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Builder(
+                                  builder: (fieldContext) => TextField(
+                                    key: const ValueKey(
+                                      'ssh_jump_password_field',
+                                    ),
+                                    controller: _sshJumpPasswordController,
+                                    scrollPadding: _fieldScrollPadding(context),
+                                    decoration: InputDecoration(
+                                      labelText: l.machineEditJumpPassword,
+                                      prefixIcon: const Icon(Icons.lock),
+                                      border: OutlineInputBorder(),
+                                    ),
+                                    obscureText: true,
+                                    onTap: () =>
+                                        _ensureFieldVisible(fieldContext),
+                                    onChanged: (_) => setState(() {}),
+                                  ),
+                                ),
+                                if (_hasExistingSshJumpPassword &&
+                                    _sshJumpPasswordController
+                                        .text
+                                        .isEmpty) ...[
+                                  const SizedBox(height: 8),
+                                  _SavedCredentialIndicator(
+                                    label: l
+                                        .machineEditSavedJumpHostPasswordIndicator,
+                                  ),
+                                ],
+                              ],
+                            )
+                          else
+                            Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Builder(
+                                  builder: (fieldContext) => TextField(
+                                    key: const ValueKey(
+                                      'ssh_jump_private_key_field',
+                                    ),
+                                    controller: _sshJumpPrivateKeyController,
+                                    scrollPadding: _fieldScrollPadding(context),
+                                    decoration: InputDecoration(
+                                      labelText: l.machineEditJumpPrivateKeyPem,
+                                      hintText:
+                                          l.machineEditOpenSshPrivateKeyHint,
+                                      prefixIcon: const Icon(Icons.vpn_key),
+                                      border: OutlineInputBorder(),
+                                    ),
+                                    maxLines: 4,
+                                    onTap: () =>
+                                        _ensureFieldVisible(fieldContext),
+                                    onChanged: (_) => setState(() {}),
+                                  ),
+                                ),
+                                if (_hasExistingSshJumpPrivateKey &&
+                                    _sshJumpPrivateKeyController
+                                        .text
+                                        .isEmpty) ...[
+                                  const SizedBox(height: 8),
+                                  _SavedCredentialIndicator(
+                                    label: l
+                                        .machineEditSavedJumpHostPrivateKeyIndicator,
+                                  ),
+                                ],
+                              ],
+                            ),
+                        ],
+
+                        const SizedBox(height: 16),
+
+                        // Test connection button
+                        SizedBox(
+                          width: double.infinity,
+                          child: OutlinedButton.icon(
+                            onPressed: _isTesting ? null : _testConnection,
+                            icon: _isTesting
+                                ? const SizedBox(
+                                    width: 16,
+                                    height: 16,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                    ),
+                                  )
+                                : const Icon(Icons.wifi_find),
+                            label: Text(
+                              _isTesting
+                                  ? l.machineEditTesting
+                                  : l.machineEditTestConnection,
+                            ),
+                          ),
+                        ),
+
+                        if (_testResult != null) ...[
+                          const SizedBox(height: 8),
+                          Container(
+                            padding: const EdgeInsets.all(12),
+                            decoration: BoxDecoration(
+                              color: _testSuccess
+                                  ? appColors.statusOnline.withValues(
+                                      alpha: 0.1,
+                                    )
+                                  : colorScheme.error.withValues(alpha: 0.1),
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: Row(
+                              children: [
+                                Icon(
+                                  _testSuccess
+                                      ? Icons.check_circle
+                                      : Icons.error,
+                                  color: _testSuccess
+                                      ? appColors.statusOnline
+                                      : colorScheme.error,
+                                  size: 20,
+                                ),
+                                const SizedBox(width: 8),
+                                Expanded(
+                                  child: Text(
+                                    _testResult!,
+                                    style: TextStyle(
+                                      color: _testSuccess
+                                          ? appColors.statusOnline
+                                          : colorScheme.error,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ],
+
+                      const SizedBox(height: 32),
+                    ],
+                  ),
                 ),
-              ),
-            ],
-          ),
-        );
-      },
+
+                // Footer
+                Container(
+                  padding: EdgeInsets.fromLTRB(
+                    24,
+                    16,
+                    24,
+                    16 + MediaQuery.of(context).padding.bottom,
+                  ),
+                  decoration: BoxDecoration(
+                    color: colorScheme.surface,
+                    boxShadow: [
+                      BoxShadow(
+                        color: colorScheme.shadow.withValues(alpha: 0.05),
+                        blurRadius: 10,
+                        offset: const Offset(0, -4),
+                      ),
+                    ],
+                  ),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: TextButton(
+                          onPressed: () => Navigator.of(context).pop(),
+                          style: TextButton.styleFrom(
+                            foregroundColor: colorScheme.onSurfaceVariant,
+                          ),
+                          child: Text(l.cancel),
+                        ),
+                      ),
+                      const SizedBox(width: 16),
+                      Expanded(
+                        flex: 2,
+                        child: FilledButton(
+                          style: FilledButton.styleFrom(elevation: 0),
+                          onPressed: _isValid && !_isSaving ? _save : null,
+                          child: _isSaving
+                              ? SizedBox(
+                                  width: 20,
+                                  height: 20,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                    color: colorScheme.onPrimary,
+                                  ),
+                                )
+                              : Text(
+                                  isEditing
+                                      ? l.save
+                                      : widget.onSaveAndConnect != null
+                                      ? l.machineEditAddAndConnect
+                                      : l.add,
+                                ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          );
+        },
+      ),
     );
   }
 }

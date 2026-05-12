@@ -46,6 +46,7 @@ void main() {
     String? existingSshJumpPassword,
     String? existingSshJumpPrivateKey,
     Locale locale = const Locale('en'),
+    double keyboardInset = 0,
     required Future<void> Function({
       required Machine machine,
       String? apiKey,
@@ -61,6 +62,7 @@ void main() {
     addTearDown(() {
       tester.view.resetPhysicalSize();
       tester.view.resetDevicePixelRatio();
+      tester.view.resetViewInsets();
     });
 
     await tester.pumpWidget(
@@ -69,48 +71,61 @@ void main() {
         localizationsDelegates: AppLocalizations.localizationsDelegates,
         supportedLocales: AppLocalizations.supportedLocales,
         theme: AppTheme.lightTheme,
-        home: Scaffold(
-          body: MachineEditSheet(
-            machine: machine,
-            existingSshPassword: existingSshPassword,
-            existingSshPrivateKey: existingSshPrivateKey,
-            existingSshJumpPassword: existingSshJumpPassword,
-            existingSshJumpPrivateKey: existingSshJumpPrivateKey,
-            onSave: onSave,
-            onTestConnection:
-                ({
-                  required host,
-                  required sshPort,
-                  required username,
-                  required authType,
-                  jumpHost,
-                  required jumpPort,
-                  jumpUsername,
-                  jumpAuthType,
-                  jumpPassword,
-                  jumpPrivateKey,
-                  password,
-                  privateKey,
-                }) async {
-                  onTestConnectionCall?.call(
-                    _TestConnectionCall(
-                      host: host,
-                      sshPort: sshPort,
-                      username: username,
-                      authType: authType,
-                      password: password,
-                      privateKey: privateKey,
-                      jumpHost: jumpHost,
-                      jumpPort: jumpPort,
-                      jumpUsername: jumpUsername,
-                      jumpAuthType: jumpAuthType,
-                      jumpPassword: jumpPassword,
-                      jumpPrivateKey: jumpPrivateKey,
+        home: Builder(
+          builder: (context) {
+            final sheet = MachineEditSheet(
+              machine: machine,
+              existingSshPassword: existingSshPassword,
+              existingSshPrivateKey: existingSshPrivateKey,
+              existingSshJumpPassword: existingSshJumpPassword,
+              existingSshJumpPrivateKey: existingSshJumpPrivateKey,
+              onSave: onSave,
+              onTestConnection:
+                  ({
+                    required host,
+                    required sshPort,
+                    required username,
+                    required authType,
+                    jumpHost,
+                    required jumpPort,
+                    jumpUsername,
+                    jumpAuthType,
+                    jumpPassword,
+                    jumpPrivateKey,
+                    password,
+                    privateKey,
+                  }) async {
+                    onTestConnectionCall?.call(
+                      _TestConnectionCall(
+                        host: host,
+                        sshPort: sshPort,
+                        username: username,
+                        authType: authType,
+                        password: password,
+                        privateKey: privateKey,
+                        jumpHost: jumpHost,
+                        jumpPort: jumpPort,
+                        jumpUsername: jumpUsername,
+                        jumpAuthType: jumpAuthType,
+                        jumpPassword: jumpPassword,
+                        jumpPrivateKey: jumpPrivateKey,
+                      ),
+                    );
+                    return SshResult.success();
+                  },
+            );
+
+            final body = keyboardInset == 0
+                ? sheet
+                : MediaQuery(
+                    data: MediaQuery.of(context).copyWith(
+                      viewInsets: EdgeInsets.only(bottom: keyboardInset),
                     ),
+                    child: sheet,
                   );
-                  return SshResult.success();
-                },
-          ),
+
+            return Scaffold(body: body);
+          },
         ),
       ),
     );
@@ -144,6 +159,45 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(tester.testTextInput.isVisible, isFalse);
+    });
+
+    testWidgets('applies keyboard inset and field scroll padding', (
+      tester,
+    ) async {
+      await pumpSheet(
+        tester,
+        machine: const Machine(
+          id: 'm12',
+          host: 'target.internal',
+          sshEnabled: true,
+          sshUsername: 'target-user',
+          sshJumpHost: 'jump.example.com',
+          sshJumpUsername: 'jump-user',
+        ),
+        existingSshPassword: 'target-pw',
+        keyboardInset: 320,
+        onSave:
+            ({
+              required machine,
+              apiKey,
+              sshPassword,
+              sshPrivateKey,
+              sshJumpPassword,
+              sshJumpPrivateKey,
+            }) async {},
+      );
+
+      final animatedPadding = tester.widget<AnimatedPadding>(
+        find.byKey(const ValueKey('machine_edit_keyboard_avoidance_padding')),
+      );
+      final padding = animatedPadding.padding as EdgeInsets;
+      final expectedBottomInset = 320 / tester.view.devicePixelRatio;
+      expect(padding.bottom, expectedBottomInset);
+
+      final jumpPasswordField = tester.widget<TextField>(
+        find.byKey(const ValueKey('ssh_jump_password_field')),
+      );
+      expect(jumpPasswordField.scrollPadding.bottom, greaterThan(320));
     });
 
     testWidgets('loads existing SSL setting into the toggle', (tester) async {
