@@ -2,6 +2,18 @@
 
 All notable changes to `@ccpocket/bridge` will be documented in this file.
 
+## [1.58.0] - 2026-05-13
+
+### Added
+- Add experimental Codex shared app-server co-presence support.
+- Expose session-specific Codex CLI resume commands for clients.
+
+### Changed
+- Document the Codex remote resume command in Bridge setup output.
+
+### Fixed
+- Gate shared Codex app-server configuration behind the experimental mode.
+
 ## [1.57.1] - 2026-05-12
 
 ### Fixed
