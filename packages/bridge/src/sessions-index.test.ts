@@ -1369,6 +1369,28 @@ describe("codex sessions integration", () => {
     ).resolves.toEqual([{ base64: "aW1hZ2U=", mimeType: "image/png" }]);
   });
 
+  it("extracts codex user images from rollout filename without session meta", async () => {
+    const threadId = "019c56c0-d4d8-7b22-9e3c-200664d68017";
+    const codexDir = join(tempHome, ".codex", "sessions", "2026", "02", "13");
+    mkdirSync(codexDir, { recursive: true });
+
+    writeFileSync(
+      join(codexDir, `rollout-2026-02-13T11-26-43-${threadId}.jsonl`),
+      JSON.stringify({
+        type: "event_msg",
+        payload: {
+          type: "user_message",
+          message: "with image",
+          images: ["data:image/png;base64,aW1hZ2U="],
+        },
+      }),
+    );
+
+    await expect(
+      extractMessageImages(threadId, "codex:user-turn:1"),
+    ).resolves.toEqual([{ base64: "aW1hZ2U=", mimeType: "image/png" }]);
+  });
+
   it("extracts codex user images from local image paths", async () => {
     const threadId = "019c56c0-d4d8-7b22-9e3c-200664d68015";
     const codexDir = join(tempHome, ".codex", "sessions", "2026", "02", "13");

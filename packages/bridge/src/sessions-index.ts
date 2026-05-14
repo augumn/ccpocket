@@ -2401,7 +2401,10 @@ async function findCodexSessionJsonlPath(threadId: string): Promise<string | nul
   const files = await listCodexSessionFiles();
   for (const filePath of files) {
     const fallbackSessionId = basename(filePath, ".jsonl");
-    if (fallbackSessionId === threadId) {
+    if (
+      fallbackSessionId === threadId ||
+      fallbackSessionId.endsWith(`-${threadId}`)
+    ) {
       return filePath;
     }
     let raw: string;
@@ -2537,6 +2540,19 @@ export interface ExtractedImage {
   mimeType: string;
 }
 
+interface CodexMessageImageIndex {
+  jsonlPath: string;
+  size: number;
+  mtimeMs: number;
+  imagesByUuid: Map<string, ExtractedImage[]>;
+}
+
+const CODEX_IMAGE_INDEX_CACHE_LIMIT = 8;
+const codexMessageImageIndexCache = new Map<
+  string,
+  Promise<CodexMessageImageIndex | null>
+>();
+
 /**
  * Extract image base64 data from a Claude Code session JSONL for a specific message UUID.
  */
@@ -2544,6 +2560,10 @@ export async function extractMessageImages(
   sessionId: string,
   messageUuid: string,
 ): Promise<ExtractedImage[]> {
+  if (isCodexMessageImageUuid(messageUuid)) {
+    return extractCodexMessageImages(sessionId, messageUuid);
+  }
+
   // Try Claude Code first, then Codex
   const claudeImages = await extractClaudeMessageImages(sessionId, messageUuid);
   if (claudeImages.length > 0) return claudeImages;
@@ -2607,71 +2627,114 @@ async function extractCodexMessageImages(
   sessionId: string,
   messageUuid: string,
 ): Promise<ExtractedImage[]> {
-  const jsonlPath = await findCodexSessionJsonlPath(sessionId);
-  if (!jsonlPath) return [];
+  const index = await getCodexMessageImageIndex(sessionId);
+  return index?.imagesByUuid.get(messageUuid) ?? [];
+}
 
+function isCodexMessageImageUuid(messageUuid: string): boolean {
+  return (
+    messageUuid.startsWith("codex:user-turn:") ||
+    messageUuid.startsWith("codex-line-")
+  );
+}
+
+async function getCodexMessageImageIndex(
+  threadId: string,
+): Promise<CodexMessageImageIndex | null> {
+  const cached = codexMessageImageIndexCache.get(threadId);
+  if (cached) {
+    const index = await cached;
+    if (index && (await isFreshCodexMessageImageIndex(index))) {
+      return index;
+    }
+    codexMessageImageIndexCache.delete(threadId);
+  }
+
+  const promise = buildCodexMessageImageIndex(threadId);
+  codexMessageImageIndexCache.set(threadId, promise);
+  trimCodexMessageImageIndexCache();
+  return promise;
+}
+
+async function isFreshCodexMessageImageIndex(
+  index: CodexMessageImageIndex,
+): Promise<boolean> {
+  try {
+    const current = await stat(index.jsonlPath);
+    return current.size === index.size && current.mtimeMs === index.mtimeMs;
+  } catch {
+    return false;
+  }
+}
+
+function trimCodexMessageImageIndexCache() {
+  while (codexMessageImageIndexCache.size > CODEX_IMAGE_INDEX_CACHE_LIMIT) {
+    const oldest = codexMessageImageIndexCache.keys().next().value;
+    if (!oldest) return;
+    codexMessageImageIndexCache.delete(oldest);
+  }
+}
+
+async function buildCodexMessageImageIndex(
+  threadId: string,
+): Promise<CodexMessageImageIndex | null> {
+  const jsonlPath = await findCodexSessionJsonlPath(threadId);
+  if (!jsonlPath) return null;
+
+  let fileStat;
   let raw: string;
   try {
+    fileStat = await stat(jsonlPath);
     raw = await readFile(jsonlPath, "utf-8");
   } catch {
-    return [];
+    return null;
   }
 
-  // Codex doesn't have per-message UUIDs in the same way. Newer app history
-  // uses a stable turn ordinal (codex:user-turn:N); older builds encoded the
-  // JSONL line index (codex-line:N).
-  const lineIndex = messageUuid.startsWith("codex-line-")
-    ? parseInt(messageUuid.slice("codex-line-".length), 10)
-    : -1;
-  const lines = raw.split("\n");
-  if (lineIndex >= 0) {
-    if (lineIndex >= lines.length) return [];
+  const imagesByUuid = await collectCodexMessageImages(raw.split("\n"));
+  return {
+    jsonlPath,
+    size: fileStat.size,
+    mtimeMs: fileStat.mtimeMs,
+    imagesByUuid,
+  };
+}
 
-    const line = lines[lineIndex];
-    if (!line?.trim()) return [];
-
-    let entry: Record<string, unknown>;
-    try {
-      entry = JSON.parse(line) as Record<string, unknown>;
-    } catch {
-      return [];
-    }
-
-    if (entry.type !== "event_msg") return [];
-    const payload = asObject(entry.payload);
-    if (!payload || payload.type !== "user_message") return [];
-    return extractCodexUserMessagePayloadImages(payload);
-  }
-
-  const turnMatch = messageUuid.match(/^codex:user-turn:(\d+)$/);
-  const targetOrdinal = turnMatch ? Number(turnMatch[1]) : -1;
-  if (!Number.isInteger(targetOrdinal) || targetOrdinal <= 0) return [];
-
+async function collectCodexMessageImages(
+  lines: string[],
+): Promise<Map<string, ExtractedImage[]>> {
+  const imagesByUuid = new Map<string, ExtractedImage[]>();
   const responseItemImagesByOrdinal =
     collectCodexUserResponseItemImagesByOrdinal(lines);
   let ordinal = 0;
-  for (const line of lines) {
+
+  for (const [lineIndex, line] of lines.entries()) {
     if (!line.trim()) continue;
+
     let entry: Record<string, unknown>;
     try {
       entry = JSON.parse(line) as Record<string, unknown>;
     } catch {
       continue;
     }
+
     if (entry.type !== "event_msg") continue;
     const payload = asObject(entry.payload);
     if (!payload || payload.type !== "user_message") continue;
+
+    const lineImages = await extractCodexUserMessagePayloadImages(payload);
+    imagesByUuid.set(`codex-line-${lineIndex}`, lineImages);
+
     if (!codexUserMessagePayloadHasDisplayContent(payload)) continue;
     ordinal += 1;
-    if (ordinal === targetOrdinal) {
-      const images = await extractCodexUserMessagePayloadImages(payload);
-      return images.length > 0
-        ? images
-        : (responseItemImagesByOrdinal.get(targetOrdinal) ?? []);
-    }
+    imagesByUuid.set(
+      `codex:user-turn:${ordinal}`,
+      lineImages.length > 0
+        ? lineImages
+        : (responseItemImagesByOrdinal.get(ordinal) ?? []),
+    );
   }
 
-  return [];
+  return imagesByUuid;
 }
 
 async function extractCodexUserMessagePayloadImages(
