@@ -2,6 +2,11 @@
 
 All notable changes to `@ccpocket/bridge` will be documented in this file.
 
+## [1.58.1] - 2026-05-15
+
+### Fixed
+- Speed up Codex session resume history loading by caching user image extraction per JSONL file.
+
 ## [1.58.0] - 2026-05-13
 
 ### Added
