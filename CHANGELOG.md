@@ -4,6 +4,14 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.98.0] - 2026-05-15
+
+### Added
+- Add official Codex permissions modes, including Auto-review, Full access, and config-driven Custom.
+
+### Changed
+- Require Bridge 1.59.0 for Codex permissions mode synchronization.
+
 ## [1.97.0] - 2026-05-13
 
 ### Added
