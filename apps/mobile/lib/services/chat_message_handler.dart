@@ -72,7 +72,15 @@ class ChatStateUpdate {
   /// UUID update for an existing user entry. When the SDK echoes back a
   /// user_input with a UUID, we update the locally-added UserChatEntry rather
   /// than creating a duplicate.
-  final ({String text, String uuid, String? clientMessageId})? userUuidUpdate;
+  final ({
+    String text,
+    String uuid,
+    String? clientMessageId,
+    int imageCount,
+    List<String> imageUrls,
+    String? timestamp,
+  })?
+  userUuidUpdate;
 
   const ChatStateUpdate({
     this.status,
@@ -251,6 +259,9 @@ class ChatMessageHandler {
         :final userMessageUuid,
         :final isSynthetic,
         :final isMeta,
+        :final imageCount,
+        :final imageUrls,
+        :final timestamp,
       ):
         // Skip synthetic and meta messages (e.g. plan approval, Task agent
         // prompts, skill loading prompts).
@@ -263,6 +274,9 @@ class ChatMessageHandler {
               text: text,
               uuid: userMessageUuid,
               clientMessageId: clientMessageId,
+              imageCount: imageCount,
+              imageUrls: imageUrls,
+              timestamp: timestamp,
             ),
           );
         }

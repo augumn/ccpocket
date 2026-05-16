@@ -86,8 +86,11 @@ vi.mock("./session.js", () => ({
   SessionManager: class MockSessionManager {
     private sessions = new Map<string, any>();
     private seq = 0;
+    private onMessage: (sessionId: string, msg: any) => void;
 
-    constructor() {}
+    constructor(onMessage?: (sessionId: string, msg: any) => void) {
+      this.onMessage = onMessage ?? (() => {});
+    }
 
     create(
       projectPath: string,
@@ -229,11 +232,18 @@ vi.mock("./session.js", () => ({
         };
       }
       session.codexQueuedInput = undefined;
-      this.appendHistory(id, {
+      const userMsg = {
         type: "user_input",
         text: queued.text,
         timestamp: new Date().toISOString(),
-      });
+        ...(queued.userMessageUuid
+          ? { userMessageUuid: queued.userMessageUuid }
+          : {}),
+        ...(queued.imageCount ? { imageCount: queued.imageCount } : {}),
+        ...(queued.imageRefs ? { images: queued.imageRefs } : {}),
+      };
+      this.appendHistory(id, userMsg);
+      this.onMessage(id, userMsg);
       return { ok: true };
     }
 
@@ -244,6 +254,7 @@ vi.mock("./session.js", () => ({
         seq: session.historyRevision + 1,
         message: msg,
       };
+      msg.historySeq = entry.seq;
       session.historyRevision = entry.seq;
       session.history.push(msg);
       session.historyEntries.push(entry);
@@ -2630,6 +2641,65 @@ describe("BridgeWebSocketServer resume/get_history flow", () => {
     bridge.close();
   });
 
+  it("broadcasts accepted claude user input to other connected clients", async () => {
+    const bridge = new BridgeWebSocketServer({ server: httpServer });
+    const ws = {
+      readyState: OPEN_STATE,
+      send: vi.fn(),
+    } as any;
+    const otherWs = {
+      readyState: OPEN_STATE,
+      send: vi.fn(),
+    } as any;
+    (bridge as any).wss.clients.add(ws);
+    (bridge as any).wss.clients.add(otherWs);
+
+    (bridge as any).handleClientMessage(
+      {
+        type: "start",
+        projectPath: "/tmp/project-a",
+        provider: "claude",
+      },
+      ws,
+    );
+    await Promise.resolve();
+
+    const created = ws.send.mock.calls
+      .map((c: unknown[]) => JSON.parse(c[0] as string))
+      .find((m: any) => m.type === "system" && m.subtype === "session_created");
+    const sessionId = created.sessionId as string;
+
+    ws.send.mockClear();
+    otherWs.send.mockClear();
+    (bridge as any).handleClientMessage(
+      {
+        type: "input",
+        sessionId,
+        text: "hello from phone",
+        clientMessageId: "cm-phone-1",
+      },
+      ws,
+    );
+
+    const peerMessages = otherWs.send.mock.calls.map((c: unknown[]) =>
+      JSON.parse(c[0] as string),
+    );
+    expect(peerMessages.find((m: any) => m.type === "user_input")).toMatchObject({
+      type: "user_input",
+      sessionId,
+      text: "hello from phone",
+      clientMessageId: "cm-phone-1",
+      historySeq: expect.any(Number),
+    });
+    expect(
+      ws.send.mock.calls
+        .map((c: unknown[]) => JSON.parse(c[0] as string))
+        .some((m: any) => m.type === "user_input"),
+    ).toBe(false);
+
+    bridge.close();
+  });
+
   it("rejects strict input when another user input exists after baseSeq", async () => {
     const bridge = new BridgeWebSocketServer({ server: httpServer });
     const ws = {
@@ -2786,6 +2856,61 @@ describe("BridgeWebSocketServer resume/get_history flow", () => {
       text: "first codex turn",
       userMessageUuid: "codex:user-turn:1",
       clientMessageId: "cm-codex-1",
+    });
+
+    bridge.close();
+  });
+
+  it("broadcasts accepted codex user input with UUID to other connected clients", async () => {
+    const bridge = new BridgeWebSocketServer({ server: httpServer });
+    const ws = {
+      readyState: OPEN_STATE,
+      send: vi.fn(),
+    } as any;
+    const otherWs = {
+      readyState: OPEN_STATE,
+      send: vi.fn(),
+    } as any;
+    (bridge as any).wss.clients.add(ws);
+    (bridge as any).wss.clients.add(otherWs);
+
+    (bridge as any).handleClientMessage(
+      {
+        type: "start",
+        projectPath: "/tmp/project-codex",
+        provider: "codex",
+      },
+      ws,
+    );
+    await Promise.resolve();
+
+    const created = ws.send.mock.calls
+      .map((c: unknown[]) => JSON.parse(c[0] as string))
+      .find((m: any) => m.type === "system" && m.subtype === "session_created");
+    const sessionId = created.sessionId as string;
+
+    ws.send.mockClear();
+    otherWs.send.mockClear();
+    (bridge as any).handleClientMessage(
+      {
+        type: "input",
+        sessionId,
+        text: "codex from mac",
+        clientMessageId: "cm-mac-1",
+      },
+      ws,
+    );
+
+    const peerMessages = otherWs.send.mock.calls.map((c: unknown[]) =>
+      JSON.parse(c[0] as string),
+    );
+    expect(peerMessages.find((m: any) => m.type === "user_input")).toMatchObject({
+      type: "user_input",
+      sessionId,
+      text: "codex from mac",
+      clientMessageId: "cm-mac-1",
+      userMessageUuid: "codex:user-turn:1",
+      historySeq: expect.any(Number),
     });
 
     bridge.close();
@@ -3130,6 +3255,12 @@ describe("BridgeWebSocketServer resume/get_history flow", () => {
       readyState: OPEN_STATE,
       send: vi.fn(),
     } as any;
+    const otherWs = {
+      readyState: OPEN_STATE,
+      send: vi.fn(),
+    } as any;
+    (bridge as any).wss.clients.add(ws);
+    (bridge as any).wss.clients.add(otherWs);
 
     (bridge as any).handleClientMessage(
       {
@@ -3150,8 +3281,11 @@ describe("BridgeWebSocketServer resume/get_history flow", () => {
       itemId: "queued-1",
       text: "steer now",
       createdAt: new Date().toISOString(),
+      userMessageUuid: "codex:user-turn:1",
       skills: [{ name: "skill", path: "/skills/skill" }],
     };
+    ws.send.mockClear();
+    otherWs.send.mockClear();
 
     await (bridge as any).handleClientMessage(
       {
@@ -3171,6 +3305,16 @@ describe("BridgeWebSocketServer resume/get_history flow", () => {
       },
     );
     expect(session.codexQueuedInput).toBeUndefined();
+    const peerMessages = otherWs.send.mock.calls.map((c: unknown[]) =>
+      JSON.parse(c[0] as string),
+    );
+    expect(peerMessages.find((m: any) => m.type === "user_input")).toMatchObject({
+      type: "user_input",
+      sessionId,
+      text: "steer now",
+      userMessageUuid: "codex:user-turn:1",
+      historySeq: expect.any(Number),
+    });
 
     bridge.close();
   });

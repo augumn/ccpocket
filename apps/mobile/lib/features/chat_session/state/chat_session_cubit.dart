@@ -355,21 +355,49 @@ class ChatSessionCubit extends Cubit<ChatSessionState> {
 
     // Apply UUID update from SDK echo (makes the user entry rewindable)
     if (update.userUuidUpdate != null) {
-      final (:text, :uuid, :clientMessageId) = update.userUuidUpdate!;
+      final (
+        :text,
+        :uuid,
+        :clientMessageId,
+        :imageCount,
+        :imageUrls,
+        :timestamp,
+      ) = update.userUuidUpdate!;
+      var matchedUserEntry = false;
       for (int i = entries.length - 1; i >= 0; i--) {
         final e = entries[i];
         if (e is UserChatEntry &&
-            ((clientMessageId != null &&
+            ((e.messageUuid == uuid) ||
+                (clientMessageId != null &&
                     e.clientMessageId == clientMessageId) ||
                 (e.messageUuid == null &&
                     clientMessageId == null &&
                     e.text == text))) {
+          matchedUserEntry = true;
           if (e.messageUuid != uuid) {
             e.messageUuid = uuid;
             didModifyEntries = true;
           }
           break;
         }
+      }
+      if (!matchedUserEntry) {
+        entries = [
+          ...entries,
+          UserChatEntry(
+            text,
+            sessionId: sessionId,
+            clientMessageId: clientMessageId,
+            imageCount: imageCount,
+            imageUrls: imageUrls,
+            status: MessageStatus.sent,
+            messageUuid: uuid,
+            timestamp: timestamp == null
+                ? null
+                : DateTime.tryParse(timestamp)?.toLocal(),
+          ),
+        ];
+        didModifyEntries = true;
       }
     }
 

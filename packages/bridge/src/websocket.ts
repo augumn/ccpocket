@@ -1886,6 +1886,16 @@ export class BridgeWebSocketServer {
             historySeq: acceptedSeq,
           } as ServerMessage & { sessionId: string; historySeq: number });
         }
+        if (userEntry) {
+          this.broadcastSessionMessage(
+            session.id,
+            {
+              ...userEntry.message,
+              historySeq: acceptedSeq,
+            } as ServerMessage & { historySeq: number },
+            ws,
+          );
+        }
 
         // Persist images to Gallery Store asynchronously (fire-and-forget)
         if (images.length > 0 && this.galleryStore && session.projectPath) {
@@ -5193,7 +5203,11 @@ export class BridgeWebSocketServer {
     });
   }
 
-  private broadcastSessionMessage(sessionId: string, msg: ServerMessage): void {
+  private broadcastSessionMessage(
+    sessionId: string,
+    msg: ServerMessage,
+    exclude?: WebSocket,
+  ): void {
     this.maybeSendPushNotification(sessionId, msg);
     this.recordDebugEvent(sessionId, {
       direction: "outgoing",
@@ -5222,6 +5236,7 @@ export class BridgeWebSocketServer {
     // Wrap the message with sessionId
     const data = JSON.stringify({ ...msg, sessionId });
     for (const client of this.wss.clients) {
+      if (client === exclude) continue;
       if (client.readyState === WebSocket.OPEN) {
         if (!this.shouldSendToClient(client, msg)) continue;
         client.send(data);
