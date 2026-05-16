@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_markdown/flutter_markdown.dart';
+import 'package:google_fonts/google_fonts.dart';
 import 'package:highlight/highlight.dart' as hl;
 import 'package:markdown/markdown.dart' as md;
 import 'package:syntax_highlight/syntax_highlight.dart';
@@ -84,9 +85,15 @@ MarkdownStyleSheet buildMarkdownStyle(BuildContext context) {
 
   return MarkdownStyleSheet.fromTheme(theme).copyWith(
     p: baseStyle,
+    strong: GoogleFonts.ibmPlexSans(
+      textStyle: baseStyle,
+      fontWeight: FontWeight.w700,
+    ),
+    em: baseStyle.copyWith(fontStyle: FontStyle.italic),
     code: codeSettings.style(
       color: baseStyle.color,
-      backgroundColor: appColors.codeBackground,
+      fontWeight: FontWeight.w600,
+      backgroundColor: Colors.transparent,
     ),
     codeblockDecoration: BoxDecoration(
       color: appColors.codeBackground,
@@ -146,11 +153,9 @@ class ColorCodeBuilder extends MarkdownElementBuilder {
     final color = _parseHexColor(colorHex);
     if (color == null) return null;
 
-    final appColors = Theme.of(context).extension<AppColors>()!;
-    final codeStyle = codeTextSettingsOf(context).style(
-      color: preferredStyle?.color,
-      backgroundColor: appColors.codeBackground,
-    );
+    final codeStyle = codeTextSettingsOf(
+      context,
+    ).style(color: preferredStyle?.color, backgroundColor: Colors.transparent);
 
     return Row(
       mainAxisSize: MainAxisSize.min,

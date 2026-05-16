@@ -2,8 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_markdown/flutter_markdown.dart';
 import 'package:markdown/markdown.dart' as md;
 
-import '../../theme/app_theme.dart';
-
 /// Callback invoked when a file path is tapped.
 typedef FilePathTapCallback = void Function(String filePath);
 
@@ -144,13 +142,13 @@ class FilePathBuilder extends MarkdownElementBuilder {
   ) {
     final path = element.attributes['path'] ?? '';
     final displayText = element.textContent;
-    final appColors = Theme.of(context).extension<AppColors>()!;
     final cs = Theme.of(context).colorScheme;
 
     final codeStyle = (preferredStyle ?? const TextStyle()).copyWith(
       fontFamily: 'monospace',
       fontSize: 13,
-      backgroundColor: appColors.codeBackground,
+      fontWeight: FontWeight.w600,
+      backgroundColor: Colors.transparent,
       color: cs.primary,
       decoration: TextDecoration.underline,
       decorationColor: cs.primary.withValues(alpha: 0.4),
