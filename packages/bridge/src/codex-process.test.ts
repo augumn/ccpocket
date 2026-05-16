@@ -106,6 +106,32 @@ describe("CodexProcess (app-server)", () => {
     proc.stop();
   });
 
+  it("returns a clear error when Codex CLI is not installed", () => {
+    const proc = new CodexProcess("linux");
+    const messages: unknown[] = [];
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    proc.on("message", (msg) => messages.push(msg));
+
+    try {
+      proc.start("/tmp/project-missing-codex");
+
+      const err = new Error("spawn codex ENOENT") as NodeJS.ErrnoException;
+      err.code = "ENOENT";
+      fakeChildren[0].emit("error", err);
+
+      expect(messages).toContainEqual({
+        type: "error",
+        message:
+          "Codex CLI is not installed or not available on PATH on the Bridge machine. Install it with `npm install -g @openai/codex` or `brew install --cask codex`, then restart Bridge.",
+        errorCode: "codex_cli_not_found",
+      });
+    } finally {
+      errorSpy.mockRestore();
+    }
+
+    proc.stop();
+  });
+
   it("starts codex app-server and sends initialize + thread/start", async () => {
     const proc = new CodexProcess("linux");
     const messages: unknown[] = [];

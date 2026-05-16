@@ -16,6 +16,8 @@ export { buildCodexSpawnSpec };
 
 const DEFAULT_CODEX_MODEL = "gpt-5.5";
 const COMPLETION_FETCH_COOLDOWN_MS = 1000;
+const CODEX_CLI_NOT_FOUND_MESSAGE =
+  "Codex CLI is not installed or not available on PATH on the Bridge machine. Install it with `npm install -g @openai/codex` or `brew install --cask codex`, then restart Bridge.";
 
 export interface CodexStartOptions {
   threadId?: string;
@@ -185,6 +187,32 @@ export interface CodexProfileConfig {
 interface CodexModelListResponse {
   data?: unknown[];
   nextCursor?: unknown;
+}
+
+function isCodexCliNotFoundError(err: Error): boolean {
+  const code = (err as NodeJS.ErrnoException).code;
+  return (
+    code === "ENOENT" ||
+    /\bspawn codex ENOENT\b/i.test(err.message) ||
+    /codex: command not found/i.test(err.message)
+  );
+}
+
+function codexAppServerStartError(
+  err: Error,
+): Extract<ServerMessage, { type: "error" }> {
+  if (isCodexCliNotFoundError(err)) {
+    return {
+      type: "error",
+      message: CODEX_CLI_NOT_FOUND_MESSAGE,
+      errorCode: "codex_cli_not_found",
+    };
+  }
+
+  return {
+    type: "error",
+    message: `Failed to start codex app-server: ${err.message}`,
+  };
 }
 
 export class CodexProcess extends EventEmitter<CodexProcessEvents> {
@@ -590,10 +618,7 @@ export class CodexProcess extends EventEmitter<CodexProcessEvents> {
     transport.on("error", (err) => {
       if (this.stopped) return;
       console.error("[codex-process] app-server process error:", err);
-      this.emitMessage({
-        type: "error",
-        message: `Failed to start codex app-server: ${err.message}`,
-      });
+      this.emitMessage(codexAppServerStartError(err));
       this.setStatus("idle");
       this.emit("exit", 1);
     });
