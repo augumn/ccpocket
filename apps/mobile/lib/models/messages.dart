@@ -351,6 +351,7 @@ enum ClaudeEffort {
   low('low', 'Low'),
   medium('medium', 'Medium'),
   high('high', 'High'),
+  xhigh('xhigh', 'X High'),
   max('max', 'Max');
 
   final String value;
@@ -734,6 +735,14 @@ sealed class ServerMessage {
         claudeModels:
             (json['claudeModels'] as List?)?.map((e) => e as String).toList() ??
             const [],
+        claudeModelEfforts:
+            (json['claudeModelEfforts'] as Map?)?.map(
+              (key, value) => MapEntry(
+                key as String,
+                (value as List?)?.whereType<String>().toList() ?? const [],
+              ),
+            ) ??
+            const {},
         codexModels:
             (json['codexModels'] as List?)?.map((e) => e as String).toList() ??
             const [],
@@ -2005,6 +2014,7 @@ class SessionListMessage implements ServerMessage {
   final List<SessionInfo> sessions;
   final List<String> allowedDirs;
   final List<String> claudeModels;
+  final Map<String, List<String>> claudeModelEfforts;
   final List<String> codexModels;
   final List<String> codexProfiles;
   final String? defaultCodexProfile;
@@ -2013,6 +2023,7 @@ class SessionListMessage implements ServerMessage {
     required this.sessions,
     this.allowedDirs = const [],
     this.claudeModels = const [],
+    this.claudeModelEfforts = const {},
     this.codexModels = const [],
     this.codexProfiles = const [],
     this.defaultCodexProfile,

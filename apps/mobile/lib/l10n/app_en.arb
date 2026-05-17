@@ -298,6 +298,7 @@
   "claudeEffortLowDesc": "Faster responses, less thorough",
   "claudeEffortMediumDesc": "Balanced speed and quality",
   "claudeEffortHighDesc": "More thorough analysis",
+  "claudeEffortXHighDesc": "Extended reasoning for complex work",
   "claudeEffortMaxDesc": "Most thorough, slowest",
 
   "reasoningEffortMinimalDesc": "Fastest, least analysis",

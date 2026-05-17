@@ -276,12 +276,16 @@ void main() {
       expect(session.codexAdditionalWritableRoots, ['/tmp/shared']);
     });
 
-    test('SessionListMessage parses codex profiles', () {
+    test('SessionListMessage parses model metadata', () {
       final msg = ServerMessage.fromJson({
         'type': 'session_list',
         'sessions': const [],
         'allowedDirs': const [],
-        'claudeModels': const [],
+        'claudeModels': ['claude-opus-4-7', 'claude-haiku-4-6'],
+        'claudeModelEfforts': {
+          'claude-opus-4-7': ['low', 'medium', 'high', 'xhigh', 'max'],
+          'claude-haiku-4-6': [],
+        },
         'codexModels': const [],
         'codexProfiles': ['ccpocket', 'research'],
         'defaultCodexProfile': 'ccpocket',
@@ -289,6 +293,15 @@ void main() {
 
       expect(msg, isA<SessionListMessage>());
       final sessionList = msg as SessionListMessage;
+      expect(sessionList.claudeModels, ['claude-opus-4-7', 'claude-haiku-4-6']);
+      expect(sessionList.claudeModelEfforts['claude-opus-4-7'], [
+        'low',
+        'medium',
+        'high',
+        'xhigh',
+        'max',
+      ]);
+      expect(sessionList.claudeModelEfforts['claude-haiku-4-6'], isEmpty);
       expect(sessionList.codexProfiles, ['ccpocket', 'research']);
       expect(sessionList.defaultCodexProfile, 'ccpocket');
     });

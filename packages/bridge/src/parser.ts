@@ -100,7 +100,7 @@ export type ClientMessage =
       planMode?: boolean;
       sandboxMode?: string;
       model?: string;
-      effort?: "low" | "medium" | "high" | "max";
+      effort?: "low" | "medium" | "high" | "xhigh" | "max";
       maxTurns?: number;
       maxBudgetUsd?: number;
       fallbackModel?: string;
@@ -202,7 +202,7 @@ export type ClientMessage =
       provider?: Provider;
       sandboxMode?: string;
       model?: string;
-      effort?: "low" | "medium" | "high" | "max";
+      effort?: "low" | "medium" | "high" | "xhigh" | "max";
       maxTurns?: number;
       maxBudgetUsd?: number;
       fallbackModel?: string;
@@ -831,7 +831,9 @@ export function parseClientMessage(data: string): ClientMessage | null {
           return null;
         if (
           msg.effort !== undefined &&
-          !["low", "medium", "high", "max"].includes(String(msg.effort))
+          !["low", "medium", "high", "xhigh", "max"].includes(
+            String(msg.effort),
+          )
         )
           return null;
         if (
@@ -1127,7 +1129,9 @@ export function parseClientMessage(data: string): ClientMessage | null {
           return null;
         if (
           msg.effort !== undefined &&
-          !["low", "medium", "high", "max"].includes(String(msg.effort))
+          !["low", "medium", "high", "xhigh", "max"].includes(
+            String(msg.effort),
+          )
         )
           return null;
         if (

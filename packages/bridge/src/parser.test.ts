@@ -149,13 +149,13 @@ describe("parseClientMessage", () => {
 
   it("parses start with advanced Claude options", () => {
     const msg = parseClientMessage(
-      '{"type":"start","projectPath":"/p","model":"claude-sonnet","effort":"high","maxTurns":5,"maxBudgetUsd":1.5,"fallbackModel":"claude-haiku","forkSession":true,"persistSession":false}',
+      '{"type":"start","projectPath":"/p","model":"claude-sonnet","effort":"xhigh","maxTurns":5,"maxBudgetUsd":1.5,"fallbackModel":"claude-haiku","forkSession":true,"persistSession":false}',
     );
     expect(msg).toEqual({
       type: "start",
       projectPath: "/p",
       model: "claude-sonnet",
-      effort: "high",
+      effort: "xhigh",
       maxTurns: 5,
       maxBudgetUsd: 1.5,
       fallbackModel: "claude-haiku",
@@ -440,12 +440,17 @@ describe("parseClientMessage", () => {
     });
   });
 
-  it("rejects resume_session with invalid effort", () => {
+  it("parses resume_session with xhigh effort", () => {
     expect(
       parseClientMessage(
         '{"type":"resume_session","sessionId":"s3","projectPath":"/p","effort":"xhigh"}',
       ),
-    ).toBeNull();
+    ).toEqual({
+      type: "resume_session",
+      sessionId: "s3",
+      projectPath: "/p",
+      effort: "xhigh",
+    });
   });
 
   it("rejects resume_session without sessionId", () => {

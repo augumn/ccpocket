@@ -252,6 +252,35 @@ ExecutionMode _executionModeFromRawWithDefault(
 ClaudeEffort? claudeEffortFromRaw(String? raw) =>
     enumByValue(ClaudeEffort.values, raw, (v) => v.value);
 
+const _legacyClaudeEfforts = <ClaudeEffort>[
+  ClaudeEffort.low,
+  ClaudeEffort.medium,
+  ClaudeEffort.high,
+  ClaudeEffort.max,
+];
+
+Map<String, List<ClaudeEffort>> _normalizeClaudeModelEfforts(
+  Map<String, List<String>> raw,
+) {
+  return raw.map((model, values) {
+    final efforts = values
+        .map(claudeEffortFromRaw)
+        .whereType<ClaudeEffort>()
+        .toList(growable: false);
+    return MapEntry(model, efforts);
+  });
+}
+
+List<ClaudeEffort> _claudeEffortsForModel(
+  String? model,
+  Map<String, List<ClaudeEffort>> modelEfforts,
+) {
+  if (model != null && modelEfforts.containsKey(model)) {
+    return modelEfforts[model] ?? const [];
+  }
+  return modelEfforts.isEmpty ? _legacyClaudeEfforts : ClaudeEffort.values;
+}
+
 /// Serialize [NewSessionParams] to JSON for SharedPreferences.
 ///
 /// Session-specific values (worktree branch/path, useWorktree,
@@ -465,6 +494,7 @@ class _NewSessionSheetContentState extends State<_NewSessionSheetContent> {
 
   // Model lists from Bridge (with fallbacks)
   late final List<String> _claudeModelList;
+  late final Map<String, List<ClaudeEffort>> _claudeModelEfforts;
   late final List<String> _codexModelList;
   late final List<String> _codexProfiles;
 
@@ -593,6 +623,9 @@ class _NewSessionSheetContentState extends State<_NewSessionSheetContent> {
     _claudeModelList = bridgeClaudeModels.isNotEmpty
         ? bridgeClaudeModels
         : _defaultClaudeModels;
+    _claudeModelEfforts = _normalizeClaudeModelEfforts(
+      widget.bridge?.claudeModelEfforts ?? const {},
+    );
     final bridgeCodexModels = widget.bridge?.codexModels ?? const [];
     _codexModelList = bridgeCodexModels.isNotEmpty
         ? bridgeCodexModels
@@ -664,6 +697,18 @@ class _NewSessionSheetContentState extends State<_NewSessionSheetContent> {
     });
   }
 
+  void _normalizeSelectedClaudeEffort() {
+    final efforts = _claudeEffortsForModel(
+      _selectedClaudeModel ?? _claudeModelList.firstOrNull,
+      _claudeModelEfforts,
+    );
+    if (efforts.isNotEmpty && !efforts.contains(_claudeEffort)) {
+      _claudeEffort = efforts.contains(ClaudeEffort.high)
+          ? ClaudeEffort.high
+          : efforts.first;
+    }
+  }
+
   void _applyInitialParams() {
     final p = widget.initialParams;
     if (p == null) return;
@@ -718,6 +763,7 @@ class _NewSessionSheetContentState extends State<_NewSessionSheetContent> {
         ? p.claudeModel
         : null;
     _claudeEffort = p.claudeEffort ?? _claudeEffort;
+    _normalizeSelectedClaudeEffort();
     _claudeMaxTurnsController.text = p.claudeMaxTurns?.toString() ?? "";
     _claudeMaxBudgetController.text = p.claudeMaxBudgetUsd?.toString() ?? "";
     _selectedClaudeFallbackModel =
@@ -1150,9 +1196,13 @@ class _NewSessionSheetContentState extends State<_NewSessionSheetContent> {
             buildInputDecoration: _buildInputDecoration,
             // Claude advanced
             claudeModels: _claudeModelList,
+            claudeModelEfforts: _claudeModelEfforts,
             selectedClaudeModel: _selectedClaudeModel,
             onClaudeModelChanged: (value) {
-              setState(() => _selectedClaudeModel = value);
+              setState(() {
+                _selectedClaudeModel = value;
+                _normalizeSelectedClaudeEffort();
+              });
             },
             claudeEffort: _claudeEffort,
             onClaudeEffortChanged: (value) {
@@ -2004,6 +2054,7 @@ class _OptionsSection extends StatelessWidget {
 
   // Claude advanced
   final List<String> claudeModels;
+  final Map<String, List<ClaudeEffort>> claudeModelEfforts;
   final String? selectedClaudeModel;
   final ValueChanged<String?> onClaudeModelChanged;
   final ClaudeEffort claudeEffort;
@@ -2058,6 +2109,7 @@ class _OptionsSection extends StatelessWidget {
     required this.branchController,
     required this.buildInputDecoration,
     required this.claudeModels,
+    required this.claudeModelEfforts,
     required this.selectedClaudeModel,
     required this.onClaudeModelChanged,
     required this.claudeEffort,
@@ -2101,6 +2153,10 @@ class _OptionsSection extends StatelessWidget {
     final autoModeColor = isDark
         ? appColors.warningText
         : appColors.warningBubbleBorder;
+    final selectedClaudeEfforts = _claudeEffortsForModel(
+      selectedClaudeModel ?? claudeModels.firstOrNull,
+      claudeModelEfforts,
+    );
 
     // -- Description helpers --
 
@@ -2508,9 +2564,7 @@ class _OptionsSection extends StatelessWidget {
           ),
           const SizedBox(height: 8),
           // -- Effort / Reasoning selector --
-          // Claude Effort is only meaningful for Opus models.
-          if (provider == Provider.claude &&
-              _isOpusModel(selectedClaudeModel ?? claudeModels.firstOrNull))
+          if (provider == Provider.claude && selectedClaudeEfforts.isNotEmpty)
             modeSelectorField(
               key: const ValueKey('dialog_claude_effort'),
               label: l.effort,
@@ -2520,7 +2574,7 @@ class _OptionsSection extends StatelessWidget {
               onTap: () => showModeSheet<ClaudeEffort>(
                 title: l.effort,
                 subtitle: l.sheetSubtitleEffort,
-                modes: ClaudeEffort.values,
+                modes: selectedClaudeEfforts,
                 currentMode: claudeEffort,
                 iconFor: (_) => Icons.speed,
                 labelFor: (e) => e.label,
@@ -2675,16 +2729,12 @@ class _WorktreeToggleTile extends StatelessWidget {
   }
 }
 
-bool _isOpusModel(String? model) {
-  if (model == null) return true; // default model may be opus
-  return model.toLowerCase().contains('opus');
-}
-
 String _claudeEffortDescription(ClaudeEffort effort, AppLocalizations l) {
   return switch (effort) {
     ClaudeEffort.low => l.claudeEffortLowDesc,
     ClaudeEffort.medium => l.claudeEffortMediumDesc,
     ClaudeEffort.high => l.claudeEffortHighDesc,
+    ClaudeEffort.xhigh => l.claudeEffortXHighDesc,
     ClaudeEffort.max => l.claudeEffortMaxDesc,
   };
 }

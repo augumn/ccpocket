@@ -853,6 +853,9 @@ class AppLocalizationsEn extends AppLocalizations {
   String get claudeEffortHighDesc => 'More thorough analysis';
 
   @override
+  String get claudeEffortXHighDesc => 'Extended reasoning for complex work';
+
+  @override
   String get claudeEffortMaxDesc => 'Most thorough, slowest';
 
   @override

@@ -11,7 +11,12 @@ import {
   type SessionInfo,
   type WorktreeOptions,
 } from "./session.js";
-import { SdkProcess } from "./sdk-process.js";
+import {
+  SdkProcess,
+  listAvailableClaudeModels,
+  type ClaudeEffortLevel,
+  type ClaudeModelMetadata,
+} from "./sdk-process.js";
 import type { StartOptions } from "./sdk-process.js";
 import {
   CodexProcess,
@@ -100,7 +105,7 @@ type ClaudePermissionMode =
 
 // ---- Available model lists (delivered to clients via session_list) ----
 
-const CLAUDE_MODELS: string[] = [
+const FALLBACK_CLAUDE_MODELS: string[] = [
   "claude-opus-4-7",
   "claude-opus-4-7[1m]",
   "claude-opus-4-6",
@@ -109,6 +114,16 @@ const CLAUDE_MODELS: string[] = [
   "claude-sonnet-4-6",
   "claude-haiku-4-6",
 ];
+
+const FALLBACK_CLAUDE_MODEL_EFFORTS: Record<string, ClaudeEffortLevel[]> = {
+  "claude-opus-4-7": ["low", "medium", "high", "xhigh", "max"],
+  "claude-opus-4-7[1m]": ["low", "medium", "high", "xhigh", "max"],
+  "claude-opus-4-6": ["low", "medium", "high", "max"],
+  "claude-opus-4-6[1m]": ["low", "medium", "high", "max"],
+  "claude-opus-4-5-20251101": ["low", "medium", "high"],
+  "claude-sonnet-4-6": ["low", "medium", "high", "max"],
+  "claude-haiku-4-6": [],
+};
 
 const FALLBACK_CODEX_MODELS: string[] = [
   "gpt-5.5",
@@ -539,6 +554,11 @@ export class BridgeWebSocketServer {
   private codexProfiles: string[] = [];
   private defaultCodexProfile: string | undefined;
   private codexProfilesRequest: Promise<void> | null = null;
+  private claudeModels: string[] = FALLBACK_CLAUDE_MODELS;
+  private claudeModelEfforts: Record<string, ClaudeEffortLevel[]> = {
+    ...FALLBACK_CLAUDE_MODEL_EFFORTS,
+  };
+  private claudeModelsRequest: Promise<void> | null = null;
   private codexModels: string[] = FALLBACK_CODEX_MODELS;
   private codexModelsRequest: Promise<void> | null = null;
   /** FCM token → push notification locale */
@@ -1404,6 +1424,7 @@ export class BridgeWebSocketServer {
     // Send session list and project history on connect
     void this.refreshCodexProfiles();
     void this.refreshCodexModels();
+    void this.refreshClaudeModels();
     this.sendSessionList(ws);
     const projects = this.projectHistory?.getProjects() ?? [];
     this.send(ws, { type: "project_history", projects });
@@ -1700,6 +1721,8 @@ export class BridgeWebSocketServer {
             this.broadcastSessionList();
             if (provider === "codex") {
               void this.refreshCodexModels(projectPath);
+            } else {
+              void this.refreshClaudeModels(projectPath);
             }
             if (autoFallbackUsed) {
               this.sendTip(
@@ -5145,7 +5168,8 @@ export class BridgeWebSocketServer {
       type: "session_list",
       sessions,
       allowedDirs: this.allowedDirs,
-      claudeModels: CLAUDE_MODELS,
+      claudeModels: this.claudeModels,
+      claudeModelEfforts: this.claudeModelEfforts,
       codexModels: this.codexModels,
       codexProfiles: this.codexProfiles,
       defaultCodexProfile: this.defaultCodexProfile,
@@ -5178,7 +5202,8 @@ export class BridgeWebSocketServer {
       type: "session_list",
       sessions,
       allowedDirs: this.allowedDirs,
-      claudeModels: CLAUDE_MODELS,
+      claudeModels: this.claudeModels,
+      claudeModelEfforts: this.claudeModelEfforts,
       codexModels: this.codexModels,
       codexProfiles: this.codexProfiles,
       defaultCodexProfile: this.defaultCodexProfile,
@@ -5287,6 +5312,52 @@ export class BridgeWebSocketServer {
     return this.codexModelsRequest;
   }
 
+  private async refreshClaudeModels(projectPath?: string): Promise<void> {
+    if (this.claudeModelsRequest) return this.claudeModelsRequest;
+    this.claudeModelsRequest = this.loadClaudeModels(projectPath)
+      .then((models) => {
+        if (models.length > 0) {
+          this.applyClaudeModels(models);
+        } else {
+          this.applyFallbackClaudeModels();
+        }
+        this.broadcastSessionList();
+      })
+      .catch((err) => {
+        console.warn(`[ws] Failed to load Claude models: ${err}`);
+        this.applyFallbackClaudeModels();
+        this.broadcastSessionList();
+      })
+      .finally(() => {
+        this.claudeModelsRequest = null;
+      });
+    return this.claudeModelsRequest;
+  }
+
+  private async loadClaudeModels(
+    projectPath?: string,
+  ): Promise<ClaudeModelMetadata[]> {
+    const activeProcess = this.getActiveClaudeProcess();
+    if (activeProcess) {
+      const models = await activeProcess.listAvailableModels();
+      if (models.length > 0) return models;
+    }
+    if (process.env.NODE_ENV === "test") return [];
+    return listAvailableClaudeModels(projectPath);
+  }
+
+  private applyClaudeModels(models: ClaudeModelMetadata[]): void {
+    this.claudeModels = models.map((model) => model.model);
+    this.claudeModelEfforts = Object.fromEntries(
+      models.map((model) => [model.model, model.effortLevels]),
+    );
+  }
+
+  private applyFallbackClaudeModels(): void {
+    this.claudeModels = FALLBACK_CLAUDE_MODELS;
+    this.claudeModelEfforts = { ...FALLBACK_CLAUDE_MODEL_EFFORTS };
+  }
+
   private async loadCodexModels(projectPath?: string): Promise<string[]> {
     const process =
       this.getActiveCodexProcess() ??
@@ -5384,6 +5455,17 @@ export class BridgeWebSocketServer {
     const session = this.sessionManager.get(summary.id);
     return session?.provider === "codex"
       ? (session.process as CodexProcess)
+      : null;
+  }
+
+  private getActiveClaudeProcess(): SdkProcess | null {
+    const summary = this.sessionManager
+      .list()
+      .find((session) => session.provider === "claude");
+    if (!summary) return null;
+    const session = this.sessionManager.get(summary.id);
+    return session?.provider === "claude"
+      ? (session.process as SdkProcess)
       : null;
   }
 

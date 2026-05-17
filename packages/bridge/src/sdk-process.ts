@@ -3,7 +3,13 @@ import { existsSync, mkdirSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { EventEmitter } from "node:events";
-import { query, type Query, type SDKMessage, type PermissionResult } from "@anthropic-ai/claude-agent-sdk";
+import {
+  query,
+  type Query,
+  type SDKMessage,
+  type PermissionResult,
+  type ModelInfo,
+} from "@anthropic-ai/claude-agent-sdk";
 import {
   normalizeToolResultContent,
   type ServerMessage,
@@ -77,6 +83,84 @@ export function buildThinkingOptions(
     return { thinking: { type: "adaptive" } };
   }
   return {};
+}
+
+export type ClaudeEffortLevel = "low" | "medium" | "high" | "xhigh" | "max";
+
+export interface ClaudeModelMetadata {
+  model: string;
+  displayName?: string;
+  effortLevels: ClaudeEffortLevel[];
+}
+
+const CLAUDE_EFFORT_LEVELS = new Set<ClaudeEffortLevel>([
+  "low",
+  "medium",
+  "high",
+  "xhigh",
+  "max",
+]);
+
+function normalizeClaudeModelMetadata(model: ModelInfo): ClaudeModelMetadata | null {
+  if (!model.value) return null;
+  const effortLevels = Array.isArray(model.supportedEffortLevels)
+    ? model.supportedEffortLevels.filter((level): level is ClaudeEffortLevel =>
+        CLAUDE_EFFORT_LEVELS.has(level as ClaudeEffortLevel),
+      )
+    : [];
+  return {
+    model: model.value,
+    ...(model.displayName ? { displayName: model.displayName } : {}),
+    effortLevels: model.supportsEffort === false ? [] : effortLevels,
+  };
+}
+
+async function* createIdleUserMessageStream(): AsyncGenerator<SDKUserMsg> {
+  await new Promise<never>(() => {});
+}
+
+export async function listAvailableClaudeModels(
+  projectPath?: string,
+): Promise<ClaudeModelMetadata[]> {
+  const authCheck = await checkClaudeAuth();
+  if (!authCheck.authenticated) {
+    throw new Error(authCheck.message ?? "Claude SDK authentication failed");
+  }
+
+  const queryInstance = query({
+    prompt: createIdleUserMessageStream(),
+    options: {
+      cwd: projectPath ?? process.cwd(),
+      permissionMode: "default",
+      settingSources: ["user", "project", "local"],
+      stderr: (data: string) => {
+        const trimmed = data.trim();
+        if (trimmed) {
+          console.error(`[sdk-process:models:stderr] ${trimmed}`);
+        }
+      },
+    },
+  });
+  const drain = (async () => {
+    try {
+      for await (const _message of queryInstance) {
+        // Drain initialization/status messages so control requests can resolve.
+      }
+    } catch {
+      // Closing the standalone query can reject the iterator; model loading is
+      // best-effort and the supportedModels() result/error is handled below.
+    }
+  })();
+
+  try {
+    const models = await queryInstance.supportedModels();
+    return models
+      .map(normalizeClaudeModelMetadata)
+      .filter((model): model is ClaudeModelMetadata => model != null);
+  } finally {
+    queryInstance.close();
+    void drain;
+  }
 }
 
 /**
@@ -210,7 +294,7 @@ export interface StartOptions {
   continueMode?: boolean;
   permissionMode?: PermissionMode;
   model?: string;
-  effort?: "low" | "medium" | "high" | "max";
+  effort?: ClaudeEffortLevel;
   maxTurns?: number;
   maxBudgetUsd?: number;
   fallbackModel?: string;
@@ -861,6 +945,14 @@ export class SdkProcess extends EventEmitter<SdkProcessEvents> {
     } catch (err) {
       return { canRewind: false, error: err instanceof Error ? err.message : String(err) };
     }
+  }
+
+  async listAvailableModels(): Promise<ClaudeModelMetadata[]> {
+    if (!this.queryInstance) return [];
+    const models = await this.queryInstance.supportedModels();
+    return models
+      .map(normalizeClaudeModelMetadata)
+      .filter((model): model is ClaudeModelMetadata => model != null);
   }
 
   // ---- Private ----

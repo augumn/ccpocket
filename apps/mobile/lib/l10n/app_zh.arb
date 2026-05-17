@@ -316,6 +316,7 @@
   "claudeEffortLowDesc": "更快响应，分析较少",
   "claudeEffortMediumDesc": "速度与质量的平衡",
   "claudeEffortHighDesc": "更深入的分析",
+  "claudeEffortXHighDesc": "复杂工作的扩展推理",
   "claudeEffortMaxDesc": "最深入，最慢",
 
   "reasoningEffortMinimalDesc": "最快，分析最少",

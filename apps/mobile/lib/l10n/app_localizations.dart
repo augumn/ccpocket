@@ -1656,6 +1656,12 @@ abstract class AppLocalizations {
   /// **'より丁寧な分析'**
   String get claudeEffortHighDesc;
 
+  /// No description provided for @claudeEffortXHighDesc.
+  ///
+  /// In ja, this message translates to:
+  /// **'複雑な作業向けの拡張推論'**
+  String get claudeEffortXHighDesc;
+
   /// No description provided for @claudeEffortMaxDesc.
   ///
   /// In ja, this message translates to:

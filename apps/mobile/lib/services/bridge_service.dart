@@ -101,6 +101,7 @@ class BridgeService implements BridgeServiceBase {
   List<String> _projectHistory = [];
   List<String> _allowedDirs = [];
   List<String> _claudeModels = [];
+  Map<String, List<String>> _claudeModelEfforts = {};
   List<String> _codexModels = [];
   List<String> _codexProfiles = [];
   String? _defaultCodexProfile;
@@ -222,6 +223,7 @@ class BridgeService implements BridgeServiceBase {
   List<String> get projectHistory => _projectHistory;
   List<String> get allowedDirs => _allowedDirs;
   List<String> get claudeModels => _claudeModels;
+  Map<String, List<String>> get claudeModelEfforts => _claudeModelEfforts;
   List<String> get codexModels => _codexModels;
   List<String> get codexProfiles => _codexProfiles;
   String? get defaultCodexProfile => _defaultCodexProfile;
@@ -378,6 +380,7 @@ class BridgeService implements BridgeServiceBase {
                 :final sessions,
                 :final allowedDirs,
                 :final claudeModels,
+                :final claudeModelEfforts,
                 :final codexModels,
                 :final codexProfiles,
                 :final defaultCodexProfile,
@@ -388,6 +391,7 @@ class BridgeService implements BridgeServiceBase {
                 _sessionListController.add(_sessions);
                 _allowedDirs = allowedDirs;
                 _claudeModels = claudeModels;
+                _claudeModelEfforts = claudeModelEfforts;
                 _codexModels = codexModels;
                 _codexProfiles = codexProfiles;
                 _defaultCodexProfile = defaultCodexProfile;
@@ -631,6 +635,7 @@ class BridgeService implements BridgeServiceBase {
     _projectHistory = const [];
     _allowedDirs = const [];
     _claudeModels = const [];
+    _claudeModelEfforts = const {};
     _codexModels = const [];
     _codexProfiles = const [];
     _defaultCodexProfile = null;

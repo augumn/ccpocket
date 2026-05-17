@@ -830,6 +830,9 @@ class AppLocalizationsJa extends AppLocalizations {
   String get claudeEffortHighDesc => 'より丁寧な分析';
 
   @override
+  String get claudeEffortXHighDesc => '複雑な作業向けの拡張推論';
+
+  @override
   String get claudeEffortMaxDesc => '最も丁寧、最も遅い';
 
   @override
