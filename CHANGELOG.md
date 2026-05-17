@@ -4,6 +4,18 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.99.0] - 2026-05-18
+
+### Added
+- Load Claude effort capabilities from the installed SDK through Bridge so session options match the available CLI capabilities.
+
+### Changed
+- Require Bridge 1.61.0 for SDK-driven Claude effort capability metadata.
+- Refresh store release notes and screenshots.
+
+### Fixed
+- Wait for machine manager initialization before auto-connecting to the default machine.
+
 ## [1.98.2] - 2026-05-17
 
 ### Changed
