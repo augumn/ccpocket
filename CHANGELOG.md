@@ -4,6 +4,15 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.99.1] - 2026-05-20
+
+### Changed
+- Require Bridge 1.61.1 for Codex model reasoning capability metadata.
+
+### Fixed
+- Allow Codex sessions to select `none` reasoning effort while hiding unsupported `minimal` effort.
+- Preserve the visible default Codex model when starting a session without manually reselecting it.
+
 ## [1.99.0] - 2026-05-18
 
 ### Added
