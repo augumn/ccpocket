@@ -1,10 +1,10 @@
 # CC Pocket
 
 CC Pocket is a mobile and desktop app for controlling Codex and Claude coding-agent sessions.
-Run the agents through a self-hosted Bridge Server on your own Mac or Linux machine,
+Run the agents through a self-hosted Bridge Server on your own Mac, Linux, or Windows machine,
 then start sessions, approve actions, answer questions, review changes, and pick up work
-from iPhone, iPad, Android, or the native macOS app.
-Experimental Linux desktop builds are also available from GitHub Releases.
+from iPhone, iPad, Android, native macOS, or experimental Linux/Windows desktop builds.
+Experimental Linux and Windows desktop builds are also available from GitHub Releases.
 
 [日本語版 README](README.ja.md) | [简体中文版 README](README.zh-CN.md) | [한국어 README](README.ko.md)
 
@@ -32,6 +32,7 @@ npx @ccpocket/bridge@latest
 | **Android** | <a href="https://play.google.com/store/apps/details?id=com.k9i.ccpocket"><img height="40" alt="Get it on Google Play" src="docs/images/google-play-badge-en.svg" /></a> |
 | **macOS** | Download the latest `.dmg` from [GitHub Releases](https://github.com/K9i-0/ccpocket/releases?q=macos). Look for releases tagged `macos/v*`. |
 | **Linux (experimental)** | Download the latest `.tar.gz` from [GitHub Releases](https://github.com/K9i-0/ccpocket/releases?q=linux). Look for releases tagged `linux/v*`. |
+| **Windows (experimental)** | Download the latest `.zip` from [GitHub Releases](https://github.com/K9i-0/ccpocket/releases?q=windows). Look for releases tagged `windows/v*`. |
 
 ## Free to Use
 
@@ -48,7 +49,7 @@ New to mobile coding agents? See [How to run Codex from iPhone or Android](https
 - **Keep working on spotty networks**: recover missed streaming updates, queue outgoing messages while offline, and resend automatically after reconnecting.
 - **Work in parallel safely**: run sessions in separate git worktrees and keep long-running work isolated.
 - **Manage your machines**: save hosts, connect with QR codes or mDNS discovery, use Tailscale, start/stop/update over SSH, and receive push notifications.
-- **Use larger screens when helpful**: CC Pocket adapts to iPad, macOS, and Linux with workspace layouts for chat, Git, Explorer, screenshots, and images.
+- **Use larger screens when helpful**: CC Pocket adapts to iPad, macOS, Linux, and Windows with workspace layouts for chat, Git, Explorer, screenshots, and images.
 
 ## How It Works
 
