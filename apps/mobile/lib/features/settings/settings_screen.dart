@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:auto_route/auto_route.dart';
 import '../../utils/platform_helper.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart' show ScrollCacheExtent;
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:share_plus/share_plus.dart';
@@ -248,8 +249,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
           return ListView(
             key: const PageStorageKey('settings_list'),
             controller: _scrollController,
-            cacheExtent: widget.focusSupport || widget.focusConnection
-                ? 4096
+            scrollCacheExtent: widget.focusSupport || widget.focusConnection
+                ? const ScrollCacheExtent.pixels(4096)
                 : null,
             children: [
               if (isConnected) ...[

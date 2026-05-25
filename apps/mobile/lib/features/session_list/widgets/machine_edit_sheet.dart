@@ -509,16 +509,7 @@ class _MachineEditSheetState extends State<MachineEditSheet> {
                       ),
                       const SizedBox(height: 12),
 
-                      Container(
-                        decoration: BoxDecoration(
-                          color: colorScheme.surfaceContainerHigh,
-                          borderRadius: BorderRadius.circular(16),
-                          border: Border.all(
-                            color: colorScheme.outlineVariant.withValues(
-                              alpha: 0.5,
-                            ),
-                          ),
-                        ),
+                      _TileCard(
                         child: SwitchListTile(
                           title: Text(
                             l.machineEditUseSecureConnection,
@@ -545,16 +536,7 @@ class _MachineEditSheetState extends State<MachineEditSheet> {
                       _SectionHeader(title: l.machineEditSshConfiguration),
                       const SizedBox(height: 12),
 
-                      Container(
-                        decoration: BoxDecoration(
-                          color: colorScheme.surfaceContainerHigh,
-                          borderRadius: BorderRadius.circular(16),
-                          border: Border.all(
-                            color: colorScheme.outlineVariant.withValues(
-                              alpha: 0.5,
-                            ),
-                          ),
-                        ),
+                      _TileCard(
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
@@ -687,16 +669,7 @@ class _MachineEditSheetState extends State<MachineEditSheet> {
 
                         const SizedBox(height: 16),
 
-                        Container(
-                          decoration: BoxDecoration(
-                            color: colorScheme.surfaceContainerHigh,
-                            borderRadius: BorderRadius.circular(16),
-                            border: Border.all(
-                              color: colorScheme.outlineVariant.withValues(
-                                alpha: 0.5,
-                              ),
-                            ),
-                          ),
+                        _TileCard(
                           child: SwitchListTile(
                             key: const ValueKey('ssh_jump_toggle'),
                             title: Text(
@@ -1004,6 +977,29 @@ class _MachineEditSheetState extends State<MachineEditSheet> {
           );
         },
       ),
+    );
+  }
+}
+
+class _TileCard extends StatelessWidget {
+  final Widget child;
+
+  const _TileCard({required this.child});
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+
+    return Material(
+      color: colorScheme.surfaceContainerHigh,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(16),
+        side: BorderSide(
+          color: colorScheme.outlineVariant.withValues(alpha: 0.5),
+        ),
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: child,
     );
   }
 }
