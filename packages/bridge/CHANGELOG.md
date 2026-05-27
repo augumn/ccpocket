@@ -2,6 +2,11 @@
 
 All notable changes to `@ccpocket/bridge` will be documented in this file.
 
+## [1.62.0] - 2026-05-27
+
+### Added
+- Support project-scoped recent session loading with pagination metadata for grouped session lists.
+
 ## [1.61.4] - 2026-05-25
 
 ### Changed
