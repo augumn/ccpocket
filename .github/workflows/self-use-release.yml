@@ -111,7 +111,8 @@ jobs:
           java-version: "17"
 
       - name: Use precompiled Rust artifacts
-        run: printf '%s\n' 'use_precompiled_binaries: true' > apps/mobile/cargokit_options.yaml
+        run: |
+          printf '%s\n' 'use_precompiled_binaries: true' > apps/mobile/cargokit_options.yaml
 
       - run: flutter pub get
         working-directory: apps/mobile
@@ -186,7 +187,8 @@ jobs:
           cache: true
 
       - name: Use precompiled Rust artifacts
-        run: printf '%s\n' 'use_precompiled_binaries: true' > apps/mobile/cargokit_options.yaml
+        run: |
+          printf '%s\n' 'use_precompiled_binaries: true' > apps/mobile/cargokit_options.yaml
 
       - run: flutter pub get
         working-directory: apps/mobile
