@@ -2003,6 +2003,28 @@ class BridgeService implements BridgeServiceBase {
     _sessionListController.add(_sessions);
   }
 
+  void patchSessionCodexModel(
+    String sessionId,
+    String model, {
+    String? modelReasoningEffort,
+  }) {
+    final idx = _sessions.indexWhere((s) => s.id == sessionId);
+    if (idx < 0) return;
+    final current = _sessions[idx];
+    if (current.codexModel == model &&
+        (modelReasoningEffort == null ||
+            current.codexModelReasoningEffort == modelReasoningEffort)) {
+      return;
+    }
+    _sessions = List.of(_sessions)
+      ..[idx] = current.copyWith(
+        codexModel: model,
+        codexModelReasoningEffort:
+            modelReasoningEffort ?? current.codexModelReasoningEffort,
+      );
+    _sessionListController.add(_sessions);
+  }
+
   void _patchSessionQueuedInput(String sessionId, QueuedInputItem? item) {
     final idx = _sessions.indexWhere((s) => s.id == sessionId);
     if (idx < 0) return;

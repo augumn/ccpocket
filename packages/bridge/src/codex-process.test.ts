@@ -1010,6 +1010,63 @@ describe("CodexProcess (app-server)", () => {
     proc.stop();
   });
 
+  it("uses runtime model settings on the next turn/start", async () => {
+    const proc = new CodexProcess("linux");
+
+    proc.start("/tmp/project-runtime-model", {
+      sandboxMode: "workspace-write",
+      approvalPolicy: "on-request",
+      model: "gpt-5.5",
+      modelReasoningEffort: "high",
+    });
+
+    const child = fakeChildren[0];
+    await tick();
+
+    const initReq = nextOutgoingRequest(child);
+    child.stdout.emit(
+      "data",
+      `${JSON.stringify({ id: initReq.id, result: {} })}\n`,
+    );
+    await tick();
+    nextOutgoingNotification(child); // initialized
+
+    const startReq = nextOutgoingRequest(child);
+    child.stdout.emit(
+      "data",
+      `${JSON.stringify({
+        id: startReq.id,
+        result: {
+          thread: { id: "thr_runtime_model", model: "gpt-5.5" },
+          reasoningEffort: "high",
+        },
+      })}\n`,
+    );
+
+    await tick();
+    drainSkillsList(child);
+
+    proc.setModel("gpt-5.4-mini", "low");
+    proc.sendInput("continue with a smaller model");
+    await tick();
+
+    const turnReq = nextOutgoingRequest(child);
+    expect(turnReq.method).toBe("turn/start");
+    expect(turnReq.params).toMatchObject({
+      model: "gpt-5.4-mini",
+      effort: "low",
+      collaborationMode: {
+        mode: "default",
+        settings: {
+          model: "gpt-5.4-mini",
+          reasoning_effort: "low",
+        },
+      },
+    });
+
+    proc.stop();
+  });
+
   it("does not downgrade reasoning effort to medium in plan mode", async () => {
     const proc = new CodexProcess("linux");
 

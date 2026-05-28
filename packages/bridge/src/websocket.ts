@@ -338,6 +338,13 @@ function normalizeCodexPermissionsMode(
   }
 }
 
+function sanitizeCodexModel(model: unknown): string | undefined {
+  if (typeof model !== "string") return undefined;
+  const normalized = model.trim();
+  if (!normalized || normalized === "codex") return undefined;
+  return normalized;
+}
+
 function codexSettingsFromPermissionsMode(
   mode: CodexPermissionsMode,
 ): CodexPermissionSettings {
@@ -2597,6 +2604,78 @@ export class BridgeWebSocketServer {
               message: `Failed to set permission mode: ${errorMessageOf(err)}`,
             });
           });
+        break;
+      }
+
+      case "set_codex_model": {
+        const session = this.resolveSession(msg.sessionId);
+        if (!session) {
+          this.send(ws, { type: "error", message: "No active session." });
+          return;
+        }
+        if (session.provider !== "codex") {
+          this.send(ws, {
+            type: "error",
+            message: "Model switching is only supported for Codex sessions.",
+            errorCode: "set_codex_model_unsupported",
+          });
+          break;
+        }
+
+        const model = sanitizeCodexModel(msg.model);
+        if (!model) {
+          this.send(ws, {
+            type: "error",
+            message: `Invalid Codex model: ${msg.model}`,
+            errorCode: "set_codex_model_rejected",
+          });
+          break;
+        }
+
+        const modelReasoningEffort = msg.modelReasoningEffort as
+          | "none"
+          | "minimal"
+          | "low"
+          | "medium"
+          | "high"
+          | "xhigh"
+          | undefined;
+        const currentModel = sanitizeCodexModel(session.codexSettings?.model);
+        const currentEffort = session.codexSettings?.modelReasoningEffort;
+        if (model === currentModel && modelReasoningEffort === currentEffort) {
+          break;
+        }
+
+        const process = session.process as CodexProcess;
+        process.setModel(model, modelReasoningEffort);
+        session.codexSettings = {
+          ...(session.codexSettings ?? {}),
+          model,
+          ...(modelReasoningEffort !== undefined
+            ? { modelReasoningEffort }
+            : {}),
+        };
+        session.lastActivityAt = new Date();
+        this.broadcast({
+          type: "system",
+          subtype: "set_codex_model",
+          sessionId: session.id,
+          provider: "codex",
+          model,
+          ...(modelReasoningEffort !== undefined
+            ? { modelReasoningEffort }
+            : {}),
+        });
+        this.broadcastSessionList();
+        this.recordDebugEvent(session.id, {
+          direction: "internal" as const,
+          channel: "bridge",
+          type: "codex_model_changed",
+          detail: `model=${model} effort=${modelReasoningEffort ?? ""}`,
+        });
+        console.log(
+          `[ws] set_codex_model(codex): model=${model} effort=${modelReasoningEffort ?? ""}`,
+        );
         break;
       }
 

@@ -33,6 +33,8 @@ class ChatStateUpdate {
   final CodexApprovalPolicy? codexApprovalPolicy;
   final String? codexApprovalsReviewer;
   final CodexPermissionsMode? codexPermissionsMode;
+  final String? codexModel;
+  final ReasoningEffort? codexModelReasoningEffort;
   final bool? planMode;
   final List<ChatEntry> entriesToAdd;
   final List<ChatEntry> entriesToPrepend;
@@ -89,6 +91,8 @@ class ChatStateUpdate {
     this.codexApprovalPolicy,
     this.codexApprovalsReviewer,
     this.codexPermissionsMode,
+    this.codexModel,
+    this.codexModelReasoningEffort,
     this.planMode,
     this.entriesToAdd = const [],
     this.entriesToPrepend = const [],
@@ -720,6 +724,8 @@ class ChatMessageHandler {
     CodexPermissionsMode? codexPermissionsMode;
     bool? inPlanMode;
     bool? planMode;
+    String? codexModel;
+    ReasoningEffort? codexModelReasoningEffort;
     bool hasExecutionSignals(SystemMessage message) =>
         message.executionMode != null ||
         message.permissionMode != null ||
@@ -801,6 +807,12 @@ class ChatMessageHandler {
         inPlanMode = planMode;
       }
     }
+    if (msg is SystemMessage && msg.provider == Provider.codex.value) {
+      codexModel = sanitizeCodexModelName(msg.model);
+      codexModelReasoningEffort = reasoningEffortByValue(
+        msg.modelReasoningEffort,
+      );
+    }
     // Extract claudeSessionId from session_created or init messages.
     // Prefer the full Claude CLI UUID (claudeSessionId) over the Bridge's
     // internal 8-char ID (sessionId) for JSONL file lookups.
@@ -823,6 +835,8 @@ class ChatMessageHandler {
       codexApprovalPolicy: codexApprovalPolicy,
       codexApprovalsReviewer: codexApprovalsReviewer,
       codexPermissionsMode: codexPermissionsMode,
+      codexModel: codexModel,
+      codexModelReasoningEffort: codexModelReasoningEffort,
       planMode: planMode,
       inPlanMode: inPlanMode,
       slashCommands: commands,

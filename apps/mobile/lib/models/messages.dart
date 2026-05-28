@@ -383,6 +383,14 @@ enum ReasoningEffort {
   const ReasoningEffort(this.value, this.label);
 }
 
+ReasoningEffort? reasoningEffortByValue(String? raw) {
+  if (raw == null) return null;
+  for (final effort in ReasoningEffort.values) {
+    if (effort.value == raw) return effort;
+  }
+  return null;
+}
+
 enum WebSearchMode {
   disabled('disabled', 'Disabled'),
   cached('cached', 'Cached'),
@@ -3691,6 +3699,19 @@ class ClientMessage {
       'approvalsReviewer': ?approvalsReviewer,
       'codexPermissionsMode': ?codexPermissionsMode,
       'planMode': ?planMode,
+      'sessionId': ?sessionId,
+    });
+  }
+
+  factory ClientMessage.setCodexModel(
+    String model, {
+    String? modelReasoningEffort,
+    String? sessionId,
+  }) {
+    return ClientMessage._(<String, dynamic>{
+      'type': 'set_codex_model',
+      'model': model,
+      'modelReasoningEffort': ?modelReasoningEffort,
       'sessionId': ?sessionId,
     });
   }

@@ -56,6 +56,11 @@ class ChatSessionCubit extends Cubit<ChatSessionState> {
   /// Whether this session is a Codex session.
   bool get isCodex => provider == Provider.codex;
 
+  List<String> get codexModels => _bridge.codexModels;
+
+  Map<String, List<String>> get codexModelReasoningEfforts =>
+      _bridge.codexModelReasoningEfforts;
+
   String _nextOptimisticCodexUserTurnUuid() {
     final userTurnCount = state.entries.whereType<UserChatEntry>().length;
     return 'codex:user-turn:${userTurnCount + 1}';
@@ -637,6 +642,10 @@ class ChatSessionCubit extends Cubit<ChatSessionState> {
             update.codexApprovalsReviewer ?? current.codexApprovalsReviewer,
         codexPermissionsMode:
             update.codexPermissionsMode ?? current.codexPermissionsMode,
+        codexModel: update.codexModel ?? current.codexModel,
+        codexModelReasoningEffort:
+            update.codexModelReasoningEffort ??
+            current.codexModelReasoningEffort,
         planMode: update.planMode ?? current.planMode,
         slashCommands: update.slashCommands ?? current.slashCommands,
         queuedInput: nextQueuedInput,
@@ -857,6 +866,8 @@ class ChatSessionCubit extends Cubit<ChatSessionState> {
         :final approvalsReviewer,
         :final codexPermissionsMode,
         :final sandboxMode,
+        :final model,
+        :final modelReasoningEffort,
         :final sourceSessionId,
         :final tipCode,
       ):
@@ -873,6 +884,8 @@ class ChatSessionCubit extends Cubit<ChatSessionState> {
           approvalsReviewer,
           codexPermissionsMode,
           sandboxMode,
+          model,
+          modelReasoningEffort,
           sourceSessionId,
           tipCode,
         ].join('\u0001');
@@ -1577,6 +1590,36 @@ class ChatSessionCubit extends Cubit<ChatSessionState> {
             : approvalsReviewer,
         codexPermissionsMode: mode.value,
         planMode: false,
+        sessionId: sessionId,
+      ),
+    );
+  }
+
+  void setCodexModel(String model, {ReasoningEffort? reasoningEffort}) {
+    if (!isCodex) return;
+    final normalizedModel = sanitizeCodexModelName(model);
+    if (normalizedModel == null) return;
+    final nextReasoningEffort =
+        reasoningEffort ?? state.codexModelReasoningEffort;
+    logger.info(
+      '[session:$sessionId] setCodexModel=$normalizedModel '
+      'reasoning=${nextReasoningEffort?.value}',
+    );
+    emit(
+      state.copyWith(
+        codexModel: normalizedModel,
+        codexModelReasoningEffort: nextReasoningEffort,
+      ),
+    );
+    _bridge.patchSessionCodexModel(
+      sessionId,
+      normalizedModel,
+      modelReasoningEffort: nextReasoningEffort?.value,
+    );
+    _bridge.send(
+      ClientMessage.setCodexModel(
+        normalizedModel,
+        modelReasoningEffort: nextReasoningEffort?.value,
         sessionId: sessionId,
       ),
     );

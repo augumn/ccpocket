@@ -127,6 +127,14 @@ vi.mock("./session.js", () => ({
         setCollaborationMode: vi.fn(function (this: any, value: string) {
           this.collaborationMode = value;
         }),
+        setModel: vi.fn(function (
+          this: any,
+          model: string,
+          modelReasoningEffort?: string,
+        ) {
+          this.model = model;
+          this.modelReasoningEffort = modelReasoningEffort;
+        }),
         listThreads: vi.fn(async () => ({ data: [], nextCursor: null })),
         listAvailableModels: vi.fn(async () => []),
         readThread: vi.fn(async () => ({ id: "thread-read", turns: [] })),
@@ -2063,6 +2071,88 @@ describe("BridgeWebSocketServer resume/get_history flow", () => {
       approvalsReviewer: "auto_review",
       codexPermissionsMode: "autoReview",
       planMode: true,
+    });
+
+    bridge.close();
+  });
+
+  it("updates codex model in-place and broadcasts session settings", async () => {
+    const bridge = new BridgeWebSocketServer({ server: httpServer });
+    const ws = {
+      readyState: OPEN_STATE,
+      send: vi.fn(),
+    } as any;
+    (bridge as any).wss.clients.add(ws);
+
+    (bridge as any).handleClientMessage(
+      {
+        type: "start",
+        projectPath: "/tmp/project-codex-model",
+        provider: "codex",
+        model: "gpt-5.5",
+        modelReasoningEffort: "high",
+      },
+      ws,
+    );
+    await Promise.resolve();
+
+    const sends = ws.send.mock.calls.map((c: unknown[]) =>
+      JSON.parse(c[0] as string),
+    );
+    const created = sends.find(
+      (m: any) => m.type === "system" && m.subtype === "session_created",
+    );
+    expect(created).toBeDefined();
+    const sessionId = created.sessionId as string;
+
+    const session = (bridge as any).sessionManager.get(sessionId);
+    expect(session).toBeDefined();
+    ws.send.mockClear();
+
+    (bridge as any).handleClientMessage(
+      {
+        type: "set_codex_model",
+        sessionId,
+        model: "gpt-5.4-mini",
+        modelReasoningEffort: "low",
+      },
+      ws,
+    );
+
+    expect(session.process.setModel).toHaveBeenCalledWith(
+      "gpt-5.4-mini",
+      "low",
+    );
+    expect(session.codexSettings).toMatchObject({
+      model: "gpt-5.4-mini",
+      modelReasoningEffort: "low",
+    });
+
+    const messages = ws.send.mock.calls.map((c: unknown[]) =>
+      JSON.parse(c[0] as string),
+    );
+    expect(
+      messages.find(
+        (m: any) => m.type === "system" && m.subtype === "set_codex_model",
+      ),
+    ).toMatchObject({
+      sessionId,
+      provider: "codex",
+      model: "gpt-5.4-mini",
+      modelReasoningEffort: "low",
+    });
+    expect(
+      messages.find((m: any) => m.type === "session_list"),
+    ).toMatchObject({
+      sessions: expect.arrayContaining([
+        expect.objectContaining({
+          id: sessionId,
+          codexSettings: expect.objectContaining({
+            model: "gpt-5.4-mini",
+            modelReasoningEffort: "low",
+          }),
+        }),
+      ]),
     });
 
     bridge.close();

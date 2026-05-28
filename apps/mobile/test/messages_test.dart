@@ -164,6 +164,21 @@ void main() {
       });
     });
 
+    test('ClientMessage.setCodexModel serializes model settings', () {
+      final msg = ClientMessage.setCodexModel(
+        'gpt-5.4-mini',
+        modelReasoningEffort: 'low',
+        sessionId: 's1',
+      );
+
+      expect(jsonDecode(msg.toJson()), {
+        'type': 'set_codex_model',
+        'model': 'gpt-5.4-mini',
+        'modelReasoningEffort': 'low',
+        'sessionId': 's1',
+      });
+    });
+
     test('ServerMessage parses history_delta', () {
       final msg = ServerMessage.fromJson({
         'type': 'history_delta',

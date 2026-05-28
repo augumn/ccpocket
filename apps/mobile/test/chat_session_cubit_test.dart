@@ -1103,6 +1103,40 @@ void main() {
       expect(cubit.state.inPlanMode, isFalse);
     });
 
+    test('setCodexModel updates state and sends bridge message', () async {
+      final cubit = createCubit('s1', provider: Provider.codex);
+      addTearDown(cubit.close);
+
+      cubit.setCodexModel(
+        ' gpt-5.4-mini ',
+        reasoningEffort: ReasoningEffort.low,
+      );
+
+      expect(cubit.state.codexModel, 'gpt-5.4-mini');
+      expect(cubit.state.codexModelReasoningEffort, ReasoningEffort.low);
+      expect(mockBridge.sentMessages, hasLength(1));
+      expect(jsonDecode(mockBridge.sentMessages.single.toJson()), {
+        'type': 'set_codex_model',
+        'model': 'gpt-5.4-mini',
+        'modelReasoningEffort': 'low',
+        'sessionId': 's1',
+      });
+    });
+
+    test('setCodexModel is ignored for non-Codex sessions', () async {
+      final cubit = createCubit('s1', provider: Provider.claude);
+      addTearDown(cubit.close);
+
+      cubit.setCodexModel(
+        'gpt-5.4-mini',
+        reasoningEffort: ReasoningEffort.low,
+      );
+
+      expect(cubit.state.codexModel, isNull);
+      expect(cubit.state.codexModelReasoningEffort, isNull);
+      expect(mockBridge.sentMessages, isEmpty);
+    });
+
     test('permission mode rolls back on mode-change error', () async {
       final cubit = createCubit('s1');
       addTearDown(cubit.close);

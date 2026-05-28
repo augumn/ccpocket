@@ -254,6 +254,27 @@ describe("parseClientMessage", () => {
     ).toBeNull();
   });
 
+  it("parses set_codex_model message", () => {
+    const msg = parseClientMessage(
+      '{"type":"set_codex_model","model":"gpt-5.4-mini","modelReasoningEffort":"low","sessionId":"s1"}',
+    );
+    expect(msg).toEqual({
+      type: "set_codex_model",
+      model: "gpt-5.4-mini",
+      modelReasoningEffort: "low",
+      sessionId: "s1",
+    });
+  });
+
+  it("rejects set_codex_model with invalid fields", () => {
+    expect(parseClientMessage('{"type":"set_codex_model"}')).toBeNull();
+    expect(
+      parseClientMessage(
+        '{"type":"set_codex_model","model":"gpt-5.4-mini","modelReasoningEffort":"turbo"}',
+      ),
+    ).toBeNull();
+  });
+
   it("rejects invalid approvalsReviewer", () => {
     expect(
       parseClientMessage(

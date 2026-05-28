@@ -284,6 +284,10 @@ export class CodexProcess extends EventEmitter<CodexProcessEvents> {
   private _approvalsReviewer: string | undefined = undefined;
   private _codexPermissionsMode: CodexStartOptions["codexPermissionsMode"] | undefined;
   private _collaborationMode: "plan" | "default" = "default";
+  private _runtimeModel: string | undefined;
+  private _runtimeModelReasoningEffort:
+    | CodexStartOptions["modelReasoningEffort"]
+    | undefined;
   private lastPlanItemText: string | null = null;
   /** Last assistant text message — used as `result` in completion notification. */
   private lastResultText: string | null = null;
@@ -341,6 +345,45 @@ export class CodexProcess extends EventEmitter<CodexProcessEvents> {
 
   get codexPermissionsMode(): CodexStartOptions["codexPermissionsMode"] | undefined {
     return this._codexPermissionsMode;
+  }
+
+  get model(): string {
+    return (
+      sanitizeCodexModel(this._runtimeModel) ??
+      sanitizeCodexModel(this.startModel) ??
+      DEFAULT_CODEX_MODEL
+    );
+  }
+
+  get modelReasoningEffort():
+    | CodexStartOptions["modelReasoningEffort"]
+    | undefined {
+    return this._runtimeModelReasoningEffort;
+  }
+
+  /**
+   * Update Codex model at runtime.
+   * Takes effect on the next `turn/start` RPC call.
+   */
+  setModel(
+    model: string,
+    modelReasoningEffort?: CodexStartOptions["modelReasoningEffort"],
+  ): void {
+    const sanitizedModel = sanitizeCodexModel(model);
+    if (sanitizedModel) {
+      this._runtimeModel = sanitizedModel;
+      this.startModel = sanitizedModel;
+    }
+    if (modelReasoningEffort !== undefined) {
+      this._runtimeModelReasoningEffort =
+        normalizeReasoningEffort(modelReasoningEffort);
+    }
+    console.log(
+      `[codex-process] Model changed to: ${this.model}` +
+        (this._runtimeModelReasoningEffort
+          ? ` (${this._runtimeModelReasoningEffort})`
+          : ""),
+    );
   }
 
   /**
@@ -1570,10 +1613,14 @@ export class CodexProcess extends EventEmitter<CodexProcessEvents> {
             this._approvalsReviewer as CodexStartOptions["approvalsReviewer"],
           );
         }
-        const requestedModel = sanitizeCodexModel(options?.model);
-        const requestedReasoningEffort = options?.modelReasoningEffort
-          ? normalizeReasoningEffort(options.modelReasoningEffort)
-          : undefined;
+        const requestedModel =
+          sanitizeCodexModel(this._runtimeModel) ??
+          sanitizeCodexModel(options?.model);
+        const requestedReasoningEffort =
+          this._runtimeModelReasoningEffort ??
+          (options?.modelReasoningEffort
+            ? normalizeReasoningEffort(options.modelReasoningEffort)
+            : undefined);
         if (requestedModel) params.model = requestedModel;
         if (requestedReasoningEffort) {
           params.effort = requestedReasoningEffort;
@@ -2800,7 +2847,7 @@ function normalizeSandboxMode(value: CodexStartOptions["sandboxMode"]): string {
 
 function normalizeReasoningEffort(
   value: NonNullable<CodexStartOptions["modelReasoningEffort"]>,
-): string {
+): NonNullable<CodexStartOptions["modelReasoningEffort"]> {
   return value;
 }
 

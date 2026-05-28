@@ -54,6 +54,19 @@ class SessionModeBar extends StatelessWidget {
               mainAxisSize: MainAxisSize.min,
               children: [
                 if (isCodex) ...[
+                  CodexModelChip(
+                    model: _currentCodexModel(chatCubit),
+                    reasoningEffort: chatCubit.state.codexModelReasoningEffort,
+                    onTap: () => showCodexModelMenu(context, chatCubit),
+                  ),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 4),
+                    child: VerticalDivider(
+                      width: 1,
+                      thickness: 1,
+                      color: cs.outlineVariant.withValues(alpha: 0.4),
+                    ),
+                  ),
                   PlanModeChip(
                     enabled: planMode,
                     activeGlow: false,
@@ -295,6 +308,173 @@ class _RotatingBorderPainter extends CustomPainter {
   @override
   bool shouldRepaint(_RotatingBorderPainter oldDelegate) =>
       oldDelegate.progress != progress;
+}
+
+String _currentCodexModel(ChatSessionCubit chatCubit) {
+  final models = chatCubit.codexModels.isNotEmpty
+      ? chatCubit.codexModels
+      : defaultCodexModels;
+  final current = normalizeCodexModelForAvailableList(
+    chatCubit.state.codexModel,
+    models,
+  );
+  return current ?? (models.isNotEmpty ? models.first : defaultCodexModels.first);
+}
+
+List<ReasoningEffort> _codexReasoningEffortsForModel(
+  BuildContext context,
+  String model,
+) {
+  final raw = context
+      .read<ChatSessionCubit>()
+      .codexModelReasoningEfforts[model];
+  final efforts = <ReasoningEffort>[ReasoningEffort.none];
+  if (raw != null) {
+    for (final value in raw) {
+      final effort = reasoningEffortByValue(value);
+      if (effort != null && !efforts.contains(effort)) efforts.add(effort);
+    }
+  }
+  if (efforts.length == 1) {
+    efforts.addAll(const [
+      ReasoningEffort.low,
+      ReasoningEffort.medium,
+      ReasoningEffort.high,
+      ReasoningEffort.xhigh,
+    ]);
+  }
+  return efforts;
+}
+
+ReasoningEffort _effectiveCodexReasoningEffort(
+  ReasoningEffort? current,
+  List<ReasoningEffort> efforts,
+) {
+  if (current != null && efforts.contains(current)) return current;
+  if (efforts.contains(ReasoningEffort.high)) return ReasoningEffort.high;
+  return efforts.first;
+}
+
+void showCodexModelMenu(BuildContext context, ChatSessionCubit chatCubit) {
+  final models = chatCubit.codexModels.isNotEmpty
+      ? chatCubit.codexModels
+      : defaultCodexModels;
+  final currentModel = _currentCodexModel(chatCubit);
+  final currentEfforts = _codexReasoningEffortsForModel(context, currentModel);
+  final currentEffort = _effectiveCodexReasoningEffort(
+    chatCubit.state.codexModelReasoningEffort,
+    currentEfforts,
+  );
+
+  showModalBottomSheet(
+    context: context,
+    builder: (sheetContext) {
+      final sheetCs = Theme.of(sheetContext).colorScheme;
+      return SafeArea(
+        child: ConstrainedBox(
+          constraints: BoxConstraints(
+            maxHeight: MediaQuery.of(sheetContext).size.height * 0.8,
+          ),
+          child: ListView(
+            shrinkWrap: true,
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 16, 16, 6),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      AppLocalizations.of(context).model,
+                      style: TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w600,
+                        color: sheetCs.onSurface,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      'Applies to the next Codex message.',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: sheetCs.onSurfaceVariant,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              for (final model in models)
+                ListTile(
+                  leading: Icon(
+                    Icons.smart_toy_outlined,
+                    color: model == currentModel
+                        ? sheetCs.primary
+                        : sheetCs.onSurfaceVariant,
+                  ),
+                  title: Text(model),
+                  subtitle: model == currentModel
+                      ? Text('Reasoning: ${currentEffort.label}')
+                      : null,
+                  trailing: model == currentModel
+                      ? Icon(Icons.check, color: sheetCs.primary, size: 20)
+                      : null,
+                  onTap: () {
+                    Navigator.pop(sheetContext);
+                    if (model == currentModel) return;
+                    HapticFeedback.lightImpact();
+                    final efforts = _codexReasoningEffortsForModel(
+                      context,
+                      model,
+                    );
+                    chatCubit.setCodexModel(
+                      model,
+                      reasoningEffort: _effectiveCodexReasoningEffort(
+                        chatCubit.state.codexModelReasoningEffort,
+                        efforts,
+                      ),
+                    );
+                  },
+                ),
+              const Divider(height: 1),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+                child: Text(
+                  AppLocalizations.of(context).reasoning,
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                    color: sheetCs.onSurfaceVariant,
+                  ),
+                ),
+              ),
+              for (final effort in currentEfforts)
+                ListTile(
+                  leading: Icon(
+                    Icons.psychology,
+                    color: effort == currentEffort
+                        ? sheetCs.primary
+                        : sheetCs.onSurfaceVariant,
+                  ),
+                  title: Text(effort.label),
+                  trailing: effort == currentEffort
+                      ? Icon(Icons.check, color: sheetCs.primary, size: 20)
+                      : null,
+                  onTap: () {
+                    Navigator.pop(sheetContext);
+                    if (effort == currentEffort) return;
+                    HapticFeedback.lightImpact();
+                    chatCubit.setCodexModel(
+                      currentModel,
+                      reasoningEffort: effort,
+                    );
+                  },
+                ),
+              const SizedBox(height: 8),
+            ],
+          ),
+        ),
+      );
+    },
+  );
 }
 
 void showCodexPermissionsMenu(
@@ -891,6 +1071,59 @@ class ExecutionModeChip extends StatelessWidget {
               const SizedBox(width: 3),
               Text(
                 label,
+                style: TextStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.w600,
+                  color: fg,
+                ),
+              ),
+              Icon(
+                Icons.arrow_drop_down,
+                size: 14,
+                color: fg.withValues(alpha: 0.5),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class CodexModelChip extends StatelessWidget {
+  final String model;
+  final ReasoningEffort? reasoningEffort;
+  final VoidCallback onTap;
+
+  const CodexModelChip({
+    super.key,
+    required this.model,
+    this.reasoningEffort,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    final fg = cs.primary;
+    final label = model.replaceFirst(RegExp(r'^gpt-'), '');
+    final suffix = reasoningEffort == null ? '' : ' ${reasoningEffort!.label}';
+
+    return Material(
+      color: Colors.transparent,
+      borderRadius: BorderRadius.circular(10),
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Icons.smart_toy_outlined, size: 13, color: fg),
+              const SizedBox(width: 3),
+              Text(
+                '$label$suffix',
                 style: TextStyle(
                   fontSize: 11,
                   fontWeight: FontWeight.w600,

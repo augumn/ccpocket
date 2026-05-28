@@ -158,6 +158,12 @@ export type ClientMessage =
       planMode?: boolean;
       sessionId?: string;
     }
+  | {
+      type: "set_codex_model";
+      model: string;
+      modelReasoningEffort?: string;
+      sessionId?: string;
+    }
   | { type: "set_sandbox_mode"; sandboxMode: string; sessionId?: string }
   | {
       type: "approve";
@@ -1074,6 +1080,19 @@ export function parseClientMessage(data: string): ClientMessage | null {
         )
           return null;
         if (msg.planMode !== undefined && typeof msg.planMode !== "boolean")
+          return null;
+        break;
+      case "set_codex_model":
+        if (typeof msg.model !== "string" || msg.model.trim() === "")
+          return null;
+        if (
+          msg.modelReasoningEffort !== undefined &&
+          !["none", "minimal", "low", "medium", "high", "xhigh"].includes(
+            String(msg.modelReasoningEffort),
+          )
+        )
+          return null;
+        if (msg.sessionId !== undefined && typeof msg.sessionId !== "string")
           return null;
         break;
       case "set_sandbox_mode":
