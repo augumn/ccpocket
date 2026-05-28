@@ -43,7 +43,7 @@ jobs:
           fi
           mv "$TARBALL" "$RUNNER_TEMP/bridge-dist/ccpocket-bridge-self-use.tgz"
 
-      - uses: actions/upload-artifact@7b8b23b2c0b329388cc0fa5f648f388ca6c5c72f # v4.6.2
+      - uses: actions/upload-artifact@v4
         with:
           name: ccpocket-bridge-self-use
           path: ${{ runner.temp }}/bridge-dist/ccpocket-bridge-self-use.tgz
@@ -85,7 +85,7 @@ jobs:
           Copy-Item -Path "apps/mobile/build/windows/x64/runner/Release/*" -Destination $bundleDir -Recurse -Force
           Compress-Archive -Path $bundleDir -DestinationPath "CC-Pocket-windows-x64-self-use.zip" -Force
 
-      - uses: actions/upload-artifact@7b8b23b2c0b329388cc0fa5f648f388ca6c5c72f # v4.6.2
+      - uses: actions/upload-artifact@v4
         with:
           name: CC-Pocket-windows-x64-self-use
           path: CC-Pocket-windows-x64-self-use.zip
@@ -130,7 +130,7 @@ jobs:
           cp apps/mobile/build/app/outputs/flutter-apk/app-release.apk \
             "$RUNNER_TEMP/android-dist/CC-Pocket-android-arm64-self-use.apk"
 
-      - uses: actions/upload-artifact@7b8b23b2c0b329388cc0fa5f648f388ca6c5c72f # v4.6.2
+      - uses: actions/upload-artifact@v4
         with:
           name: CC-Pocket-android-self-use
           path: ${{ runner.temp }}/android-dist/CC-Pocket-android-arm64-self-use.apk
@@ -166,7 +166,7 @@ jobs:
           fi
           ditto -c -k --sequesterRsrc --keepParent "$APP_PATH" "CC-Pocket-macos-unsigned-self-use.zip"
 
-      - uses: actions/upload-artifact@7b8b23b2c0b329388cc0fa5f648f388ca6c5c72f # v4.6.2
+      - uses: actions/upload-artifact@v4
         with:
           name: CC-Pocket-macos-unsigned-self-use
           path: CC-Pocket-macos-unsigned-self-use.zip
@@ -209,7 +209,7 @@ jobs:
           fi
           ditto -c -k --sequesterRsrc --keepParent "$APP_PATH" "CC-Pocket-ios-no-codesign-self-use.zip"
 
-      - uses: actions/upload-artifact@7b8b23b2c0b329388cc0fa5f648f388ca6c5c72f # v4.6.2
+      - uses: actions/upload-artifact@v4
         with:
           name: CC-Pocket-ios-no-codesign-self-use
           path: CC-Pocket-ios-no-codesign-self-use.zip
@@ -224,7 +224,7 @@ jobs:
       - ios
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+      - uses: actions/download-artifact@v4
         with:
           path: dist
           merge-multiple: true
