@@ -1,0 +1,278 @@
+name: Self-use Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: "Release tag to create. Leave empty to use self-use-<run-number>-<attempt>."
+        required: false
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  bridge:
+    name: Bridge tarball
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+      - run: npx tsc --noEmit -p packages/bridge/tsconfig.json
+      - run: npm run bridge:build
+
+      - name: Pack bridge
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/bridge-dist"
+          npm pack --workspace=packages/bridge --pack-destination "$RUNNER_TEMP/bridge-dist"
+          TARBALL="$(find "$RUNNER_TEMP/bridge-dist" -maxdepth 1 -type f -name '*.tgz' | head -n 1)"
+          if [[ -z "$TARBALL" ]]; then
+            echo "::error::Bridge tarball was not created"
+            exit 1
+          fi
+          mv "$TARBALL" "$RUNNER_TEMP/bridge-dist/ccpocket-bridge-self-use.tgz"
+
+      - uses: actions/upload-artifact@7b8b23b2c0b329388cc0fa5f648f388ca6c5c72f # v4.6.2
+        with:
+          name: ccpocket-bridge-self-use
+          path: ${{ runner.temp }}/bridge-dist/ccpocket-bridge-self-use.tgz
+
+  windows:
+    name: Windows x64
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Read Flutter version from .mise.toml
+        id: mise
+        shell: pwsh
+        run: |
+          $mise = Get-Content .mise.toml -Raw
+          if ($mise -notmatch 'flutter\s*=\s*"([^"]+)"') {
+            Write-Error "Could not read Flutter version from .mise.toml"
+            exit 1
+          }
+          "flutter_version=$($Matches[1])" >> $env:GITHUB_OUTPUT
+
+      - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2.23.0
+        with:
+          flutter-version: ${{ steps.mise.outputs.flutter_version }}
+          cache: true
+
+      - run: flutter config --enable-windows-desktop
+      - run: flutter pub get
+        working-directory: apps/mobile
+      - run: flutter build windows --release
+        working-directory: apps/mobile
+
+      - name: Package Windows bundle
+        shell: pwsh
+        run: |
+          $distDir = Join-Path $env:RUNNER_TEMP "windows-dist"
+          $bundleDir = Join-Path $distDir "CC-Pocket-windows-x64"
+          New-Item -ItemType Directory -Force -Path $bundleDir | Out-Null
+          Copy-Item -Path "apps/mobile/build/windows/x64/runner/Release/*" -Destination $bundleDir -Recurse -Force
+          Compress-Archive -Path $bundleDir -DestinationPath "CC-Pocket-windows-x64-self-use.zip" -Force
+
+      - uses: actions/upload-artifact@7b8b23b2c0b329388cc0fa5f648f388ca6c5c72f # v4.6.2
+        with:
+          name: CC-Pocket-windows-x64-self-use
+          path: CC-Pocket-windows-x64-self-use.zip
+
+  android:
+    name: Android APK
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Read Flutter version from .mise.toml
+        id: mise
+        run: echo "flutter_version=$(grep 'flutter' .mise.toml | sed 's/.*= *\"//' | sed 's/\"//')" >> "$GITHUB_OUTPUT"
+
+      - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2.23.0
+        with:
+          flutter-version: ${{ steps.mise.outputs.flutter_version }}
+          cache: true
+
+      - uses: actions/setup-java@be666c2fcd27ec809703dec50e508c2fdc7f6654 # v5.2.0
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Use precompiled Rust artifacts
+        run: printf '%s\n' 'use_precompiled_binaries: true' > apps/mobile/cargokit_options.yaml
+
+      - run: flutter pub get
+        working-directory: apps/mobile
+
+      - name: Build Android APK
+        working-directory: apps/mobile
+        run: |
+          flutter build apk --release \
+            --dart-define=REVENUECAT_PUBLIC_KEY= \
+            --no-tree-shake-icons
+
+      - name: Collect Android APK
+        run: |
+          mkdir -p "$RUNNER_TEMP/android-dist"
+          cp apps/mobile/build/app/outputs/flutter-apk/app-release.apk \
+            "$RUNNER_TEMP/android-dist/CC-Pocket-android-arm64-self-use.apk"
+
+      - uses: actions/upload-artifact@7b8b23b2c0b329388cc0fa5f648f388ca6c5c72f # v4.6.2
+        with:
+          name: CC-Pocket-android-self-use
+          path: ${{ runner.temp }}/android-dist/CC-Pocket-android-arm64-self-use.apk
+
+  macos:
+    name: macOS unsigned app
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Read Flutter version from .mise.toml
+        id: mise
+        run: echo "flutter_version=$(grep 'flutter' .mise.toml | sed 's/.*= *\"//' | sed 's/\"//')" >> "$GITHUB_OUTPUT"
+
+      - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2.23.0
+        with:
+          flutter-version: ${{ steps.mise.outputs.flutter_version }}
+          cache: true
+
+      - run: flutter pub get
+        working-directory: apps/mobile
+
+      - name: Build macOS app without distribution signing
+        working-directory: apps/mobile
+        run: flutter build macos --release --no-codesign
+
+      - name: Package macOS app
+        run: |
+          APP_PATH="apps/mobile/build/macos/Build/Products/Release/CC Pocket.app"
+          if [[ ! -d "$APP_PATH" ]]; then
+            echo "::error::macOS app bundle not found at $APP_PATH"
+            exit 1
+          fi
+          ditto -c -k --sequesterRsrc --keepParent "$APP_PATH" "CC-Pocket-macos-unsigned-self-use.zip"
+
+      - uses: actions/upload-artifact@7b8b23b2c0b329388cc0fa5f648f388ca6c5c72f # v4.6.2
+        with:
+          name: CC-Pocket-macos-unsigned-self-use
+          path: CC-Pocket-macos-unsigned-self-use.zip
+
+  ios:
+    name: iOS no-codesign app
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Read Flutter version from .mise.toml
+        id: mise
+        run: echo "flutter_version=$(grep 'flutter' .mise.toml | sed 's/.*= *\"//' | sed 's/\"//')" >> "$GITHUB_OUTPUT"
+
+      - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2.23.0
+        with:
+          flutter-version: ${{ steps.mise.outputs.flutter_version }}
+          cache: true
+
+      - name: Use precompiled Rust artifacts
+        run: printf '%s\n' 'use_precompiled_binaries: true' > apps/mobile/cargokit_options.yaml
+
+      - run: flutter pub get
+        working-directory: apps/mobile
+
+      - name: Build iOS app without code signing
+        working-directory: apps/mobile
+        run: |
+          flutter build ios --release --no-codesign \
+            --dart-define=REVENUECAT_PUBLIC_KEY= \
+            --no-tree-shake-icons
+
+      - name: Package iOS Runner.app
+        run: |
+          APP_PATH="apps/mobile/build/ios/iphoneos/Runner.app"
+          if [[ ! -d "$APP_PATH" ]]; then
+            echo "::error::iOS Runner.app not found at $APP_PATH"
+            exit 1
+          fi
+          ditto -c -k --sequesterRsrc --keepParent "$APP_PATH" "CC-Pocket-ios-no-codesign-self-use.zip"
+
+      - uses: actions/upload-artifact@7b8b23b2c0b329388cc0fa5f648f388ca6c5c72f # v4.6.2
+        with:
+          name: CC-Pocket-ios-no-codesign-self-use
+          path: CC-Pocket-ios-no-codesign-self-use.zip
+
+  release:
+    name: Create GitHub release
+    needs:
+      - bridge
+      - windows
+      - android
+      - macos
+      - ios
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: Resolve release tag
+        id: tag
+        shell: bash
+        run: |
+          set -euo pipefail
+          TAG="${{ inputs.release_tag }}"
+          if [[ -z "$TAG" ]]; then
+            TAG="self-use-${GITHUB_RUN_NUMBER}-${GITHUB_RUN_ATTEMPT}"
+          fi
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+
+      - name: Create release notes
+        shell: bash
+        run: |
+          cat > release-notes.md <<'EOF'
+          Self-use build from augumn/ccpocket.
+
+          This build contains the Codex model switching client/bridge change while the upstream PR is waiting for review.
+
+          Assets:
+          - Windows: unzip `CC-Pocket-windows-x64-self-use.zip` and run `ccpocket.exe`.
+          - macOS: unsigned app zip. You may need to remove quarantine locally before opening.
+          - Android: release APK signed with the debug fallback key when no release keystore is configured.
+          - iOS: no-codesign Runner.app zip. This is not a TestFlight/installable IPA without your own signing step.
+          - Bridge: npm tarball. Example:
+
+          ```bash
+          npx -y https://github.com/augumn/ccpocket/releases/download/${{ steps.tag.outputs.tag }}/ccpocket-bridge-self-use.tgz ccpocket-bridge
+          ```
+
+          This is intentionally separate from the upstream formal release workflow and does not upload to App Store, TestFlight, Google Play, Shorebird, or npm.
+          EOF
+
+      - name: Create or update GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.tag.outputs.tag }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release edit "$TAG" \
+              --title "CC Pocket self-use $TAG" \
+              --notes-file release-notes.md \
+              --prerelease
+          else
+            gh release create "$TAG" \
+              --title "CC Pocket self-use $TAG" \
+              --notes-file release-notes.md \
+              --prerelease
+          fi
+          gh release upload "$TAG" dist/* --clobber
