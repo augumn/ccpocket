@@ -200,19 +200,21 @@ jobs:
             --dart-define=REVENUECAT_PUBLIC_KEY= \
             --no-tree-shake-icons
 
-      - name: Package iOS Runner.app
+      - name: Package unsigned iOS IPA
         run: |
           APP_PATH="apps/mobile/build/ios/iphoneos/Runner.app"
           if [[ ! -d "$APP_PATH" ]]; then
             echo "::error::iOS Runner.app not found at $APP_PATH"
             exit 1
           fi
-          ditto -c -k --sequesterRsrc --keepParent "$APP_PATH" "CC-Pocket-ios-no-codesign-self-use.zip"
+          mkdir -p Payload
+          cp -R "$APP_PATH" Payload/
+          ditto -c -k --sequesterRsrc --keepParent Payload "CC-Pocket-ios-no-codesign-self-use.ipa"
 
       - uses: actions/upload-artifact@v4
         with:
           name: CC-Pocket-ios-no-codesign-self-use
-          path: CC-Pocket-ios-no-codesign-self-use.zip
+          path: CC-Pocket-ios-no-codesign-self-use.ipa
 
   release:
     name: Create GitHub release
@@ -254,7 +256,7 @@ jobs:
           - Windows: unzip `CC-Pocket-windows-x64-self-use.zip` and run `ccpocket.exe`.
           - macOS: unsigned app zip. You may need to remove quarantine locally before opening.
           - Android: release APK signed with the debug fallback key when no release keystore is configured.
-          - iOS: no-codesign Runner.app zip. This is not a TestFlight/installable IPA without your own signing step.
+          - iOS: unsigned IPA for local re-signing. It is not installable until signed with your own certificate/provisioning profile.
           - Bridge: npm tarball. Example:
 
           ```bash
