@@ -1,6 +1,9 @@
 name: Self-use Release
 
 on:
+  push:
+    branches:
+      - codex/self-use-release
   workflow_dispatch:
     inputs:
       release_tag:
@@ -229,7 +232,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          TAG="${{ inputs.release_tag }}"
+          TAG="${{ github.event.inputs.release_tag }}"
           if [[ -z "$TAG" ]]; then
             TAG="self-use-${GITHUB_RUN_NUMBER}-${GITHUB_RUN_ATTEMPT}"
           fi
