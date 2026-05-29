@@ -1,0 +1,57 @@
+name: Self-use Bridge
+
+on:
+  push:
+    branches:
+      - codex/self-use-release
+    paths:
+      - ".github/workflows/self-use-bridge.yml"
+      - "package.json"
+      - "package-lock.json"
+      - "packages/bridge/**"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  bridge:
+    name: Bridge tarball
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Type check Bridge
+        run: npx tsc --noEmit -p packages/bridge/tsconfig.json
+
+      - name: Test Bridge
+        run: npm run test:bridge
+
+      - name: Build Bridge
+        run: npm run bridge:build
+
+      - name: Pack bridge
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/bridge-dist"
+          npm pack --workspace=packages/bridge --pack-destination "$RUNNER_TEMP/bridge-dist"
+          TARBALL="$(find "$RUNNER_TEMP/bridge-dist" -maxdepth 1 -type f -name '*.tgz' | head -n 1)"
+          if [[ -z "$TARBALL" ]]; then
+            echo "::error::Bridge tarball was not created"
+            exit 1
+          fi
+          mv "$TARBALL" "$RUNNER_TEMP/bridge-dist/ccpocket-bridge-self-use.tgz"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ccpocket-bridge-self-use
+          path: ${{ runner.temp }}/bridge-dist/ccpocket-bridge-self-use.tgz

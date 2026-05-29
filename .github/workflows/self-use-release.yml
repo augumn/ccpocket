@@ -1,9 +1,6 @@
 name: Self-use Release
 
 on:
-  push:
-    branches:
-      - codex/self-use-release
   workflow_dispatch:
     inputs:
       release_tag:
