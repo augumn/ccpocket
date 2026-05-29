@@ -12,12 +12,14 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   bridge:
     name: Bridge tarball
     runs-on: ubuntu-latest
+    outputs:
+      release_tag: ${{ steps.tag.outputs.tag }}
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 
@@ -55,3 +57,36 @@ jobs:
         with:
           name: ccpocket-bridge-self-use
           path: ${{ runner.temp }}/bridge-dist/ccpocket-bridge-self-use.tgz
+
+      - name: Resolve release tag
+        id: tag
+        shell: bash
+        run: echo "tag=self-use-bridge-${GITHUB_RUN_NUMBER}-${GITHUB_RUN_ATTEMPT}" >> "$GITHUB_OUTPUT"
+
+      - name: Create release notes
+        shell: bash
+        run: |
+          cat > "$RUNNER_TEMP/bridge-release-notes.md" <<EOF
+          Self-use bridge build from augumn/ccpocket.
+
+          This build only contains the Bridge package and is intended for testing Codex rate-limit auto-continuation before an upstream release.
+
+          Example:
+
+          \`\`\`powershell
+          npx -y https://github.com/augumn/ccpocket/releases/download/${{ steps.tag.outputs.tag }}/ccpocket-bridge-self-use.tgz ccpocket-bridge
+          \`\`\`
+          EOF
+
+      - name: Create GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          TAG="${{ steps.tag.outputs.tag }}"
+          gh release create "$TAG" \
+            --title "CC Pocket bridge self-use $TAG" \
+            --notes-file "$RUNNER_TEMP/bridge-release-notes.md" \
+            --prerelease \
+            "$RUNNER_TEMP/bridge-dist/ccpocket-bridge-self-use.tgz"
