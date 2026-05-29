@@ -733,7 +733,6 @@ describe("CodexProcess (app-server)", () => {
   });
 
   it("auto-continues a Codex turn after a rate-limit failure", async () => {
-    process.env.BRIDGE_CODEX_RATE_LIMIT_MAX_RETRIES = "3";
     process.env.BRIDGE_CODEX_RATE_LIMIT_BASE_DELAY_MS = "0";
     process.env.BRIDGE_CODEX_RATE_LIMIT_MAX_DELAY_MS = "0";
 
@@ -793,6 +792,49 @@ describe("CodexProcess (app-server)", () => {
         },
       ],
     });
+
+    proc.stop();
+  });
+
+  it("uses a fixed 10s delay and 5 attempts by default for rate-limit recovery", async () => {
+    const proc = new CodexProcess("linux");
+    const messages: unknown[] = [];
+    proc.on("message", (msg) => messages.push(msg));
+    const child = await startReadyCodexThread(proc, "thr_rate_limit_defaults");
+
+    proc.sendInput("do the work");
+    await tick();
+    const turnReq = nextOutgoingRequest(child);
+    child.stdout.emit(
+      "data",
+      `${JSON.stringify({ id: turnReq.id, result: { turn: { id: "turn_1" } } })}\n`,
+    );
+    await tick();
+    child.stdout.emit(
+      "data",
+      `${JSON.stringify({
+        method: "turn/completed",
+        params: {
+          threadId: "thr_rate_limit_defaults",
+          turn: {
+            id: "turn_1",
+            status: "failed",
+            error: { message: "HTTP 429: too many requests" },
+          },
+        },
+      })}\n`,
+    );
+    await tick();
+
+    expect(messages).toContainEqual(
+      expect.objectContaining({
+        type: "error",
+        errorCode: "codex_rate_limit_retrying",
+        message: expect.stringContaining(
+          "Auto-continuing in 10s (attempt 1/5)",
+        ),
+      }),
+    );
 
     proc.stop();
   });
@@ -858,6 +900,89 @@ describe("CodexProcess (app-server)", () => {
         type: "result",
         subtype: "error",
         error: "HTTP 429: too many requests",
+      }),
+    );
+    expect(messages).toContainEqual(
+      expect.objectContaining({
+        type: "error",
+        errorCode: "codex_rate_limit_exhausted",
+        message: expect.stringContaining(
+          "Automatic recovery stopped, but you can still send a manual continue message.",
+        ),
+      }),
+    );
+
+    proc.sendInput("Continue exactly where you left off. Do not repeat completed work.");
+    await tick();
+    const manualContinueReq = nextOutgoingRequest(child);
+    expect(manualContinueReq.method).toBe("turn/start");
+    expect(manualContinueReq.params).toMatchObject({
+      threadId: "thr_rate_limit_exhausted",
+      input: [
+        {
+          type: "text",
+          text: "Continue exactly where you left off. Do not repeat completed work.",
+        },
+      ],
+    });
+    child.stdout.emit(
+      "data",
+      `${JSON.stringify({
+        id: manualContinueReq.id,
+        result: { turn: { id: "turn_3" } },
+      })}\n`,
+    );
+    await tick();
+    child.stdout.emit(
+      "data",
+      `${JSON.stringify({
+        method: "turn/completed",
+        params: {
+          threadId: "thr_rate_limit_exhausted",
+          turn: { id: "turn_3", status: "completed" },
+        },
+      })}\n`,
+    );
+    await tick();
+
+    proc.sendInput("another task");
+    await tick();
+    const nextReq = nextOutgoingRequest(child);
+    child.stdout.emit(
+      "data",
+      `${JSON.stringify({
+        id: nextReq.id,
+        result: { turn: { id: "turn_4" } },
+      })}\n`,
+    );
+    await tick();
+    child.stdout.emit(
+      "data",
+      `${JSON.stringify({
+        method: "turn/completed",
+        params: {
+          threadId: "thr_rate_limit_exhausted",
+          turn: {
+            id: "turn_4",
+            status: "failed",
+            error: { message: "HTTP 429: too many requests" },
+          },
+        },
+      })}\n`,
+    );
+    await waitForTimers();
+
+    const retryingWarnings = messages.filter(
+      (msg) =>
+        typeof msg === "object" &&
+        msg !== null &&
+        (msg as { errorCode?: string }).errorCode ===
+          "codex_rate_limit_retrying",
+    );
+    expect(retryingWarnings).toHaveLength(2);
+    expect(retryingWarnings[1]).toEqual(
+      expect.objectContaining({
+        message: expect.stringContaining("attempt 1/1"),
       }),
     );
 
@@ -954,6 +1079,102 @@ describe("CodexProcess (app-server)", () => {
     expect(warnings).toEqual([
       expect.objectContaining({ message: expect.stringContaining("attempt 1/1") }),
       expect.objectContaining({ message: expect.stringContaining("attempt 1/1") }),
+    ]);
+
+    proc.stop();
+  });
+
+  it("resets rate-limit attempts after meaningful progress before another 429", async () => {
+    process.env.BRIDGE_CODEX_RATE_LIMIT_BASE_DELAY_MS = "0";
+    process.env.BRIDGE_CODEX_RATE_LIMIT_MAX_DELAY_MS = "0";
+
+    const proc = new CodexProcess("linux");
+    const messages: unknown[] = [];
+    proc.on("message", (msg) => messages.push(msg));
+    const child = await startReadyCodexThread(
+      proc,
+      "thr_rate_limit_progress_reset",
+    );
+
+    proc.sendInput("do the work");
+    await tick();
+    const firstReq = nextOutgoingRequest(child);
+    child.stdout.emit(
+      "data",
+      `${JSON.stringify({ id: firstReq.id, result: { turn: { id: "turn_1" } } })}\n`,
+    );
+    await tick();
+    child.stdout.emit(
+      "data",
+      `${JSON.stringify({
+        method: "turn/completed",
+        params: {
+          threadId: "thr_rate_limit_progress_reset",
+          turn: {
+            id: "turn_1",
+            status: "failed",
+            error: { message: "HTTP 429: too many requests" },
+          },
+        },
+      })}\n`,
+    );
+    await waitForTimers();
+
+    const continuationReq = nextOutgoingRequest(child);
+    child.stdout.emit(
+      "data",
+      `${JSON.stringify({
+        id: continuationReq.id,
+        result: { turn: { id: "turn_2" } },
+      })}\n`,
+    );
+    await tick();
+    child.stdout.emit(
+      "data",
+      `${JSON.stringify({
+        method: "item/completed",
+        params: {
+          threadId: "thr_rate_limit_progress_reset",
+          item: {
+            id: "msg_1",
+            type: "agent_message",
+            text: "I made progress before the next rate limit.",
+          },
+        },
+      })}\n`,
+    );
+    await tick();
+    child.stdout.emit(
+      "data",
+      `${JSON.stringify({
+        method: "turn/completed",
+        params: {
+          threadId: "thr_rate_limit_progress_reset",
+          turn: {
+            id: "turn_2",
+            status: "failed",
+            error: { message: "HTTP 429: too many requests" },
+          },
+        },
+      })}\n`,
+    );
+    await waitForTimers();
+
+    const warnings = messages.filter(
+      (msg) =>
+        typeof msg === "object" &&
+        msg !== null &&
+        (msg as { errorCode?: string }).errorCode ===
+          "codex_rate_limit_retrying",
+    );
+    expect(warnings).toHaveLength(2);
+    expect(warnings).toEqual([
+      expect.objectContaining({
+        message: expect.stringContaining("attempt 1/5"),
+      }),
+      expect.objectContaining({
+        message: expect.stringContaining("attempt 1/5"),
+      }),
     ]);
 
     proc.stop();

@@ -21,7 +21,8 @@ String? _errorTitle(String? errorCode, AppLocalizations l) {
     'git_not_available' => l.gitUnavailableTitle,
     'bridge_update_required' => 'Bridge Update Required',
     'auto_mode_unavailable' => 'Auto Mode Unavailable',
-    'codex_rate_limit_retrying' => 'Codex Rate Limit',
+    'codex_rate_limit_retrying' ||
+    'codex_rate_limit_exhausted' => 'Codex Rate Limit',
     _ => null,
   };
 }
@@ -42,6 +43,8 @@ String? _errorHint(String? errorCode, AppLocalizations l) {
       'Use Default mode here, or switch to a Claude environment that supports Auto mode',
     'codex_rate_limit_retrying' =>
       'Bridge will send a continuation prompt automatically',
+    'codex_rate_limit_exhausted' =>
+      'Automatic recovery stopped. You can still send a manual continue message.',
     _ => null,
   };
 }
@@ -70,7 +73,8 @@ bool _isWarning(String? errorCode) {
   return errorCode == 'git_not_available' ||
       errorCode == 'bridge_update_required' ||
       errorCode == 'auto_mode_unavailable' ||
-      errorCode == 'codex_rate_limit_retrying';
+      errorCode == 'codex_rate_limit_retrying' ||
+      errorCode == 'codex_rate_limit_exhausted';
 }
 
 class ErrorBubble extends StatelessWidget {

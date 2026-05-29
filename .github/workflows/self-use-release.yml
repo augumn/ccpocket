@@ -133,7 +133,7 @@ jobs:
           path: ${{ runner.temp }}/android-dist/CC-Pocket-android-arm64-self-use.apk
 
   macos:
-    name: macOS unsigned app
+    name: macOS unsigned DMG
     runs-on: macos-15
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
@@ -154,19 +154,31 @@ jobs:
         working-directory: apps/mobile
         run: flutter build macos --release
 
-      - name: Package macOS app
+      - name: Install create-dmg
+        run: brew install create-dmg
+
+      - name: Package macOS DMG
         run: |
           APP_PATH="apps/mobile/build/macos/Build/Products/Release/CC Pocket.app"
           if [[ ! -d "$APP_PATH" ]]; then
             echo "::error::macOS app bundle not found at $APP_PATH"
             exit 1
           fi
-          ditto -c -k --sequesterRsrc --keepParent "$APP_PATH" "CC-Pocket-macos-unsigned-self-use.zip"
+          create-dmg \
+            --volname "CC Pocket" \
+            --window-pos 200 120 \
+            --window-size 600 400 \
+            --icon-size 100 \
+            --icon "CC Pocket.app" 150 185 \
+            --app-drop-link 450 185 \
+            --no-internet-enable \
+            "CC-Pocket-macos-unsigned-self-use.dmg" \
+            "$APP_PATH"
 
       - uses: actions/upload-artifact@v4
         with:
           name: CC-Pocket-macos-unsigned-self-use
-          path: CC-Pocket-macos-unsigned-self-use.zip
+          path: CC-Pocket-macos-unsigned-self-use.dmg
 
   ios:
     name: iOS no-codesign app
@@ -247,11 +259,11 @@ jobs:
           cat > release-notes.md <<'EOF'
           Self-use build from augumn/ccpocket.
 
-          This build contains the Codex model switching client/bridge change while the upstream PR is waiting for review.
+          This self-use prerelease contains the Codex 429 auto-continuation bridge/client changes for testing before an upstream release.
 
           Assets:
           - Windows: unzip `CC-Pocket-windows-x64-self-use.zip` and run `ccpocket.exe`.
-          - macOS: unsigned app zip. You may need to remove quarantine locally before opening.
+          - macOS: unsigned DMG. You may need to remove quarantine locally before opening.
           - Android: release APK signed with the debug fallback key when no release keystore is configured.
           - iOS: unsigned IPA for local re-signing. It is not installable until signed with your own certificate/provisioning profile.
           - Bridge: npm tarball. Example:

@@ -16,12 +16,13 @@ export { buildCodexSpawnSpec };
 
 const DEFAULT_CODEX_MODEL = "gpt-5.5";
 const COMPLETION_FETCH_COOLDOWN_MS = 1000;
-const DEFAULT_CODEX_RATE_LIMIT_MAX_RETRIES = 3;
-const DEFAULT_CODEX_RATE_LIMIT_BASE_DELAY_MS = 15_000;
-const DEFAULT_CODEX_RATE_LIMIT_MAX_DELAY_MS = 120_000;
+const DEFAULT_CODEX_RATE_LIMIT_MAX_RETRIES = 5;
+const DEFAULT_CODEX_RATE_LIMIT_BASE_DELAY_MS = 10_000;
+const DEFAULT_CODEX_RATE_LIMIT_MAX_DELAY_MS = 10_000;
 const DEFAULT_CODEX_RATE_LIMIT_CONTINUE_PROMPT =
   "Continue exactly where you left off. Do not repeat completed work.";
 const CODEX_RATE_LIMIT_RETRYING_ERROR_CODE = "codex_rate_limit_retrying";
+const CODEX_RATE_LIMIT_EXHAUSTED_ERROR_CODE = "codex_rate_limit_exhausted";
 const CODEX_CLI_NOT_FOUND_MESSAGE =
   "Codex CLI is not installed or not available on PATH on the Bridge machine. Install it with `npm install -g @openai/codex` or `brew install --cask codex`, then restart Bridge.";
 
@@ -273,6 +274,14 @@ function codexRateLimitMaxRetries(): number {
   );
 }
 
+function codexRateLimitRecoveryExhausted(attempt: number): boolean {
+  return (
+    codexRateLimitAutoRetryEnabled() &&
+    codexRateLimitMaxRetries() > 0 &&
+    attempt >= codexRateLimitMaxRetries()
+  );
+}
+
 function codexRateLimitContinuePrompt(): string {
   return (
     process.env.BRIDGE_CODEX_RATE_LIMIT_CONTINUE_PROMPT?.trim() ||
@@ -289,12 +298,7 @@ function codexRateLimitRetryDelayMs(attempt: number): number {
     "BRIDGE_CODEX_RATE_LIMIT_MAX_DELAY_MS",
     DEFAULT_CODEX_RATE_LIMIT_MAX_DELAY_MS,
   );
-  const exponent = Math.max(0, attempt - 1);
-  const exponentialDelay =
-    exponent >= 31 ? maxDelay : Math.min(baseDelay * 2 ** exponent, maxDelay);
-  const jitter =
-    exponentialDelay > 0 ? Math.floor(Math.random() * 0.25 * exponentialDelay) : 0;
-  return Math.min(exponentialDelay + jitter, maxDelay);
+  return Math.min(baseDelay, maxDelay);
 }
 
 function numberFromUnknown(value: unknown): number | undefined {
@@ -919,33 +923,36 @@ export class CodexProcess extends EventEmitter<CodexProcessEvents> {
     });
   }
 
-  sendInput(text: string): void {
-    if (!this.inputResolve) {
-      console.error("[codex-process] No pending input resolver for sendInput");
+  private resolveManualInput(input: PendingInput, caller: string): void {
+    if (this.inputResolve) {
+      this.clearPendingRateLimitRetry();
+      this.resetRateLimitRecovery();
+      const resolve = this.inputResolve;
+      this.inputResolve = null;
+      resolve(input);
       return;
     }
-    this.clearPendingRateLimitRetry();
-    this.resetRateLimitRecovery();
-    const resolve = this.inputResolve;
-    this.inputResolve = null;
-    resolve({ text });
+    if (this.pendingRateLimitInput || this.pendingRateLimitTimer) {
+      if (this.pendingRateLimitTimer) {
+        clearTimeout(this.pendingRateLimitTimer);
+        this.pendingRateLimitTimer = null;
+      }
+      this.resetRateLimitRecovery();
+      this.pendingRateLimitInput = input;
+      return;
+    }
+    console.error(`[codex-process] No pending input resolver for ${caller}`);
+  }
+
+  sendInput(text: string): void {
+    this.resolveManualInput({ text }, "sendInput");
   }
 
   sendInputWithImages(
     text: string,
     images: Array<{ base64: string; mimeType: string }>,
   ): void {
-    if (!this.inputResolve) {
-      console.error(
-        "[codex-process] No pending input resolver for sendInputWithImages",
-      );
-      return;
-    }
-    this.clearPendingRateLimitRetry();
-    this.resetRateLimitRecovery();
-    const resolve = this.inputResolve;
-    this.inputResolve = null;
-    resolve({ text, images });
+    this.resolveManualInput({ text, images }, "sendInputWithImages");
   }
 
   sendInputWithSkill(
@@ -963,22 +970,15 @@ export class CodexProcess extends EventEmitter<CodexProcessEvents> {
       mentions?: Array<{ name: string; path: string }>;
     },
   ): void {
-    if (!this.inputResolve) {
-      console.error(
-        "[codex-process] No pending input resolver for sendInputStructured",
-      );
-      return;
-    }
-    this.clearPendingRateLimitRetry();
-    this.resetRateLimitRecovery();
-    const resolve = this.inputResolve;
-    this.inputResolve = null;
-    resolve({
-      text,
-      images: options?.images,
-      skills: options?.skills,
-      mentions: options?.mentions,
-    });
+    this.resolveManualInput(
+      {
+        text,
+        images: options?.images,
+        skills: options?.skills,
+        mentions: options?.mentions,
+      },
+      "sendInputStructured",
+    );
   }
 
   async steerInputStructured(
@@ -1770,6 +1770,12 @@ export class CodexProcess extends EventEmitter<CodexProcessEvents> {
     this.rateLimitRecoveryAttempt = 0;
   }
 
+  private markRateLimitRecoveryProgress(): void {
+    if (this.rateLimitRecoveryAttempt > 0) {
+      this.resetRateLimitRecovery();
+    }
+  }
+
   private clearPendingRateLimitRetry(): void {
     if (this.pendingRateLimitTimer) {
       clearTimeout(this.pendingRateLimitTimer);
@@ -1830,6 +1836,22 @@ export class CodexProcess extends EventEmitter<CodexProcessEvents> {
       },
       error,
     );
+  }
+
+  private emitRateLimitRecoveryExhausted(error: unknown): void {
+    const maxRetries = codexRateLimitMaxRetries();
+    const originalMessage = coerceCodexErrorInfo(error).message;
+    const message =
+      `Codex hit a usage limit after ${maxRetries} automatic ` +
+      `continuation attempt${maxRetries === 1 ? "" : "s"}. ` +
+      "Automatic recovery stopped, but you can still send a manual continue message." +
+      (originalMessage ? ` Original error: ${originalMessage}` : "");
+
+    this.emitMessage({
+      type: "error",
+      message,
+      errorCode: CODEX_RATE_LIMIT_EXHAUSTED_ERROR_CODE,
+    });
   }
 
   private async runInputLoop(options?: CodexStartOptions): Promise<void> {
@@ -1950,7 +1972,14 @@ export class CodexProcess extends EventEmitter<CodexProcessEvents> {
           ) {
             return;
           }
-          this.emitMessage({ type: "error", message });
+          if (isCodexRateLimitError(err)) {
+            if (codexRateLimitRecoveryExhausted(this.rateLimitRecoveryAttempt)) {
+              this.emitRateLimitRecoveryExhausted(err);
+            }
+            this.resetRateLimitRecovery();
+          } else {
+            this.emitMessage({ type: "error", message });
+          }
           this.emitMessage({
             type: "result",
             subtype: "error",
@@ -2409,6 +2438,12 @@ export class CodexProcess extends EventEmitter<CodexProcessEvents> {
       ) {
         rateLimitContinuationScheduled = true;
       } else {
+        if (
+          isCodexRateLimitError(errorObj ?? message) &&
+          codexRateLimitRecoveryExhausted(this.rateLimitRecoveryAttempt)
+        ) {
+          this.emitRateLimitRecoveryExhausted(errorObj ?? message);
+        }
         this.resetRateLimitRecovery();
         this.emitMessage({
           type: "result",
@@ -2633,6 +2668,7 @@ export class CodexProcess extends EventEmitter<CodexProcessEvents> {
       case "agentmessage": {
         const text = extractAgentText(item);
         if (!text) return;
+        this.markRateLimitRecoveryProgress();
         this.lastResultText = text;
         this.emitMessage({
           type: "assistant",
@@ -2665,6 +2701,7 @@ export class CodexProcess extends EventEmitter<CodexProcessEvents> {
       case "reasoning": {
         const text = extractReasoningText(item);
         if (text) {
+          this.markRateLimitRecoveryProgress();
           this.emitMessage({ type: "thinking_delta", text });
         }
         break;
@@ -2678,6 +2715,7 @@ export class CodexProcess extends EventEmitter<CodexProcessEvents> {
               ? item.output
               : "";
         const exitCode = numberOrUndefined(item.exitCode ?? item.exit_code);
+        this.markRateLimitRecoveryProgress();
         this.emitMessage({
           type: "tool_result",
           toolUseId: itemId,
@@ -2689,6 +2727,7 @@ export class CodexProcess extends EventEmitter<CodexProcessEvents> {
 
       case "filechange": {
         const content = formatFileChangesWithDiff(item.changes);
+        this.markRateLimitRecoveryProgress();
         this.emitMessage({
           type: "tool_result",
           toolUseId: itemId,
@@ -2704,6 +2743,7 @@ export class CodexProcess extends EventEmitter<CodexProcessEvents> {
         const toolName = `mcp:${server}/${tool}`;
         const result = item.result ?? item.error ?? "MCP call completed";
         const normalized = normalizeMcpToolResult(result);
+        this.markRateLimitRecoveryProgress();
         this.emitMessage({
           type: "assistant",
           message: {
@@ -2735,6 +2775,7 @@ export class CodexProcess extends EventEmitter<CodexProcessEvents> {
       case "dynamictoolcall": {
         const tool = typeof item.tool === "string" ? item.tool : "DynamicTool";
         const content = formatDynamicToolResult(item);
+        this.markRateLimitRecoveryProgress();
         this.emitMessage({
           type: "tool_result",
           toolUseId: itemId,
@@ -2746,6 +2787,7 @@ export class CodexProcess extends EventEmitter<CodexProcessEvents> {
 
       case "imagegeneration": {
         const normalized = formatImageGenerationResult(item);
+        this.markRateLimitRecoveryProgress();
         this.emitMessage({
           type: "tool_result",
           toolUseId: itemId,
@@ -2760,6 +2802,7 @@ export class CodexProcess extends EventEmitter<CodexProcessEvents> {
 
       case "websearch": {
         const query = typeof item.query === "string" ? item.query : "";
+        this.markRateLimitRecoveryProgress();
         this.emitMessage({
           type: "assistant",
           message: {
@@ -2799,6 +2842,7 @@ export class CodexProcess extends EventEmitter<CodexProcessEvents> {
             ? [`agents: ${receiverThreadIds.join(", ")}`]
             : []),
         ].join("\n");
+        this.markRateLimitRecoveryProgress();
         this.emitMessage({
           type: "tool_result",
           toolUseId: itemId,
@@ -2811,6 +2855,9 @@ export class CodexProcess extends EventEmitter<CodexProcessEvents> {
       case "plan": {
         // Plan item completed — save text for plan approval emission in handleTurnCompleted()
         const planText = typeof item.text === "string" ? item.text : "";
+        if (planText) {
+          this.markRateLimitRecoveryProgress();
+        }
         this.lastPlanItemText = planText;
         break;
       }
