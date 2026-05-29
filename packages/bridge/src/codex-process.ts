@@ -16,6 +16,12 @@ export { buildCodexSpawnSpec };
 
 const DEFAULT_CODEX_MODEL = "gpt-5.5";
 const COMPLETION_FETCH_COOLDOWN_MS = 1000;
+const DEFAULT_CODEX_RATE_LIMIT_MAX_RETRIES = 3;
+const DEFAULT_CODEX_RATE_LIMIT_BASE_DELAY_MS = 15_000;
+const DEFAULT_CODEX_RATE_LIMIT_MAX_DELAY_MS = 120_000;
+const DEFAULT_CODEX_RATE_LIMIT_CONTINUE_PROMPT =
+  "Continue exactly where you left off. Do not repeat completed work.";
+const CODEX_RATE_LIMIT_RETRYING_ERROR_CODE = "codex_rate_limit_retrying";
 const CODEX_CLI_NOT_FOUND_MESSAGE =
   "Codex CLI is not installed or not available on PATH on the Bridge machine. Install it with `npm install -g @openai/codex` or `brew install --cask codex`, then restart Bridge.";
 
@@ -49,6 +55,7 @@ export interface CodexProcessEvents {
 
 interface PendingInput {
   text: string;
+  synthetic?: "codex_rate_limit_retry" | "codex_rate_limit_continuation";
   images?: Array<{
     base64: string;
     mimeType: string;
@@ -162,6 +169,25 @@ interface RpcError {
   };
 }
 
+interface CodexErrorInfo {
+  message: string;
+  statusCode?: number;
+  code?: string | number;
+  type?: string;
+}
+
+class CodexRpcError extends Error {
+  readonly code?: number;
+  readonly data?: unknown;
+
+  constructor(message: string, options?: { code?: number; data?: unknown }) {
+    super(message);
+    this.name = "CodexRpcError";
+    this.code = options?.code;
+    this.data = options?.data;
+  }
+}
+
 interface JsonRpcEnvelope {
   id?: number | string;
   method?: string;
@@ -227,6 +253,168 @@ function codexAppServerStartError(
   };
 }
 
+function parsePositiveIntEnv(name: string, fallback: number): number {
+  const raw = process.env[name];
+  if (!raw) return fallback;
+  const value = Number.parseInt(raw, 10);
+  return Number.isFinite(value) && value >= 0 ? value : fallback;
+}
+
+function codexRateLimitAutoRetryEnabled(): boolean {
+  const raw = process.env.BRIDGE_CODEX_RATE_LIMIT_AUTO_RETRY;
+  if (!raw) return true;
+  return !["0", "false", "off", "no"].includes(raw.trim().toLowerCase());
+}
+
+function codexRateLimitMaxRetries(): number {
+  return parsePositiveIntEnv(
+    "BRIDGE_CODEX_RATE_LIMIT_MAX_RETRIES",
+    DEFAULT_CODEX_RATE_LIMIT_MAX_RETRIES,
+  );
+}
+
+function codexRateLimitContinuePrompt(): string {
+  return (
+    process.env.BRIDGE_CODEX_RATE_LIMIT_CONTINUE_PROMPT?.trim() ||
+    DEFAULT_CODEX_RATE_LIMIT_CONTINUE_PROMPT
+  );
+}
+
+function codexRateLimitRetryDelayMs(attempt: number): number {
+  const baseDelay = parsePositiveIntEnv(
+    "BRIDGE_CODEX_RATE_LIMIT_BASE_DELAY_MS",
+    DEFAULT_CODEX_RATE_LIMIT_BASE_DELAY_MS,
+  );
+  const maxDelay = parsePositiveIntEnv(
+    "BRIDGE_CODEX_RATE_LIMIT_MAX_DELAY_MS",
+    DEFAULT_CODEX_RATE_LIMIT_MAX_DELAY_MS,
+  );
+  const exponent = Math.max(0, attempt - 1);
+  const exponentialDelay =
+    exponent >= 31 ? maxDelay : Math.min(baseDelay * 2 ** exponent, maxDelay);
+  const jitter =
+    exponentialDelay > 0 ? Math.floor(Math.random() * 0.25 * exponentialDelay) : 0;
+  return Math.min(exponentialDelay + jitter, maxDelay);
+}
+
+function numberFromUnknown(value: unknown): number | undefined {
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  if (typeof value === "string") {
+    const parsed = Number.parseInt(value, 10);
+    if (Number.isFinite(parsed)) return parsed;
+  }
+  return undefined;
+}
+
+function codexErrorCodeFromUnknown(value: unknown): string | number | undefined {
+  if (typeof value === "number" || typeof value === "string") return value;
+  return undefined;
+}
+
+function parseCodexErrorMessage(message: string): CodexErrorInfo | null {
+  const trimmed = message.trim();
+  if (!trimmed) return null;
+
+  if (trimmed.startsWith("{")) {
+    try {
+      return coerceCodexErrorInfo(JSON.parse(trimmed));
+    } catch {
+      // Fall through to plain-text heuristics.
+    }
+  }
+
+  const httpStatus = /\b(?:status|status code|http|error code)[:\s]+(429)\b/i.exec(
+    trimmed,
+  );
+  return {
+    message,
+    statusCode: httpStatus ? 429 : undefined,
+  };
+}
+
+function coerceCodexErrorInfo(error: unknown): CodexErrorInfo {
+  if (error instanceof CodexRpcError) {
+    const dataInfo = coerceCodexErrorInfo(error.data);
+    return {
+      message: dataInfo.message || error.message,
+      statusCode: dataInfo.statusCode,
+      code: dataInfo.code ?? error.code,
+      type: dataInfo.type,
+    };
+  }
+
+  if (error instanceof Error) {
+    return parseCodexErrorMessage(error.message) ?? { message: error.message };
+  }
+
+  if (typeof error === "string") {
+    return parseCodexErrorMessage(error) ?? { message: error };
+  }
+
+  if (error && typeof error === "object") {
+    const record = error as Record<string, unknown>;
+    const nested = record.error;
+    if (nested && typeof nested === "object") {
+      const nestedRecord = nested as Record<string, unknown>;
+      const nestedMessage =
+        typeof nestedRecord.message === "string" ? nestedRecord.message : "";
+      const nestedParsed = parseCodexErrorMessage(nestedMessage);
+      return {
+        message: nestedParsed?.message || nestedMessage || JSON.stringify(record),
+        statusCode:
+          numberFromUnknown(nestedRecord.status) ??
+          numberFromUnknown(nestedRecord.status_code) ??
+          numberFromUnknown(record.status) ??
+          numberFromUnknown(record.status_code) ??
+          nestedParsed?.statusCode,
+        code: codexErrorCodeFromUnknown(nestedRecord.code) ?? nestedParsed?.code,
+        type:
+          typeof nestedRecord.type === "string"
+            ? nestedRecord.type
+            : nestedParsed?.type,
+      };
+    }
+
+    const message =
+      typeof record.message === "string" ? record.message : JSON.stringify(record);
+    const parsed = parseCodexErrorMessage(message);
+    return {
+      message: parsed?.message || message,
+      statusCode:
+        numberFromUnknown(record.status) ??
+        numberFromUnknown(record.status_code) ??
+        parsed?.statusCode,
+      code: codexErrorCodeFromUnknown(record.code) ?? parsed?.code,
+      type: typeof record.type === "string" ? record.type : parsed?.type,
+    };
+  }
+
+  return { message: String(error) };
+}
+
+function isCodexRateLimitError(error: unknown): boolean {
+  const info = coerceCodexErrorInfo(error);
+  if (info.statusCode === 429 || info.code === 429 || info.code === "429") {
+    return true;
+  }
+
+  const haystack = [info.message, info.type, String(info.code ?? "")]
+    .join(" ")
+    .toLowerCase();
+
+  return (
+    /\b429\b/.test(haystack) ||
+    haystack.includes("usage limit") ||
+    haystack.includes("rate limit") ||
+    haystack.includes("rate_limit") ||
+    haystack.includes("too many requests") ||
+    haystack.includes("resource_exhausted") ||
+    haystack.includes("throttled") ||
+    haystack.includes("requests per minute") ||
+    haystack.includes("tokens per minute")
+  );
+}
+
 export class CodexProcess extends EventEmitter<CodexProcessEvents> {
   private transport: CodexTransport | null = null;
   private _status: ProcessStatus = "starting";
@@ -239,6 +427,9 @@ export class CodexProcess extends EventEmitter<CodexProcessEvents> {
   private inputResolve: ((input: PendingInput) => void) | null = null;
   private pendingTurnId: string | null = null;
   private pendingTurnCompletion: PendingTurnCompletion | null = null;
+  private pendingRateLimitInput: PendingInput | null = null;
+  private pendingRateLimitTimer: ReturnType<typeof setTimeout> | null = null;
+  private rateLimitRecoveryAttempt = 0;
   private pendingApprovals = new Map<string, PendingApproval>();
   private pendingUserInputs = new Map<string, PendingUserInputRequest>();
   private lastTokenUsage: {
@@ -610,6 +801,8 @@ export class CodexProcess extends EventEmitter<CodexProcessEvents> {
 
   stop(): void {
     this.stopped = true;
+    this.clearPendingRateLimitRetry();
+    this.resetRateLimitRecovery();
 
     if (this.inputResolve) {
       this.inputResolve({ text: "" });
@@ -656,6 +849,8 @@ export class CodexProcess extends EventEmitter<CodexProcessEvents> {
     this.lastResultText = null;
     this.pendingPlanCompletion = null;
     this._pendingPlanInput = null;
+    this.clearPendingRateLimitRetry();
+    this.resetRateLimitRecovery();
     this._projectPath = projectPath;
   }
 
@@ -729,6 +924,8 @@ export class CodexProcess extends EventEmitter<CodexProcessEvents> {
       console.error("[codex-process] No pending input resolver for sendInput");
       return;
     }
+    this.clearPendingRateLimitRetry();
+    this.resetRateLimitRecovery();
     const resolve = this.inputResolve;
     this.inputResolve = null;
     resolve({ text });
@@ -744,6 +941,8 @@ export class CodexProcess extends EventEmitter<CodexProcessEvents> {
       );
       return;
     }
+    this.clearPendingRateLimitRetry();
+    this.resetRateLimitRecovery();
     const resolve = this.inputResolve;
     this.inputResolve = null;
     resolve({ text, images });
@@ -770,6 +969,8 @@ export class CodexProcess extends EventEmitter<CodexProcessEvents> {
       );
       return;
     }
+    this.clearPendingRateLimitRetry();
+    this.resetRateLimitRecovery();
     const resolve = this.inputResolve;
     this.inputResolve = null;
     resolve({
@@ -1565,6 +1766,72 @@ export class CodexProcess extends EventEmitter<CodexProcessEvents> {
     }
   }
 
+  private resetRateLimitRecovery(): void {
+    this.rateLimitRecoveryAttempt = 0;
+  }
+
+  private clearPendingRateLimitRetry(): void {
+    if (this.pendingRateLimitTimer) {
+      clearTimeout(this.pendingRateLimitTimer);
+      this.pendingRateLimitTimer = null;
+    }
+    this.pendingRateLimitInput = null;
+  }
+
+  private resolveOrQueueRateLimitInput(input: PendingInput): void {
+    if (this.inputResolve) {
+      const resolve = this.inputResolve;
+      this.inputResolve = null;
+      resolve(input);
+      return;
+    }
+    this.pendingRateLimitInput = input;
+  }
+
+  private scheduleRateLimitInput(input: PendingInput, error: unknown): boolean {
+    if (!codexRateLimitAutoRetryEnabled()) return false;
+    const maxRetries = codexRateLimitMaxRetries();
+    if (maxRetries <= 0 || this.rateLimitRecoveryAttempt >= maxRetries) {
+      return false;
+    }
+
+    this.rateLimitRecoveryAttempt += 1;
+    const attempt = this.rateLimitRecoveryAttempt;
+    const delayMs = codexRateLimitRetryDelayMs(attempt);
+    const delaySeconds = Math.ceil(delayMs / 1000);
+    const originalMessage = coerceCodexErrorInfo(error).message;
+    const message =
+      `Codex hit a usage limit. Auto-continuing in ${delaySeconds}s ` +
+      `(attempt ${attempt}/${maxRetries}).` +
+      (originalMessage ? ` Original error: ${originalMessage}` : "");
+
+    this.emitMessage({
+      type: "error",
+      message,
+      errorCode: CODEX_RATE_LIMIT_RETRYING_ERROR_CODE,
+    });
+    this.setStatus("running");
+    this.clearPendingRateLimitRetry();
+
+    this.pendingRateLimitTimer = setTimeout(() => {
+      this.pendingRateLimitTimer = null;
+      if (this.stopped) return;
+      this.resolveOrQueueRateLimitInput(input);
+    }, delayMs);
+
+    return true;
+  }
+
+  private scheduleRateLimitContinuation(error: unknown): boolean {
+    return this.scheduleRateLimitInput(
+      {
+        text: codexRateLimitContinuePrompt(),
+        synthetic: "codex_rate_limit_continuation",
+      },
+      error,
+    );
+  }
+
   private async runInputLoop(options?: CodexStartOptions): Promise<void> {
     while (!this.stopped) {
       const pendingInput = await new Promise<PendingInput>((resolve) => {
@@ -1577,9 +1844,19 @@ export class CodexProcess extends EventEmitter<CodexProcessEvents> {
           resolve({ text });
           return;
         }
+        if (this.pendingRateLimitInput) {
+          const input = this.pendingRateLimitInput;
+          this.pendingRateLimitInput = null;
+          this.inputResolve = null;
+          resolve(input);
+          return;
+        }
         this.emit("input_ready");
       });
       if (this.stopped || !pendingInput.text) break;
+      if (!pendingInput.synthetic) {
+        this.resetRateLimitRecovery();
+      }
       if (!this._threadId) {
         this.emitMessage({
           type: "error",
@@ -1661,6 +1938,18 @@ export class CodexProcess extends EventEmitter<CodexProcessEvents> {
       }).catch((err) => {
         if (!this.stopped) {
           const message = err instanceof Error ? err.message : String(err);
+          if (
+            isCodexRateLimitError(err) &&
+            this.scheduleRateLimitInput(
+              {
+                ...pendingInput,
+                synthetic: "codex_rate_limit_retry",
+              },
+              err,
+            )
+          ) {
+            return;
+          }
           this.emitMessage({ type: "error", message });
           this.emitMessage({
             type: "result",
@@ -1744,7 +2033,12 @@ export class CodexProcess extends EventEmitter<CodexProcessEvents> {
     if ("error" in envelope && envelope.error) {
       const message =
         envelope.error.message ?? `RPC error ${envelope.error.code ?? ""}`;
-      pending.reject(new Error(message));
+      pending.reject(
+        new CodexRpcError(message, {
+          code: envelope.error.code,
+          data: envelope.error.data,
+        }),
+      );
       return;
     }
 
@@ -2101,6 +2395,7 @@ export class CodexProcess extends EventEmitter<CodexProcessEvents> {
 
     const usage = this.lastTokenUsage;
     this.lastTokenUsage = null;
+    let rateLimitContinuationScheduled = false;
 
     if (status === "failed") {
       const errorObj = turn?.error as Record<string, unknown> | undefined;
@@ -2108,19 +2403,29 @@ export class CodexProcess extends EventEmitter<CodexProcessEvents> {
         typeof errorObj?.message === "string"
           ? errorObj.message
           : "Turn failed";
-      this.emitMessage({
-        type: "result",
-        subtype: "error",
-        error: message,
-        sessionId: this._threadId ?? undefined,
-      });
+      if (
+        isCodexRateLimitError(errorObj ?? message) &&
+        this.scheduleRateLimitContinuation(errorObj ?? message)
+      ) {
+        rateLimitContinuationScheduled = true;
+      } else {
+        this.resetRateLimitRecovery();
+        this.emitMessage({
+          type: "result",
+          subtype: "error",
+          error: message,
+          sessionId: this._threadId ?? undefined,
+        });
+      }
     } else if (status === "interrupted") {
+      this.resetRateLimitRecovery();
       this.emitMessage({
         type: "result",
         subtype: "interrupted",
         sessionId: this._threadId ?? undefined,
       });
     } else {
+      this.resetRateLimitRecovery();
       this.emitMessage({
         type: "result",
         subtype: "success",
@@ -2137,7 +2442,10 @@ export class CodexProcess extends EventEmitter<CodexProcessEvents> {
     this.pendingTurnId = null;
 
     // Plan mode: emit synthetic plan approval and wait for user decision
-    if (this._collaborationMode === "plan" && this.lastPlanItemText) {
+    if (rateLimitContinuationScheduled) {
+      this.lastPlanItemText = null;
+      this.setStatus("running");
+    } else if (this._collaborationMode === "plan" && this.lastPlanItemText) {
       const toolUseId = `plan_${randomUUID()}`;
       this.pendingPlanCompletion = {
         toolUseId,

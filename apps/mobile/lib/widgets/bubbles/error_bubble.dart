@@ -21,6 +21,7 @@ String? _errorTitle(String? errorCode, AppLocalizations l) {
     'git_not_available' => l.gitUnavailableTitle,
     'bridge_update_required' => 'Bridge Update Required',
     'auto_mode_unavailable' => 'Auto Mode Unavailable',
+    'codex_rate_limit_retrying' => 'Codex Rate Limit',
     _ => null,
   };
 }
@@ -39,6 +40,8 @@ String? _errorHint(String? errorCode, AppLocalizations l) {
     'bridge_update_required' => 'npm update -g @ccpocket/bridge',
     'auto_mode_unavailable' =>
       'Use Default mode here, or switch to a Claude environment that supports Auto mode',
+    'codex_rate_limit_retrying' =>
+      'Bridge will send a continuation prompt automatically',
     _ => null,
   };
 }
@@ -66,7 +69,8 @@ bool _isApiKeyRequired(String? errorCode) {
 bool _isWarning(String? errorCode) {
   return errorCode == 'git_not_available' ||
       errorCode == 'bridge_update_required' ||
-      errorCode == 'auto_mode_unavailable';
+      errorCode == 'auto_mode_unavailable' ||
+      errorCode == 'codex_rate_limit_retrying';
 }
 
 class ErrorBubble extends StatelessWidget {
