@@ -2,6 +2,11 @@
 
 All notable changes to `@ccpocket/bridge` will be documented in this file.
 
+## [1.63.0] - 2026-05-29
+
+### Added
+- Support switching Codex models for existing sessions through the shared session runtime.
+
 ## [1.62.1] - 2026-05-27
 
 ### Fixed

@@ -318,7 +318,8 @@ String _currentCodexModel(ChatSessionCubit chatCubit) {
     chatCubit.state.codexModel,
     models,
   );
-  return current ?? (models.isNotEmpty ? models.first : defaultCodexModels.first);
+  return current ??
+      (models.isNotEmpty ? models.first : defaultCodexModels.first);
 }
 
 List<ReasoningEffort> _codexReasoningEffortsForModel(
@@ -1105,7 +1106,7 @@ class CodexModelChip extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
-    final fg = cs.primary;
+    final fg = cs.onSurfaceVariant;
     final label = model.replaceFirst(RegExp(r'^gpt-'), '');
     final suffix = reasoningEffort == null ? '' : ' ${reasoningEffort!.label}';
 
@@ -1116,12 +1117,10 @@ class CodexModelChip extends StatelessWidget {
       child: InkWell(
         onTap: onTap,
         child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Icon(Icons.smart_toy_outlined, size: 13, color: fg),
-              const SizedBox(width: 3),
               Text(
                 '$label$suffix',
                 style: TextStyle(
@@ -1211,12 +1210,10 @@ class PlanModeChip extends StatelessWidget {
       child: InkWell(
         onTap: onTap,
         child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Icon(Icons.assignment_outlined, size: 13, color: fg),
-              const SizedBox(width: 3),
               Text(
                 enabled ? 'Plan On' : 'Plan Off',
                 style: TextStyle(

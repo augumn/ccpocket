@@ -1,1 +1,3 @@
-• Minor fixes and stability improvements.
+• Grouped recent sessions by project so it is easier to find and continue the right conversation.
+• Preserved Codex Auto Review when switching a running session into Plan mode.
+• Improved desktop paste handling, including dictation input, standard Ctrl+V text paste, image paste shortcuts, and Windows-style project paths.
