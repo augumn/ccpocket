@@ -142,6 +142,7 @@ const _unsupportedActions = <String, UnsupportedAction>{
   'archive_session': UnsupportedAction.showUpdateHint,
   'read_file': UnsupportedAction.showUpdateHint,
   'steer_queued_input': UnsupportedAction.showUpdateHint,
+  'set_codex_model': UnsupportedAction.showUpdateHint,
   'mutate_prompt_history': UnsupportedAction.showUpdateHint,
   'import_prompt_history_v1': UnsupportedAction.showUpdateHint,
   // Git Operations (Phase 1-3)

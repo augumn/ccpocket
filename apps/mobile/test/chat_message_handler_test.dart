@@ -1501,4 +1501,22 @@ void main() {
       expect(update.markUserMessagesQueued, isFalse);
     });
   });
+
+  group('Unsupported message handling', () {
+    test('set_codex_model shows bridge update hint', () {
+      final update = handler.handle(
+        const ErrorMessage(
+          message: 'set_codex_model',
+          errorCode: 'unsupported_message',
+        ),
+        isBackground: false,
+      );
+
+      expect(update.entriesToAdd, hasLength(1));
+      final entry = update.entriesToAdd.single as ServerChatEntry;
+      final message = entry.message as ErrorMessage;
+      expect(message.errorCode, 'bridge_update_required');
+      expect(message.message, contains('newer Bridge server'));
+    });
+  });
 }
