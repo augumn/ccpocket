@@ -13,7 +13,7 @@ on:
   workflow_dispatch:
     inputs:
       release_tag:
-        description: "Release tag to create. Leave empty to use self-use-<run-number>-<attempt>."
+        description: "Release tag to create. Leave empty to update self-use-latest."
         required: false
         type: string
 
@@ -258,9 +258,18 @@ jobs:
           set -euo pipefail
           TAG="${{ github.event.inputs.release_tag }}"
           if [[ -z "$TAG" ]]; then
-            TAG="self-use-${GITHUB_RUN_NUMBER}-${GITHUB_RUN_ATTEMPT}"
+            TAG="self-use-latest"
           fi
           echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+
+      - name: Point release tag at this build
+        env:
+          TAG: ${{ steps.tag.outputs.tag }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          git tag -f "$TAG" "$GITHUB_SHA"
+          git push origin "refs/tags/$TAG" --force
 
       - name: Create release notes
         shell: bash
@@ -300,6 +309,7 @@ jobs:
             gh release create "$TAG" \
               --title "CC Pocket self-use $TAG" \
               --notes-file release-notes.md \
-              --prerelease
+              --prerelease \
+              --target "$GITHUB_SHA"
           fi
           gh release upload "$TAG" dist/* --clobber

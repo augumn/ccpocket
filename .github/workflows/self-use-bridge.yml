@@ -61,7 +61,16 @@ jobs:
       - name: Resolve release tag
         id: tag
         shell: bash
-        run: echo "tag=self-use-bridge-${GITHUB_RUN_NUMBER}-${GITHUB_RUN_ATTEMPT}" >> "$GITHUB_OUTPUT"
+        run: echo "tag=self-use-bridge-latest" >> "$GITHUB_OUTPUT"
+
+      - name: Point release tag at this build
+        env:
+          TAG: ${{ steps.tag.outputs.tag }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          git tag -f "$TAG" "$GITHUB_SHA"
+          git push origin "refs/tags/$TAG" --force
 
       - name: Create release notes
         shell: bash
@@ -81,13 +90,20 @@ jobs:
       - name: Create GitHub release
         env:
           GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.tag.outputs.tag }}
         shell: bash
         run: |
           set -euo pipefail
-          TAG="${{ steps.tag.outputs.tag }}"
-          gh release create "$TAG" \
-            --target "$GITHUB_SHA" \
-            --title "CC Pocket bridge self-use $TAG" \
-            --notes-file "$RUNNER_TEMP/bridge-release-notes.md" \
-            --prerelease \
-            "$RUNNER_TEMP/bridge-dist/ccpocket-bridge-self-use.tgz"
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release edit "$TAG" \
+              --title "CC Pocket bridge self-use $TAG" \
+              --notes-file "$RUNNER_TEMP/bridge-release-notes.md" \
+              --prerelease
+          else
+            gh release create "$TAG" \
+              --target "$GITHUB_SHA" \
+              --title "CC Pocket bridge self-use $TAG" \
+              --notes-file "$RUNNER_TEMP/bridge-release-notes.md" \
+              --prerelease
+          fi
+          gh release upload "$TAG" "$RUNNER_TEMP/bridge-dist/ccpocket-bridge-self-use.tgz" --clobber
