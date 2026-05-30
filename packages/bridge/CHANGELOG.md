@@ -2,6 +2,11 @@
 
 All notable changes to `@ccpocket/bridge` will be documented in this file.
 
+## [1.63.2] - 2026-05-30
+
+### Fixed
+- Restore Codex session history from canonical app-server threads for complete resume and history delta synchronization.
+
 ## [1.63.0] - 2026-05-29
 
 ### Added

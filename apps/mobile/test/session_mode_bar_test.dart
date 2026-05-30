@@ -163,6 +163,16 @@ void main() {
     expect(find.text('Sandbox'), findsNothing);
   });
 
+  testWidgets('codex model chip shows effective reasoning effort', (
+    tester,
+  ) async {
+    await tester.pumpWidget(_wrap(cubit));
+    await tester.pump(const Duration(milliseconds: 100));
+
+    expect(cubit.state.codexModelReasoningEffort, isNull);
+    expect(find.text('5.5 High'), findsOneWidget);
+  });
+
   testWidgets('shows bar-level glow when running in plan mode', (tester) async {
     bridge.emitMessage(
       const SystemMessage(

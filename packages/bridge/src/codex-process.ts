@@ -124,6 +124,18 @@ export interface CodexThreadSummary {
   name: string | null;
 }
 
+export type CodexThreadSourceKind =
+  | "cli"
+  | "vscode"
+  | "exec"
+  | "appServer"
+  | "subAgent"
+  | "subAgentReview"
+  | "subAgentCompact"
+  | "subAgentThreadSpawn"
+  | "subAgentOther"
+  | "unknown";
+
 interface PendingApproval {
   requestId: string | number;
   toolUseId: string;
@@ -701,6 +713,8 @@ export class CodexProcess extends EventEmitter<CodexProcessEvents> {
       cursor?: string | null;
       cwd?: string;
       searchTerm?: string;
+      modelProviders?: string[];
+      sourceKinds?: CodexThreadSourceKind[];
     } = {},
   ): Promise<{ data: CodexThreadSummary[]; nextCursor: string | null }> {
     const result = (await this.request("thread/list", {
@@ -708,6 +722,12 @@ export class CodexProcess extends EventEmitter<CodexProcessEvents> {
       archived: false,
       ...(params.limit != null ? { limit: params.limit } : {}),
       ...(params.cursor !== undefined ? { cursor: params.cursor } : {}),
+      ...(params.modelProviders !== undefined
+        ? { modelProviders: params.modelProviders }
+        : {}),
+      ...(params.sourceKinds !== undefined
+        ? { sourceKinds: params.sourceKinds }
+        : {}),
       ...(params.cwd ? { cwd: params.cwd } : {}),
       ...(params.searchTerm ? { searchTerm: params.searchTerm } : {}),
     })) as { data?: unknown[]; nextCursor?: unknown };

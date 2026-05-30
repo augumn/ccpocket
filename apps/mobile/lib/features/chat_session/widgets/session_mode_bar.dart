@@ -29,6 +29,13 @@ class SessionModeBar extends StatelessWidget {
     final sandboxMode = chatCubit.state.sandboxMode;
     final permissionMode = chatCubit.state.permissionMode;
     final isCodex = chatCubit.provider == Provider.codex;
+    final codexModel = isCodex ? _currentCodexModel(chatCubit) : null;
+    final codexReasoningEffort = codexModel == null
+        ? null
+        : _effectiveCodexReasoningEffort(
+            chatCubit.state.codexModelReasoningEffort,
+            _codexReasoningEffortsForModel(context, codexModel),
+          );
 
     final cs = Theme.of(context).colorScheme;
     final isDark = Theme.of(context).brightness == Brightness.dark;
@@ -55,8 +62,8 @@ class SessionModeBar extends StatelessWidget {
               children: [
                 if (isCodex) ...[
                   CodexModelChip(
-                    model: _currentCodexModel(chatCubit),
-                    reasoningEffort: chatCubit.state.codexModelReasoningEffort,
+                    model: codexModel!,
+                    reasoningEffort: codexReasoningEffort,
                     onTap: () => showCodexModelMenu(context, chatCubit),
                   ),
                   Padding(
