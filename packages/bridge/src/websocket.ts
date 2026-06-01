@@ -559,6 +559,8 @@ function mergeRecentSessionPages(sessions: unknown[]): unknown[] {
   );
 }
 
+const ALL_PROJECTS_INITIAL_RECENT_SESSION_LIMIT = 100;
+
 export interface BridgeServerOptions {
   server: HttpServer;
   apiKey?: string;
@@ -5814,8 +5816,13 @@ export class BridgeWebSocketServer {
   private async listRecentAllProviderSessions(
     msg: Extract<ClientMessage, { type: "list_recent_sessions" }>,
   ): Promise<{ sessions: unknown[]; hasMore: boolean }> {
-    const limit = msg.limit ?? 20;
+    const requestedLimit = msg.limit ?? 20;
     const offset = msg.offset ?? 0;
+    const isAllProjectsInitialPage =
+      !msg.projectPath && offset === 0 && msg.requestScope !== "project";
+    const limit = isAllProjectsInitialPage
+      ? Math.max(requestedLimit, ALL_PROJECTS_INITIAL_RECENT_SESSION_LIMIT)
+      : requestedLimit;
     const sourceLimit = offset + limit;
 
     const [claudeResult, codexResult] = await Promise.all([

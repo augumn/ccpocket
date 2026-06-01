@@ -5089,13 +5089,13 @@ describe("BridgeWebSocketServer resume/get_history flow", () => {
     expect(getAllRecentSessionsMock).toHaveBeenCalledTimes(1);
     expect(getAllRecentSessionsMock).toHaveBeenCalledWith(
       expect.objectContaining({
-        limit: 20,
+        limit: 100,
         offset: 0,
         provider: "claude",
       }),
     );
     expect(session.process.listThreads).toHaveBeenCalledWith({
-      limit: 20,
+      limit: 100,
       cwd: undefined,
       searchTerm: undefined,
       sourceKinds: ["cli", "vscode", "appServer"],
