@@ -759,8 +759,7 @@ class HomeContentState extends State<HomeContent> {
                   onResumeSession: widget.onResumeSession,
                   onLongPressRecentSession: widget.onLongPressRecentSession,
                 ),
-            if (widget.currentProjectFilter != null &&
-                widget.hasMoreSessions) ...[
+            if (widget.hasMoreSessions) ...[
               const SizedBox(height: 8),
               Center(
                 child: widget.isLoadingMore
