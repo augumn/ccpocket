@@ -3625,6 +3625,16 @@ function extractAgentText(item: Record<string, unknown>): string {
     if (text) return text;
   }
 
+  // Fallback: content is a plain string (third-party model proxies e.g.)
+  if (typeof parts === "string" && parts.trim().length > 0) {
+    return parts;
+  }
+
+  // Fallback: item.message as string
+  if (typeof item.message === "string" && item.message.trim().length > 0) {
+    return item.message;
+  }
+
   return "";
 }
 
