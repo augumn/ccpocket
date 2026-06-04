@@ -863,8 +863,32 @@ class ChatMessageHandler {
       currentStreaming = null;
       effects.add(ChatSideEffect.clearPlanFeedback);
     }
+    final entries = <ChatEntry>[ServerChatEntry(msg)];
+
+    // Fallback: when streaming was active but finalized into a real
+    // assistant bubble never arrived (edge case with third-party
+    // proxy models). currentStreaming != null means no final
+    // assistant message was processed after streaming.
+    if (subtype == 'success' && msg is ResultMessage && currentStreaming != null) {
+      final resultText = msg.result;
+      if (resultText != null && resultText.trim().isNotEmpty) {
+        entries.add(
+          ServerChatEntry(
+            AssistantServerMessage(
+              message: AssistantMessage(
+                id: 'result-fallback-' + DateTime.now().millisecondsSinceEpoch.toString(),
+                role: 'assistant',
+                content: [TextContent(text: resultText)],
+                model: '',
+              ),
+            ),
+          ),
+        );
+      }
+    }
+
     return ChatStateUpdate(
-      entriesToAdd: [ServerChatEntry(msg)],
+      entriesToAdd: entries,
       status: isStopped ? ProcessStatus.idle : null,
       costDelta: cost,
       resetPending: isStopped,
@@ -878,6 +902,7 @@ class ChatMessageHandler {
       markUserMessagesSent: true,
       sideEffects: effects,
     );
+
   }
 
   bool _isCodexPlanUpdateMessage(AssistantMessage message) {
