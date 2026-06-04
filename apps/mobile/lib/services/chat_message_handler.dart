@@ -164,6 +164,7 @@ const _unsupportedActions = <String, UnsupportedAction>{
 class ChatMessageHandler {
   String currentThinkingText = '';
   StreamingChatEntry? currentStreaming;
+  String? _lastAssistantId;
 
   /// Whether a git_not_available tip has been shown in this session.
   /// Used to suppress duplicate git errors in the chat stream.
@@ -437,6 +438,7 @@ class ChatMessageHandler {
     String? askToolUseId;
     Map<String, dynamic>? askInput;
     String? pendingToolUseId;
+    _lastAssistantId = msg.message.id;
     bool? inPlanMode;
     for (final content in message.content) {
       if (content is ToolUseContent) {
@@ -865,18 +867,17 @@ class ChatMessageHandler {
     }
     final entries = <ChatEntry>[ServerChatEntry(msg)];
 
-    // Fallback: when streaming was active but finalized into a real
-    // assistant bubble never arrived (edge case with third-party
-    // proxy models). currentStreaming != null means no final
-    // assistant message was processed after streaming.
-    if (subtype == 'success' && msg is ResultMessage && currentStreaming != null) {
+    // Fallback: if the last assistant message was lost in state (e.g. history
+    // replace race), re-inject it with the same id so dedup handles it.
+    if (subtype == 'success' && msg is ResultMessage) {
       final resultText = msg.result;
-      if (resultText != null && resultText.trim().isNotEmpty) {
+      final lastId = _lastAssistantId;
+      if (resultText != null && resultText.trim().isNotEmpty && lastId != null && lastId.isNotEmpty) {
         entries.add(
           ServerChatEntry(
             AssistantServerMessage(
               message: AssistantMessage(
-                id: 'result-fallback-' + DateTime.now().millisecondsSinceEpoch.toString(),
+                id: lastId,
                 role: 'assistant',
                 content: [TextContent(text: resultText)],
                 model: '',
