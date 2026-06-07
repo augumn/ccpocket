@@ -5825,12 +5825,11 @@ export class BridgeWebSocketServer {
       : requestedLimit;
     const sourceLimit = offset + limit;
 
-    const [claudeResult, codexResult] = await Promise.all([
+    const [scanResult, codexResult] = await Promise.all([
       getAllRecentSessions({
         limit: sourceLimit,
         offset: 0,
         projectPath: msg.projectPath,
-        provider: "claude",
         namedOnly: msg.namedOnly,
         searchQuery: msg.searchQuery,
         archivedSessionIds: this.archiveStore.archivedIds(),
@@ -5844,15 +5843,15 @@ export class BridgeWebSocketServer {
     ]);
 
     const merged = mergeRecentSessionPages([
-      ...claudeResult.sessions,
       ...codexResult.sessions,
+      ...scanResult.sessions,
     ]);
 
     return {
       sessions: merged.slice(offset, offset + limit),
       hasMore:
         merged.length > offset + limit ||
-        claudeResult.hasMore ||
+        scanResult.hasMore ||
         codexResult.hasMore,
     };
   }

@@ -17,6 +17,8 @@ Linux / Windows デスクトップ版は実験的ビルドとして GitHub Relea
 
 1. セッションを実行するマシンに、少なくとも1つのエージェント CLI を入れます:
    [Codex](https://github.com/openai/codex) または [Claude Code](https://docs.anthropic.com/en/docs/claude-code)。
+   macOS / Linux の Codex は、現在は standalone installer が推奨です:
+   `curl -fsSL https://chatgpt.com/codex/install.sh | sh`。
 2. 同じマシンに [Node.js](https://nodejs.org/) 18 以上を入れます。
 3. CC Pocket Bridge Server を起動します。
 
@@ -31,7 +33,7 @@ npx @ccpocket/bridge@latest
 |------------------|--------------|
 | **iOS / iPadOS** | <a href="https://apps.apple.com/jp/app/cc-pocket-%E3%81%A9%E3%81%93%E3%81%A7%E3%82%82%E3%82%B3%E3%83%BC%E3%83%87%E3%82%A3%E3%83%B3%E3%82%B0/id6759188790"><img height="40" alt="App Storeからダウンロード" src="docs/images/app-store-badge.svg" /></a> |
 | **Android** | <a href="https://play.google.com/store/apps/details?id=com.k9i.ccpocket"><img height="40" alt="Google Play で手に入れよう" src="docs/images/google-play-badge-ja.svg" /></a> |
-| **macOS** | 最新の `.dmg` は [GitHub Releases](https://github.com/K9i-0/ccpocket/releases?q=macos) からダウンロードできます。`macos/v*` タグのリリースを探してください。 |
+| **macOS** | 最新の `.dmg` は [GitHub Releases](https://github.com/K9i-0/ccpocket/releases?q=macos) からダウンロードできます。`macos/v*` タグのリリースを探してください。Homebrew Cask を用いて `brew install --cask cc-pocket` でインストールすることもできます。 |
 | **Linux（実験的）** | 最新の `.tar.gz` は [GitHub Releases](https://github.com/K9i-0/ccpocket/releases?q=linux) からダウンロードできます。`linux/v*` タグのリリースを探してください。 |
 | **Windows（実験的）** | 最新の `.zip` は [GitHub Releases](https://github.com/K9i-0/ccpocket/releases?q=windows) からダウンロードできます。`windows/v*` タグのリリースを探してください。 |
 
@@ -94,6 +96,8 @@ npx @ccpocket/bridge@latest setup
 ```
 
 サービス化は macOS launchd と Linux systemd に対応しています。
+`BRIDGE_ALLOWED_DIRS` などの Bridge 設定・service setup で保存される項目は
+[Bridge package README](packages/bridge/README.md#configuration) を参照してください。
 
 ## 補足
 

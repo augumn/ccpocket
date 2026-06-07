@@ -16,6 +16,8 @@ Experimental Linux and Windows desktop builds are also available from GitHub Rel
 
 1. Install at least one agent CLI on the machine that will run your sessions:
    [Codex](https://github.com/openai/codex) or [Claude Code](https://docs.anthropic.com/en/docs/claude-code).
+   For Codex on macOS/Linux, the current standalone installer is:
+   `curl -fsSL https://chatgpt.com/codex/install.sh | sh`.
 2. Install [Node.js](https://nodejs.org/) 18 or newer on that same machine.
 3. Start the CC Pocket Bridge Server:
 
@@ -30,7 +32,7 @@ npx @ccpocket/bridge@latest
 |----------|---------|
 | **iOS / iPadOS** | <a href="https://apps.apple.com/us/app/cc-pocket-code-anywhere/id6759188790"><img height="40" alt="Download on the App Store" src="docs/images/app-store-badge.svg" /></a> |
 | **Android** | <a href="https://play.google.com/store/apps/details?id=com.k9i.ccpocket"><img height="40" alt="Get it on Google Play" src="docs/images/google-play-badge-en.svg" /></a> |
-| **macOS** | Download the latest `.dmg` from [GitHub Releases](https://github.com/K9i-0/ccpocket/releases?q=macos). Look for releases tagged `macos/v*`. |
+| **macOS** | Download the latest `.dmg` from [GitHub Releases](https://github.com/K9i-0/ccpocket/releases?q=macos). Look for releases tagged `macos/v*`. You can also install using Homebrew Cask with `brew install --cask cc-pocket`. |
 | **Linux (experimental)** | Download the latest `.tar.gz` from [GitHub Releases](https://github.com/K9i-0/ccpocket/releases?q=linux). Look for releases tagged `linux/v*`. |
 | **Windows (experimental)** | Download the latest `.zip` from [GitHub Releases](https://github.com/K9i-0/ccpocket/releases?q=windows). Look for releases tagged `windows/v*`. |
 
@@ -101,6 +103,8 @@ npx @ccpocket/bridge@latest setup
 ```
 
 Service setup supports macOS launchd and Linux systemd.
+For Bridge flags and persisted service settings such as `BRIDGE_ALLOWED_DIRS`,
+see the [Bridge package README](packages/bridge/README.md#configuration).
 
 ## Notes
 
@@ -133,6 +137,9 @@ Common commands:
 | `npm run test:bridge` | Run Bridge Server tests |
 | `cd apps/mobile && flutter test` | Run Flutter tests |
 | `cd apps/mobile && dart analyze` | Run Dart static analysis |
+
+For end-to-end checks with a local Bridge and mobile app, see
+[Development Testing](docs/development-testing.md).
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for contribution guidelines.
 

@@ -16,6 +16,8 @@ iPhone, iPad, Android, macOS 네이티브 앱, 실험적인 Linux / Windows 데�
 
 1. 세션을 실행할 머신에 에이전트 CLI를 하나 이상 설치합니다:
    [Codex](https://github.com/openai/codex) 또는 [Claude Code](https://docs.anthropic.com/en/docs/claude-code).
+   macOS / Linux의 Codex는 현재 standalone installer 사용이 권장됩니다:
+   `curl -fsSL https://chatgpt.com/codex/install.sh | sh`.
 2. 같은 머신에 [Node.js](https://nodejs.org/) 18 이상을 설치합니다.
 3. CC Pocket Bridge Server를 시작합니다.
 
@@ -30,7 +32,7 @@ npx @ccpocket/bridge@latest
 |--------|------|
 | **iOS / iPadOS** | <a href="https://apps.apple.com/us/app/cc-pocket-code-anywhere/id6759188790"><img height="40" alt="App Store에서 다운로드" src="docs/images/app-store-badge.svg" /></a> |
 | **Android** | <a href="https://play.google.com/store/apps/details?id=com.k9i.ccpocket"><img height="40" alt="Google Play에서 받기" src="docs/images/google-play-badge-en.svg" /></a> |
-| **macOS** | 최신 `.dmg`는 [GitHub Releases](https://github.com/K9i-0/ccpocket/releases?q=macos)에서 다운로드할 수 있습니다. `macos/v*` 태그가 붙은 릴리스를 찾으세요. |
+| **macOS** | 최신 `.dmg`는 [GitHub Releases](https://github.com/K9i-0/ccpocket/releases?q=macos)에서 다운로드할 수 있습니다. `macos/v*` 태그가 붙은 릴리스를 찾으세요. Homebrew Cask를 사용해 `brew install --cask cc-pocket` 명령으로 설치할 수도 있습니다. |
 | **Linux(실험적)** | 최신 `.tar.gz`는 [GitHub Releases](https://github.com/K9i-0/ccpocket/releases?q=linux)에서 다운로드할 수 있습니다. `linux/v*` 태그가 붙은 릴리스를 찾으세요. |
 | **Windows(실험적)** | 최신 `.zip`은 [GitHub Releases](https://github.com/K9i-0/ccpocket/releases?q=windows)에서 다운로드할 수 있습니다. `windows/v*` 태그가 붙은 릴리스를 찾으세요. |
 
@@ -77,6 +79,8 @@ npx @ccpocket/bridge@latest setup
 ```
 
 서비스 설정은 macOS launchd와 Linux systemd를 지원합니다.
+`BRIDGE_ALLOWED_DIRS` 같은 Bridge 설정과 service setup이 저장하는 항목은
+[Bridge package README](packages/bridge/README.md#configuration)를 참고하세요.
 
 ## 참고
 

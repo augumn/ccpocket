@@ -16,6 +16,8 @@ iPhone、iPad、Android、原生 macOS App 或实验性的 Linux / Windows 桌�
 
 1. 在运行会话的主机上安装至少一个代理 CLI：
    [Codex](https://github.com/openai/codex) 或 [Claude Code](https://docs.anthropic.com/en/docs/claude-code)。
+   在 macOS / Linux 上，Codex 目前推荐使用 standalone installer：
+   `curl -fsSL https://chatgpt.com/codex/install.sh | sh`。
 2. 在同一台主机上安装 [Node.js](https://nodejs.org/) 18 或更高版本。
 3. 启动 CC Pocket Bridge Server：
 
@@ -30,7 +32,7 @@ npx @ccpocket/bridge@latest
 |------|------|
 | **iOS / iPadOS** | <a href="https://apps.apple.com/us/app/cc-pocket-code-anywhere/id6759188790"><img height="40" alt="Download on the App Store" src="docs/images/app-store-badge.svg" /></a> |
 | **Android** | <a href="https://play.google.com/store/apps/details?id=com.k9i.ccpocket"><img height="40" alt="Get it on Google Play" src="docs/images/google-play-badge-en.svg" /></a> |
-| **macOS** | 从 [GitHub Releases](https://github.com/K9i-0/ccpocket/releases?q=macos) 下载最新 `.dmg`。请查找带有 `macos/v*` 标签的发行版。 |
+| **macOS** | 从 [GitHub Releases](https://github.com/K9i-0/ccpocket/releases?q=macos) 下载最新 `.dmg`。请查找带有 `macos/v*` 标签的发行版。也可以使用 Homebrew Cask 通过 `brew install --cask cc-pocket` 安装。 |
 | **Linux（实验性）** | 从 [GitHub Releases](https://github.com/K9i-0/ccpocket/releases?q=linux) 下载最新 `.tar.gz`。请查找带有 `linux/v*` 标签的发行版。 |
 | **Windows（实验性）** | 从 [GitHub Releases](https://github.com/K9i-0/ccpocket/releases?q=windows) 下载最新 `.zip`。请查找带有 `windows/v*` 标签的发行版。 |
 
@@ -78,6 +80,8 @@ npx @ccpocket/bridge@latest setup
 ```
 
 服务化设置支持 macOS launchd 和 Linux systemd。
+关于 `BRIDGE_ALLOWED_DIRS` 等 Bridge 设置，以及 service setup 会保存哪些设置，请见
+[Bridge package README](packages/bridge/README.md#configuration)。
 
 ## 说明
 

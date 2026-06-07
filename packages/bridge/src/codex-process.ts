@@ -24,7 +24,7 @@ const DEFAULT_CODEX_RATE_LIMIT_CONTINUE_PROMPT =
 const CODEX_RATE_LIMIT_RETRYING_ERROR_CODE = "codex_rate_limit_retrying";
 const CODEX_RATE_LIMIT_EXHAUSTED_ERROR_CODE = "codex_rate_limit_exhausted";
 const CODEX_CLI_NOT_FOUND_MESSAGE =
-  "Codex CLI is not installed or not available on PATH on the Bridge machine. Install it with `npm install -g @openai/codex` or `brew install --cask codex`, then restart Bridge.";
+  "Codex CLI is not installed or not available on PATH on the Bridge machine. Install it with `curl -fsSL https://chatgpt.com/codex/install.sh | sh`, then restart Bridge.";
 
 export interface CodexStartOptions {
   threadId?: string;
