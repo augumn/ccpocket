@@ -1,3 +1,4 @@
-• Grouped recent sessions by project so it is easier to find and continue the right conversation.
-• Preserved Codex Auto Review when switching a running session into Plan mode.
-• Improved desktop paste handling, including dictation input, standard Ctrl+V text paste, image paste shortcuts, and Windows-style project paths.
+• Switch Codex models from an existing session when you need to adjust how the task continues.
+• Choose whether new sessions and filters show Codex, Claude, or both providers.
+• View Recent Sessions as a simple list in addition to project grouping.
+• Fixed Settings on Flutter Web and improved Codex/Claude session display details.
