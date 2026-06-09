@@ -2069,8 +2069,9 @@ class BridgeService implements BridgeServiceBase {
   }
 
   int _activeSessionSortPriority(SessionInfo session) {
+    if (session.pendingPermission != null) return 0;
     return switch (session.status) {
-      'running' || 'starting' || 'compacting' => 0,
+      'running' || 'starting' || 'waiting_approval' || 'compacting' => 0,
       _ => 1,
     };
   }
