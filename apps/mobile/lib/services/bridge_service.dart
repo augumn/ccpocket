@@ -393,7 +393,9 @@ class BridgeService implements BridgeServiceBase {
                 :final defaultCodexProfile,
                 :final bridgeVersion,
               ):
-                _sessions = _applyLocalDeliveryPendingInputs(sessions);
+                _sessions = _sortActiveSessions(
+                  _applyLocalDeliveryPendingInputs(sessions),
+                );
                 _clearPendingStartActionsForSessions(_sessions);
                 _sessionListController.add(_sessions);
                 _allowedDirs = allowedDirs;
@@ -1815,6 +1817,7 @@ class BridgeService implements BridgeServiceBase {
         status: statusStr,
         clearPermission: shouldClear,
       );
+    _sessions = _sortActiveSessions(_sessions);
     _sessionListController.add(_sessions);
   }
 
@@ -1830,6 +1833,7 @@ class BridgeService implements BridgeServiceBase {
     if (idx < 0) return;
     _sessions = List.of(_sessions)
       ..[idx] = _sessions[idx].copyWith(pendingPermission: permission);
+    _sessions = _sortActiveSessions(_sessions);
     _sessionListController.add(_sessions);
   }
 
@@ -1918,6 +1922,7 @@ class BridgeService implements BridgeServiceBase {
         codexPermissionsMode:
             codexPermissionsMode ?? current.codexPermissionsMode,
       );
+    _sessions = _sortActiveSessions(_sessions);
     _sessionListController.add(_sessions);
   }
 
@@ -1952,6 +1957,7 @@ class BridgeService implements BridgeServiceBase {
             message.networkAccessEnabled ?? current.codexNetworkAccessEnabled,
         codexWebSearchMode: message.webSearchMode ?? current.codexWebSearchMode,
       );
+    _sessions = _sortActiveSessions(_sessions);
     _sessionListController.add(_sessions);
   }
 
@@ -1979,6 +1985,7 @@ class BridgeService implements BridgeServiceBase {
         lastMessage: text.isNotEmpty ? preview : null,
         codexModel: shouldPatchModel ? messageModel : null,
       );
+    _sessions = _sortActiveSessions(_sessions);
     _sessionListController.add(_sessions);
   }
 
@@ -2000,6 +2007,7 @@ class BridgeService implements BridgeServiceBase {
     if (idx < 0) return;
     _sessions = List.of(_sessions)
       ..[idx] = _sessions[idx].copyWith(clearPermission: true);
+    _sessions = _sortActiveSessions(_sessions);
     _sessionListController.add(_sessions);
   }
 
@@ -2022,6 +2030,7 @@ class BridgeService implements BridgeServiceBase {
         codexModelReasoningEffort:
             modelReasoningEffort ?? current.codexModelReasoningEffort,
       );
+    _sessions = _sortActiveSessions(_sessions);
     _sessionListController.add(_sessions);
   }
 
@@ -2033,6 +2042,7 @@ class BridgeService implements BridgeServiceBase {
         queuedInput: item,
         clearQueuedInput: item == null,
       );
+    _sessions = _sortActiveSessions(_sessions);
     _sessionListController.add(_sessions);
   }
 
@@ -2044,6 +2054,25 @@ class BridgeService implements BridgeServiceBase {
       if (pending == null) return session;
       return session.copyWith(queuedInput: pending);
     }).toList();
+  }
+
+  List<SessionInfo> _sortActiveSessions(List<SessionInfo> sessions) {
+    final indexed = sessions.indexed.toList();
+    indexed.sort((a, b) {
+      final priorityCompare = _activeSessionSortPriority(
+        a.$2,
+      ).compareTo(_activeSessionSortPriority(b.$2));
+      if (priorityCompare != 0) return priorityCompare;
+      return a.$1.compareTo(b.$1);
+    });
+    return indexed.map((entry) => entry.$2).toList(growable: false);
+  }
+
+  int _activeSessionSortPriority(SessionInfo session) {
+    return switch (session.status) {
+      'running' || 'starting' || 'compacting' => 0,
+      _ => 1,
+    };
   }
 
   List<RecentSession> _mergeRecentSessions(
@@ -2073,6 +2102,7 @@ class BridgeService implements BridgeServiceBase {
     if (current.codexSandboxMode == sandboxMode) return;
     _sessions = List.of(_sessions)
       ..[idx] = current.copyWith(codexSandboxMode: sandboxMode);
+    _sessions = _sortActiveSessions(_sessions);
     _sessionListController.add(_sessions);
   }
 
