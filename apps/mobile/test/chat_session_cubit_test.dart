@@ -700,6 +700,68 @@ void main() {
     );
 
     test(
+      'history replace preserves local user input missing from a lagging snapshot',
+      () async {
+        final cubit = createCubit('s1', provider: Provider.codex);
+        addTearDown(cubit.close);
+        mockBridge.emitMessage(
+          const StatusMessage(status: ProcessStatus.idle),
+          sessionId: 's1',
+        );
+        await Future.microtask(() {});
+
+        cubit.sendMessage('Lagging snapshot input');
+        mockBridge.emitMessage(
+          AssistantServerMessage(
+            message: AssistantMessage(
+              id: 'a1',
+              role: 'assistant',
+              content: [const TextContent(text: 'live answer')],
+              model: 'codex',
+            ),
+          ),
+          sessionId: 's1',
+        );
+        await Future.microtask(() {});
+
+        mockBridge.emitMessage(
+          HistoryMessage(
+            messages: [
+              AssistantServerMessage(
+                message: AssistantMessage(
+                  id: 'a1',
+                  role: 'assistant',
+                  content: [const TextContent(text: 'live answer')],
+                  model: 'codex',
+                ),
+              ),
+              const ResultMessage(subtype: 'success'),
+            ],
+          ),
+          sessionId: 's1',
+        );
+        await Future.microtask(() {});
+
+        expect(cubit.state.entries, hasLength(3));
+        expect(cubit.state.entries[0], isA<UserChatEntry>());
+        expect(
+          (cubit.state.entries[0] as UserChatEntry).text,
+          'Lagging snapshot input',
+        );
+        expect(cubit.state.entries[1], isA<ServerChatEntry>());
+        expect(
+          (cubit.state.entries[1] as ServerChatEntry).message,
+          isA<AssistantServerMessage>(),
+        );
+        expect(cubit.state.entries[2], isA<ServerChatEntry>());
+        expect(
+          (cubit.state.entries[2] as ServerChatEntry).message,
+          isA<ResultMessage>(),
+        );
+      },
+    );
+
+    test(
       'codex assistant response clears delivery pending without ack',
       () async {
         final cubit = createCubit('s1', provider: Provider.codex);

@@ -416,12 +416,12 @@ class ChatSessionCubit extends Cubit<ChatSessionState> {
       final pastEntries = entries.take(_pastEntryCount).toList();
       final existingNonPast = entries.skip(_pastEntryCount).toList();
 
-      final extraLiveEntries = _entriesToPreserveAfterHistoryReplace(
+      final mergedHistoryEntries = _mergeEntriesForHistoryReplace(
         existingNonPast: existingNonPast,
         historyEntries: nonStreamingEntries,
       );
 
-      entries = [...pastEntries, ...nonStreamingEntries, ...extraLiveEntries];
+      entries = [...pastEntries, ...mergedHistoryEntries];
 
       // Preserve local data (image bytes, timestamps) from existing entries
       // that the server history does not contain.
@@ -700,41 +700,64 @@ class ChatSessionCubit extends Cubit<ChatSessionState> {
     );
   }
 
-  List<ChatEntry> _entriesToPreserveAfterHistoryReplace({
+  List<ChatEntry> _mergeEntriesForHistoryReplace({
     required List<ChatEntry> existingNonPast,
     required List<ChatEntry> historyEntries,
   }) {
+    final merged = <ChatEntry>[];
+    var historyCursor = 0;
     var lastMatchedExistingIndex = -1;
-    var searchStart = 0;
 
-    for (final historyEntry in historyEntries) {
+    for (var existingIndex = 0;
+        existingIndex < existingNonPast.length;
+        existingIndex++) {
+      final existing = existingNonPast[existingIndex];
       final matchIndex = _indexOfEquivalentEntry(
-        existingNonPast,
-        historyEntry,
-        start: searchStart,
+        historyEntries,
+        existing,
+        start: historyCursor,
         allowWeakMatch: true,
       );
-      if (matchIndex == -1) continue;
-      lastMatchedExistingIndex = matchIndex;
-      searchStart = matchIndex + 1;
+      if (matchIndex != -1) {
+        merged.addAll(
+          historyEntries.skip(historyCursor).take(
+            matchIndex - historyCursor + 1,
+          ),
+        );
+        historyCursor = matchIndex + 1;
+        lastMatchedExistingIndex = existingIndex;
+        continue;
+      }
+      if (_shouldPreserveLocalUserAcrossHistoryReplace(existing) &&
+          _indexOfEquivalentEntry(
+                [...merged, ...historyEntries.skip(historyCursor)],
+                existing,
+              ) ==
+              -1) {
+        merged.add(existing);
+      }
     }
 
-    final candidates = lastMatchedExistingIndex == -1
-        ? existingNonPast.where(_isLocalUnconfirmedUserEntry)
-        : existingNonPast.skip(lastMatchedExistingIndex + 1);
-    final preserved = <ChatEntry>[];
-    final covered = [...historyEntries];
+    merged.addAll(historyEntries.skip(historyCursor));
 
-    for (final candidate in candidates) {
-      if (_indexOfEquivalentEntry(covered, candidate, allowWeakMatch: true) !=
+    // Keep the previous live-tail behavior for non-user messages. This covers
+    // history snapshots that lag behind the latest assistant/tool/result events,
+    // while the loop above also protects locally sent user turns in the middle
+    // of the timeline.
+    final tailStart = lastMatchedExistingIndex == -1
+        ? existingNonPast.length
+        : lastMatchedExistingIndex + 1;
+    for (final candidate in existingNonPast.skip(tailStart)) {
+      if (candidate is UserChatEntry) continue;
+      if (!_shouldPreserveEntryAcrossHistoryReplace(candidate)) continue;
+      if (_indexOfEquivalentEntry(merged, candidate, allowWeakMatch: true) !=
           -1) {
         continue;
       }
-      if (!_shouldPreserveEntryAcrossHistoryReplace(candidate)) continue;
-      preserved.add(candidate);
-      covered.add(candidate);
+      merged.add(candidate);
     }
-    return preserved;
+
+    return merged;
   }
 
   ({List<ChatEntry> entries, bool didChange}) _appendEntriesDeduped(
@@ -933,6 +956,16 @@ class ChatSessionCubit extends Cubit<ChatSessionState> {
 
   bool _isLocalUnconfirmedUserEntry(ChatEntry entry) {
     return entry is UserChatEntry && entry.status != MessageStatus.sent;
+  }
+
+  bool _shouldPreserveLocalUserAcrossHistoryReplace(ChatEntry entry) {
+    if (entry is! UserChatEntry) return false;
+    if (_isLocalUnconfirmedUserEntry(entry)) return true;
+    if (entry.clientMessageId != null && entry.clientMessageId!.isNotEmpty) {
+      return true;
+    }
+    final uuid = entry.messageUuid;
+    return uuid != null && uuid.startsWith('codex:user-turn:');
   }
 
   bool _shouldPreserveEntryAcrossHistoryReplace(ChatEntry entry) {
