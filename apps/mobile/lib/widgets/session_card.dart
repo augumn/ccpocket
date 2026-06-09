@@ -310,8 +310,38 @@ class _RunningSessionCardState extends State<RunningSessionCard> {
                       Expanded(
                         child: Row(
                           children: [
+                            Hero(
+                              tag: 'project_name_${session.id}',
+                              child: Material(
+                                color: Colors.transparent,
+                                child: Container(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 6,
+                                    vertical: 2,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: providerStyle.background,
+                                    borderRadius: BorderRadius.circular(6),
+                                    border: Border.all(
+                                      color: providerStyle.border,
+                                      width: 0.5,
+                                    ),
+                                  ),
+                                  child: Text(
+                                    projectName,
+                                    style: TextStyle(
+                                      fontWeight: FontWeight.w500,
+                                      fontSize: 12,
+                                      color: providerStyle.foreground,
+                                    ),
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ),
+                              ),
+                            ),
                             if (session.name != null &&
                                 session.name!.isNotEmpty) ...[
+                              const SizedBox(width: 8),
                               Flexible(
                                 child: Container(
                                   padding: const EdgeInsets.symmetric(
@@ -344,37 +374,7 @@ class _RunningSessionCardState extends State<RunningSessionCard> {
                                   ),
                                 ),
                               ),
-                              const SizedBox(width: 8),
                             ],
-                            Hero(
-                              tag: 'project_name_${session.id}',
-                              child: Material(
-                                color: Colors.transparent,
-                                child: Container(
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 6,
-                                    vertical: 2,
-                                  ),
-                                  decoration: BoxDecoration(
-                                    color: providerStyle.background,
-                                    borderRadius: BorderRadius.circular(6),
-                                    border: Border.all(
-                                      color: providerStyle.border,
-                                      width: 0.5,
-                                    ),
-                                  ),
-                                  child: Text(
-                                    projectName,
-                                    style: TextStyle(
-                                      fontWeight: FontWeight.w500,
-                                      fontSize: 12,
-                                      color: providerStyle.foreground,
-                                    ),
-                                    overflow: TextOverflow.ellipsis,
-                                  ),
-                                ),
-                              ),
-                            ),
                           ],
                         ),
                       ),
@@ -2490,36 +2490,6 @@ class RecentSessionCard extends StatelessWidget {
                       Expanded(
                         child: Row(
                           children: [
-                            if (session.name != null &&
-                                session.name!.isNotEmpty) ...[
-                              Flexible(
-                                child: Container(
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 6,
-                                    vertical: 2,
-                                  ),
-                                  decoration: BoxDecoration(
-                                    color: colorScheme.surfaceContainer,
-                                    borderRadius: BorderRadius.circular(6),
-                                    border: Border.all(
-                                      color: colorScheme.outlineVariant,
-                                      width: 0.5,
-                                    ),
-                                  ),
-                                  child: Text(
-                                    session.name!,
-                                    style: TextStyle(
-                                      fontSize: 12,
-                                      fontWeight: FontWeight.w500,
-                                      color: colorScheme.onSurfaceVariant,
-                                    ),
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                  ),
-                                ),
-                              ),
-                              const SizedBox(width: 8),
-                            ],
                             if (!hideProjectBadge) ...[
                               Flexible(
                                 child: Container(
@@ -2544,6 +2514,36 @@ class RecentSessionCard extends StatelessWidget {
                                     ),
                                     overflow: TextOverflow.ellipsis,
                                     maxLines: 1,
+                                  ),
+                                ),
+                              ),
+                            ],
+                            if (session.name != null &&
+                                session.name!.isNotEmpty) ...[
+                              if (!hideProjectBadge) const SizedBox(width: 8),
+                              Flexible(
+                                child: Container(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 6,
+                                    vertical: 2,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: colorScheme.surfaceContainer,
+                                    borderRadius: BorderRadius.circular(6),
+                                    border: Border.all(
+                                      color: colorScheme.outlineVariant,
+                                      width: 0.5,
+                                    ),
+                                  ),
+                                  child: Text(
+                                    session.name!,
+                                    style: TextStyle(
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.w500,
+                                      color: colorScheme.onSurfaceVariant,
+                                    ),
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
                                   ),
                                 ),
                               ),
