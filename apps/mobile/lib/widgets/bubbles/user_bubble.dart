@@ -7,6 +7,7 @@ import '../../theme/app_spacing.dart';
 import '../../theme/app_theme.dart';
 import '../../utils/command_parser.dart';
 import '../adaptive_context_menu.dart';
+import '../google_search_text_selection.dart';
 
 class UserBubble extends StatelessWidget {
   final String text;
@@ -204,9 +205,11 @@ class _StandardBubble extends StatelessWidget {
                         ),
                       ),
                     if (displayText.isNotEmpty)
-                      Text(
+                      SelectableText(
                         displayText,
                         style: TextStyle(color: appColors.userBubbleText),
+                        contextMenuBuilder:
+                            googleSearchSelectableTextContextMenuBuilder,
                       ),
                   ],
                 ),
@@ -273,7 +276,7 @@ class _CommandBubble extends StatelessWidget {
                   color: appColors.userBubble,
                   borderRadius: AppSpacing.userBubbleBorderRadius,
                 ),
-                child: Text.rich(
+                child: SelectableText.rich(
                   TextSpan(
                     children: [
                       TextSpan(
@@ -292,6 +295,8 @@ class _CommandBubble extends StatelessWidget {
                       ],
                     ],
                   ),
+                  contextMenuBuilder:
+                      googleSearchSelectableTextContextMenuBuilder,
                 ),
               ),
               Padding(
