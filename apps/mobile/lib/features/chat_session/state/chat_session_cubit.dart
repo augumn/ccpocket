@@ -10,6 +10,7 @@ import '../../../core/logger.dart';
 import '../../../models/messages.dart';
 import '../../../services/bridge_service.dart';
 import '../../../services/chat_message_handler.dart';
+import '../../../widgets/new_session_sheet.dart';
 import 'chat_session_state.dart';
 import 'streaming_state_cubit.dart';
 
@@ -151,6 +152,7 @@ class ChatSessionCubit extends Cubit<ChatSessionState> {
     // Subscribe to messages for this session
     _subscription = _bridge.messagesForSession(sessionId).listen(_onMessage);
 
+    unawaited(_restorePersistedSessionSettings());
     _restoreCachedRuntimeMessages();
     _restoreDeliveryPendingInput();
 
@@ -708,9 +710,11 @@ class ChatSessionCubit extends Cubit<ChatSessionState> {
     var historyCursor = 0;
     var lastMatchedExistingIndex = -1;
 
-    for (var existingIndex = 0;
-        existingIndex < existingNonPast.length;
-        existingIndex++) {
+    for (
+      var existingIndex = 0;
+      existingIndex < existingNonPast.length;
+      existingIndex++
+    ) {
       final existing = existingNonPast[existingIndex];
       final matchIndex = _indexOfEquivalentEntry(
         historyEntries,
@@ -720,19 +724,19 @@ class ChatSessionCubit extends Cubit<ChatSessionState> {
       );
       if (matchIndex != -1) {
         merged.addAll(
-          historyEntries.skip(historyCursor).take(
-            matchIndex - historyCursor + 1,
-          ),
+          historyEntries
+              .skip(historyCursor)
+              .take(matchIndex - historyCursor + 1),
         );
         historyCursor = matchIndex + 1;
         lastMatchedExistingIndex = existingIndex;
         continue;
       }
       if (_shouldPreserveLocalUserAcrossHistoryReplace(existing) &&
-          _indexOfEquivalentEntry(
-                [...merged, ...historyEntries.skip(historyCursor)],
-                existing,
-              ) ==
+          _indexOfEquivalentEntry([
+                ...merged,
+                ...historyEntries.skip(historyCursor),
+              ], existing) ==
               -1) {
         merged.add(existing);
       }
@@ -1561,6 +1565,13 @@ class ChatSessionCubit extends Cubit<ChatSessionState> {
         sessionId: sessionId,
       ),
     );
+    unawaited(
+      _SessionSettingsHelper.save(sessionId, {
+        'codexApprovalPolicy': policy.value,
+        'codexApprovalsReviewer': normalizedReviewer,
+        'codexPermissionsMode': CodexPermissionsMode.custom.value,
+      }),
+    );
   }
 
   void setCodexPermissionsMode(CodexPermissionsMode mode) {
@@ -1626,6 +1637,14 @@ class ChatSessionCubit extends Cubit<ChatSessionState> {
         sessionId: sessionId,
       ),
     );
+    unawaited(
+      _SessionSettingsHelper.save(sessionId, {
+        'codexApprovalPolicy': policy.value,
+        'codexApprovalsReviewer': approvalsReviewer,
+        'codexPermissionsMode': mode.value,
+        'codexSandboxMode': (sandboxMode ?? state.sandboxMode).value,
+      }),
+    );
   }
 
   void setCodexModel(String model, {ReasoningEffort? reasoningEffort}) {
@@ -1656,6 +1675,12 @@ class ChatSessionCubit extends Cubit<ChatSessionState> {
         sessionId: sessionId,
       ),
     );
+    unawaited(
+      _SessionSettingsHelper.save(sessionId, {
+        'codexModel': normalizedModel,
+        'codexModelReasoningEffort': nextReasoningEffort?.value,
+      }),
+    );
   }
 
   /// Change sandbox mode (Claude & Codex).
@@ -1673,6 +1698,76 @@ class ChatSessionCubit extends Cubit<ChatSessionState> {
     final claudeSid = state.claudeSessionId;
     if (claudeSid != null && claudeSid.isNotEmpty) {
       _SessionSettingsHelper.save(claudeSid, {'sandboxMode': mode.value});
+    }
+    if (isCodex) {
+      _SessionSettingsHelper.save(sessionId, {'codexSandboxMode': mode.value});
+    }
+  }
+
+  Future<void> _restorePersistedSessionSettings() async {
+    final settings = await _SessionSettingsHelper.load(sessionId);
+    if (settings == null || settings.isEmpty) return;
+
+    if (isCodex) {
+      final persistedModel = sanitizeCodexModelName(
+        settings['codexModel'] as String?,
+      );
+      final availableModel =
+          normalizeCodexModelForAvailableList(persistedModel, codexModels) ??
+          persistedModel;
+      final persistedReasoning = reasoningEffortFromRaw(
+        settings['codexModelReasoningEffort'] as String?,
+      );
+      final persistedSandbox = sandboxModeFromRaw(
+        settings['codexSandboxMode'] as String?,
+      );
+      final persistedPolicy = codexApprovalPolicyFromRaw(
+        settings['codexApprovalPolicy'] as String?,
+      );
+      final persistedPermissionsMode = codexPermissionsModeFromRaw(
+        settings['codexPermissionsMode'] as String?,
+      );
+
+      if (!isClosed) {
+        emit(
+          state.copyWith(
+            codexModel: availableModel ?? state.codexModel,
+            codexModelReasoningEffort:
+                persistedReasoning ?? state.codexModelReasoningEffort,
+            sandboxMode: persistedSandbox ?? state.sandboxMode,
+            codexApprovalPolicy: persistedPolicy ?? state.codexApprovalPolicy,
+            codexApprovalsReviewer:
+                (settings['codexApprovalsReviewer'] as String?) ??
+                state.codexApprovalsReviewer,
+            codexPermissionsMode:
+                persistedPermissionsMode ?? state.codexPermissionsMode,
+          ),
+        );
+      }
+      return;
+    }
+
+    final persistedPermission = permissionModeFromRaw(
+      settings['permissionMode'] as String?,
+    );
+    final persistedSandbox = sandboxModeFromRaw(
+      settings['sandboxMode'] as String?,
+    );
+    final persistedExecution = executionModeFromRaw(
+      settings['executionMode'] as String?,
+    );
+    final persistedPlan = settings['planMode'] as bool?;
+
+    if (!isClosed) {
+      emit(
+        state.copyWith(
+          permissionMode: persistedPermission ?? state.permissionMode,
+          executionMode: persistedExecution ?? state.executionMode,
+          sandboxMode: persistedSandbox ?? state.sandboxMode,
+          planMode: persistedPlan ?? state.planMode,
+          inPlanMode: persistedPlan ?? state.inPlanMode,
+        ),
+      );
     }
   }
 
@@ -2002,6 +2097,17 @@ bool _listEquals(List<String> a, List<String> b) {
 class _SessionSettingsHelper {
   static const _prefix = 'claude_session_settings_';
 
+  static Future<Map<String, dynamic>?> load(String sessionId) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final raw = prefs.getString('$_prefix$sessionId');
+      if (raw == null || raw.isEmpty) return null;
+      return jsonDecode(raw) as Map<String, dynamic>;
+    } catch (_) {
+      return null;
+    }
+  }
+
   static Future<void> save(
     String sessionId,
     Map<String, dynamic> settings,
@@ -2009,13 +2115,7 @@ class _SessionSettingsHelper {
     try {
       final prefs = await SharedPreferences.getInstance();
       final key = '$_prefix$sessionId';
-      final raw = prefs.getString(key);
-      Map<String, dynamic> existing = {};
-      if (raw != null) {
-        try {
-          existing = jsonDecode(raw) as Map<String, dynamic>;
-        } catch (_) {}
-      }
+      final existing = await load(sessionId) ?? <String, dynamic>{};
       final merged = <String, dynamic>{...existing, ...settings};
       await prefs.setString(key, jsonEncode(merged));
     } catch (_) {

@@ -28,6 +28,7 @@ class RunningSessionCard extends StatefulWidget {
   final VoidCallback? onStop;
   final bool isUnseen;
   final bool isSelected;
+  final bool isPinned;
 
   const RunningSessionCard({
     super.key,
@@ -42,6 +43,7 @@ class RunningSessionCard extends StatefulWidget {
     this.onStop,
     this.isUnseen = false,
     this.isSelected = false,
+    this.isPinned = false,
   });
 
   @override
@@ -200,6 +202,14 @@ class _RunningSessionCardState extends State<RunningSessionCard> {
                   ],
                   if (queuedInput != null || widget.onStop != null) ...[
                     const Spacer(),
+                    if (widget.isPinned) ...[
+                      Icon(
+                        Icons.push_pin,
+                        size: 14,
+                        color: statusColor.withValues(alpha: 0.9),
+                      ),
+                      const SizedBox(width: 6),
+                    ],
                     if (queuedInput != null) ...[
                       _QueuedInputBadge(item: queuedInput),
                       if (widget.onStop != null) const SizedBox(width: 6),
@@ -2431,6 +2441,7 @@ class RecentSessionCard extends StatelessWidget {
   final String? draftText;
   final bool isProcessing;
   final bool isSelected;
+  final bool isPinned;
 
   const RecentSessionCard({
     super.key,
@@ -2443,6 +2454,7 @@ class RecentSessionCard extends StatelessWidget {
     this.draftText,
     this.isProcessing = false,
     this.isSelected = false,
+    this.isPinned = false,
   });
 
   @override
@@ -2490,6 +2502,14 @@ class RecentSessionCard extends StatelessWidget {
                       Expanded(
                         child: Row(
                           children: [
+                            if (isPinned) ...[
+                              Icon(
+                                Icons.push_pin,
+                                size: 14,
+                                color: colorScheme.primary,
+                              ),
+                              const SizedBox(width: 6),
+                            ],
                             if (!hideProjectBadge) ...[
                               Flexible(
                                 child: Container(

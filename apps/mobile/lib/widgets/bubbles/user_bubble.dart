@@ -125,14 +125,16 @@ class _StandardBubble extends StatelessWidget {
 
     return Align(
       alignment: Alignment.centerRight,
-      child: AdaptiveContextMenuRegion(
-        onOpen: onShowContextMenu,
-        child: GestureDetector(
-          onTap: status == MessageStatus.failed ? onRetry : null,
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.end,
-            children: [
-              Container(
+      child: GestureDetector(
+        onTap: status == MessageStatus.failed ? onRetry : null,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.end,
+          children: [
+            AdaptiveContextMenuRegion(
+              onOpen: onShowContextMenu,
+              enableLongPress:
+                  imageBytesList.isNotEmpty || imageUrls.isNotEmpty,
+              child: Container(
                 margin: const EdgeInsets.symmetric(
                   vertical: AppSpacing.bubbleMarginV,
                   horizontal: AppSpacing.bubbleMarginH,
@@ -214,12 +216,12 @@ class _StandardBubble extends StatelessWidget {
                   ],
                 ),
               ),
-              Padding(
-                padding: const EdgeInsets.only(right: AppSpacing.bubbleMarginH),
-                child: _StatusIndicator(status: status),
-              ),
-            ],
-          ),
+            ),
+            Padding(
+              padding: const EdgeInsets.only(right: AppSpacing.bubbleMarginH),
+              child: _StatusIndicator(status: status),
+            ),
+          ],
         ),
       ),
     );
@@ -251,14 +253,15 @@ class _CommandBubble extends StatelessWidget {
 
     return Align(
       alignment: Alignment.centerRight,
-      child: AdaptiveContextMenuRegion(
-        onOpen: onShowContextMenu,
-        child: GestureDetector(
-          onTap: status == MessageStatus.failed ? onRetry : null,
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.end,
-            children: [
-              Container(
+      child: GestureDetector(
+        onTap: status == MessageStatus.failed ? onRetry : null,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.end,
+          children: [
+            AdaptiveContextMenuRegion(
+              onOpen: onShowContextMenu,
+              enableLongPress: false,
+              child: Container(
                 margin: const EdgeInsets.symmetric(
                   vertical: AppSpacing.bubbleMarginV,
                   horizontal: AppSpacing.bubbleMarginH,
@@ -299,12 +302,12 @@ class _CommandBubble extends StatelessWidget {
                       googleSearchSelectableTextContextMenuBuilder,
                 ),
               ),
-              Padding(
-                padding: const EdgeInsets.only(right: AppSpacing.bubbleMarginH),
-                child: _StatusIndicator(status: status),
-              ),
-            ],
-          ),
+            ),
+            Padding(
+              padding: const EdgeInsets.only(right: AppSpacing.bubbleMarginH),
+              child: _StatusIndicator(status: status),
+            ),
+          ],
         ),
       ),
     );

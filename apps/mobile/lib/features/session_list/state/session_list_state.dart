@@ -44,6 +44,10 @@ abstract class SessionListState with _$SessionListState {
     /// Per-project number of recent sessions currently visible in the list.
     @Default({}) Map<String, int> projectSessionDisplayLimits,
 
+    /// Session IDs pinned by the user. Ordering is insertion order and is used
+    /// as the primary sort for both running and recent sessions.
+    @Default([]) List<String> pinnedSessionIds,
+
     /// Provider filter (All / Claude / Codex). Applied server-side.
     @Default(ProviderFilter.all) ProviderFilter providerFilter,
 

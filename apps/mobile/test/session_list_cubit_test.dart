@@ -176,7 +176,35 @@ void main() {
       expect(cubit.state.isLoadingMore, isFalse);
       expect(cubit.state.searchQuery, isEmpty);
       expect(cubit.state.accumulatedProjectPaths, isEmpty);
+      expect(cubit.state.pinnedSessionIds, isEmpty);
     });
+
+    test('loads pinned session ids from preferences', () async {
+      SharedPreferences.setMockInitialValues({
+        'session_list_pinned_session_ids': ['s2', 's1'],
+      });
+      final cubit = SessionListCubit(bridge: mockBridge);
+      addTearDown(cubit.close);
+
+      await Future<void>.delayed(Duration.zero);
+
+      expect(cubit.state.pinnedSessionIds, ['s2', 's1']);
+    });
+
+    test(
+      'togglePinnedSession persists insertion order and unpins cleanly',
+      () async {
+        await cubit.togglePinnedSession('s1');
+        await cubit.togglePinnedSession('s2');
+        expect(cubit.state.pinnedSessionIds, ['s1', 's2']);
+
+        await cubit.togglePinnedSession('s1');
+        expect(cubit.state.pinnedSessionIds, ['s2']);
+
+        final prefs = await SharedPreferences.getInstance();
+        expect(prefs.getStringList('session_list_pinned_session_ids'), ['s2']);
+      },
+    );
 
     test('sessions update from stream', () async {
       mockBridge.emitSessions([_session(id: 's1'), _session(id: 's2')]);

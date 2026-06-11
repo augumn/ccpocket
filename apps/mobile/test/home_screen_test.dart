@@ -458,7 +458,7 @@ void main() {
         provider: Provider.codex.value,
       );
 
-      final settings = factualCodexResumeSettings(session, const []);
+      final settings = factualCodexResumeSettings(session, const [], null);
 
       expect(settings.permissionMode, isNull);
       expect(settings.executionMode, isNull);
@@ -485,7 +485,7 @@ void main() {
 
       final settings = factualCodexResumeSettings(session, const [
         'gpt-5.3-codex',
-      ]);
+      ], null);
 
       expect(settings.permissionMode, PermissionMode.acceptEdits.value);
       expect(settings.executionMode, ExecutionMode.defaultMode.value);

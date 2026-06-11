@@ -11,6 +11,7 @@ import 'package:ccpocket/theme/app_theme.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 class _MockBridgeService extends BridgeService {
   final _messageController = StreamController<ServerMessage>.broadcast();
@@ -80,11 +81,13 @@ Map<String, dynamic> _decode(ClientMessage message) =>
     jsonDecode(message.toJson()) as Map<String, dynamic>;
 
 void main() {
+  TestWidgetsFlutterBinding.ensureInitialized();
   late _MockBridgeService bridge;
   late StreamingStateCubit streamingCubit;
   late ChatSessionCubit cubit;
 
   setUp(() async {
+    SharedPreferences.setMockInitialValues({});
     bridge = _MockBridgeService();
     streamingCubit = StreamingStateCubit();
     cubit = ChatSessionCubit(

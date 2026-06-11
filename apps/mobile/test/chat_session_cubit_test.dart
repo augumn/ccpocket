@@ -7,6 +7,7 @@ import 'package:ccpocket/features/chat_session/state/streaming_state_cubit.dart'
 import 'package:ccpocket/models/messages.dart';
 import 'package:ccpocket/services/bridge_service.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 /// Minimal mock BridgeService for testing the cubit.
 class MockBridgeService extends BridgeService {
@@ -125,6 +126,7 @@ void main() {
   late StreamingStateCubit streamingCubit;
 
   setUp(() {
+    SharedPreferences.setMockInitialValues({});
     mockBridge = MockBridgeService();
     streamingCubit = StreamingStateCubit();
   });
@@ -201,6 +203,39 @@ void main() {
       await Future.microtask(() {});
 
       expect(cubit.state.projectPath, '/Users/me/Workspace/ccpocket');
+    });
+
+    test('restores persisted codex model settings for session', () async {
+      SharedPreferences.setMockInitialValues({
+        'claude_session_settings_codex-session': jsonEncode({
+          'codexModel': 'gpt-5.4',
+          'codexModelReasoningEffort': 'medium',
+          'codexSandboxMode': 'workspace-write',
+        }),
+      });
+
+      final cubit = createCubit('codex-session', provider: Provider.codex);
+      addTearDown(cubit.close);
+      await Future<void>.delayed(Duration.zero);
+
+      expect(cubit.state.codexModel, 'gpt-5.4');
+      expect(cubit.state.codexModelReasoningEffort, ReasoningEffort.medium);
+      expect(cubit.state.sandboxMode, SandboxMode.on);
+    });
+
+    test('setCodexModel persists per-session codex settings', () async {
+      final cubit = createCubit('codex-session', provider: Provider.codex);
+      addTearDown(cubit.close);
+
+      cubit.setCodexModel('gpt-5.4', reasoningEffort: ReasoningEffort.medium);
+      await Future<void>.delayed(Duration.zero);
+
+      final prefs = await SharedPreferences.getInstance();
+      final raw = prefs.getString('claude_session_settings_codex-session');
+      expect(raw, isNotNull);
+      final decoded = jsonDecode(raw!) as Map<String, dynamic>;
+      expect(decoded['codexModel'], 'gpt-5.4');
+      expect(decoded['codexModelReasoningEffort'], 'medium');
     });
 
     test('history message restores project path metadata', () async {
@@ -1189,10 +1224,7 @@ void main() {
       final cubit = createCubit('s1', provider: Provider.claude);
       addTearDown(cubit.close);
 
-      cubit.setCodexModel(
-        'gpt-5.4-mini',
-        reasoningEffort: ReasoningEffort.low,
-      );
+      cubit.setCodexModel('gpt-5.4-mini', reasoningEffort: ReasoningEffort.low);
 
       expect(cubit.state.codexModel, isNull);
       expect(cubit.state.codexModelReasoningEffort, isNull);

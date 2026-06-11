@@ -142,7 +142,7 @@ jobs:
           path: ${{ runner.temp }}/android-dist/CC-Pocket-android-arm64-self-use.apk
 
   macos:
-    name: macOS unsigned DMG
+    name: macOS self-use DMG
     runs-on: macos-15
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
@@ -159,20 +159,72 @@ jobs:
       - run: flutter pub get
         working-directory: apps/mobile
 
-      - name: Build macOS app without distribution signing
+      - name: Build macOS app
         working-directory: apps/mobile
         run: flutter build macos --release
 
-      - name: Install create-dmg
-        run: brew install create-dmg
-
-      - name: Package macOS DMG
+      - name: Re-sign and verify macOS app bundle for self-use distribution
+        shell: bash
         run: |
+          set -euo pipefail
           APP_PATH="apps/mobile/build/macos/Build/Products/Release/CC Pocket.app"
           if [[ ! -d "$APP_PATH" ]]; then
             echo "::error::macOS app bundle not found at $APP_PATH"
             exit 1
           fi
+
+          ENTITLEMENTS_PATH="apps/mobile/macos/Runner/Release.entitlements"
+          if [[ ! -f "$ENTITLEMENTS_PATH" ]]; then
+            echo "::error::Missing entitlements file at $ENTITLEMENTS_PATH"
+            exit 1
+          fi
+
+          # Re-sign nested binaries consistently so the bundle remains launchable
+          # after being moved to another Mac, even without Developer ID signing.
+          SPARKLE_FRAMEWORK_PATH="$APP_PATH/Contents/Frameworks/Sparkle.framework"
+          if [[ -d "$SPARKLE_FRAMEWORK_PATH" ]]; then
+            SPARKLE_VERSION_DIR="$SPARKLE_FRAMEWORK_PATH/Versions/B"
+
+            for SPARKLE_HELPER in \
+              "$SPARKLE_VERSION_DIR/Autoupdate" \
+              "$SPARKLE_VERSION_DIR/XPCServices/Downloader.xpc" \
+              "$SPARKLE_VERSION_DIR/XPCServices/Installer.xpc" \
+              "$SPARKLE_VERSION_DIR/Updater.app"; do
+              if [[ -e "$SPARKLE_HELPER" ]]; then
+                codesign --force --sign - "$SPARKLE_HELPER"
+              fi
+            done
+
+            codesign --force --sign - "$SPARKLE_FRAMEWORK_PATH"
+          fi
+
+          find "$APP_PATH/Contents/Frameworks" \
+            -type f \
+            \( -perm -111 -o -name "*.dylib" \) \
+            -print0 | while IFS= read -r -d '' BIN; do
+              codesign --force --sign - "$BIN"
+            done
+
+          codesign --force --deep --sign - \
+            --entitlements "$ENTITLEMENTS_PATH" \
+            "$APP_PATH"
+
+          codesign --verify --deep --strict --verbose=2 "$APP_PATH"
+          spctl --assess --type execute --verbose=4 "$APP_PATH" || true
+
+      - name: Install create-dmg
+        run: brew install create-dmg
+
+      - name: Package macOS DMG
+        shell: bash
+        run: |
+          set -euo pipefail
+          APP_PATH="apps/mobile/build/macos/Build/Products/Release/CC Pocket.app"
+          if [[ ! -d "$APP_PATH" ]]; then
+            echo "::error::macOS app bundle not found at $APP_PATH"
+            exit 1
+          fi
+          rm -f "CC-Pocket-macos-self-use.dmg"
           create-dmg \
             --volname "CC Pocket" \
             --window-pos 200 120 \
@@ -181,13 +233,13 @@ jobs:
             --icon "CC Pocket.app" 150 185 \
             --app-drop-link 450 185 \
             --no-internet-enable \
-            "CC-Pocket-macos-unsigned-self-use.dmg" \
+            "CC-Pocket-macos-self-use.dmg" \
             "$APP_PATH"
 
       - uses: actions/upload-artifact@v4
         with:
-          name: CC-Pocket-macos-unsigned-self-use
-          path: CC-Pocket-macos-unsigned-self-use.dmg
+          name: CC-Pocket-macos-self-use
+          path: CC-Pocket-macos-self-use.dmg
 
   ios:
     name: iOS no-codesign app
@@ -281,7 +333,7 @@ jobs:
 
           Assets:
           - Windows: unzip `CC-Pocket-windows-x64-self-use.zip` and run `ccpocket.exe`.
-          - macOS: unsigned DMG. You may need to remove quarantine locally before opening.
+          - macOS: ad-hoc signed self-use DMG. If Gatekeeper still blocks it, remove quarantine locally before opening.
           - Android: release APK signed with the debug fallback key when no release keystore is configured.
           - iOS: unsigned IPA for local re-signing. It is not installable until signed with your own certificate/provisioning profile.
           - Bridge: npm tarball. Example:

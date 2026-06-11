@@ -9,6 +9,7 @@ import '../../../services/bridge_service.dart';
 import 'session_list_state.dart';
 
 const _collapsedProjectPathsKey = 'session_list_collapsed_project_paths';
+const _pinnedSessionIdsKey = 'session_list_pinned_session_ids';
 const _projectInitialSessionDisplayLimit = 5;
 const _projectSessionDisplayPageSize = 20;
 
@@ -41,6 +42,8 @@ class SessionListCubit extends Cubit<SessionListState> {
     final collapsedProjectPaths =
         prefs.getStringList(_collapsedProjectPathsKey)?.toSet() ??
         const <String>{};
+    final pinnedSessionIds =
+        prefs.getStringList(_pinnedSessionIdsKey) ?? const <String>[];
 
     var provider = ProviderFilter.all;
     if (providerStr == ProviderFilter.claude.name) {
@@ -54,6 +57,7 @@ class SessionListCubit extends Cubit<SessionListState> {
         providerFilter: provider,
         namedOnly: namedOnly ?? false,
         collapsedProjectPaths: collapsedProjectPaths,
+        pinnedSessionIds: pinnedSessionIds,
       ),
     );
   }
@@ -274,6 +278,16 @@ class SessionListCubit extends Cubit<SessionListState> {
       return s;
     }).toList();
     emit(state.copyWith(sessions: updated));
+  }
+
+  Future<void> togglePinnedSession(String sessionId) async {
+    final next = List<String>.from(state.pinnedSessionIds);
+    if (!next.remove(sessionId)) {
+      next.add(sessionId);
+    }
+    emit(state.copyWith(pinnedSessionIds: next));
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setStringList(_pinnedSessionIdsKey, next);
   }
 
   // ---- Private helpers ----
