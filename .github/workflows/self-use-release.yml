@@ -79,8 +79,38 @@ jobs:
       - run: flutter config --enable-windows-desktop
       - run: flutter pub get
         working-directory: apps/mobile
-      - run: flutter build windows --release
+      - name: Precache Windows artifacts
+        shell: pwsh
         working-directory: apps/mobile
+        run: |
+          $ErrorActionPreference = 'Stop'
+          for ($attempt = 1; $attempt -le 3; $attempt++) {
+            try {
+              flutter precache --windows
+              exit 0
+            } catch {
+              if ($attempt -eq 3) { throw }
+              Start-Sleep -Seconds (10 * $attempt)
+            }
+          }
+
+      - name: Build Windows app with retry
+        shell: pwsh
+        working-directory: apps/mobile
+        run: |
+          $ErrorActionPreference = 'Stop'
+          for ($attempt = 1; $attempt -le 3; $attempt++) {
+            try {
+              flutter build windows --release
+              exit 0
+            } catch {
+              if ($attempt -eq 3) { throw }
+              Write-Warning "flutter build windows failed on attempt $attempt, retrying..."
+              flutter clean
+              flutter pub get
+              Start-Sleep -Seconds (15 * $attempt)
+            }
+          }
 
       - name: Package Windows bundle
         shell: pwsh
