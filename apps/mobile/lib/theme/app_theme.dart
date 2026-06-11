@@ -11,7 +11,17 @@ import 'package:google_fonts/google_fonts.dart';
 // ---------------------------------------------------------------------------
 
 class AppTheme {
+  static const List<String> _zhFontFallback = [
+    'Microsoft YaHei', // Windows
+    'PingFang SC', // macOS / iOS
+    'Noto Sans CJK SC', // Linux / Android
+  ];
+
   static ThemeData get lightTheme {
+    return lightThemeForLocale(null);
+  }
+
+  static ThemeData lightThemeForLocale(Locale? locale) {
     final colorScheme = ColorScheme.light(
       surface: const Color(0xFFF7F7F8), // cleaner off-white bg (Zinc 50)
       surfaceContainerLowest: Colors.white,
@@ -32,10 +42,19 @@ class AppTheme {
       outlineVariant: const Color(0xFFE4E4E7), // Zinc 200 (clean border)
     );
 
-    return _buildTheme(colorScheme, Brightness.light, AppColors.light());
+    return _buildTheme(
+      colorScheme,
+      Brightness.light,
+      AppColors.light(),
+      locale: locale,
+    );
   }
 
   static ThemeData get darkTheme {
+    return darkThemeForLocale(null);
+  }
+
+  static ThemeData darkThemeForLocale(Locale? locale) {
     final colorScheme = ColorScheme.dark(
       surface: const Color(0xFF0A0A0A), // Deep neat black bg (Neutral 950)
       surfaceContainerLowest: const Color(0xFF000000), // Pure Black
@@ -60,15 +79,21 @@ class AppTheme {
       outlineVariant: const Color(0xFF404040), // clean border (Neutral 700)
     );
 
-    return _buildTheme(colorScheme, Brightness.dark, AppColors.dark());
+    return _buildTheme(
+      colorScheme,
+      Brightness.dark,
+      AppColors.dark(),
+      locale: locale,
+    );
   }
 
   static ThemeData _buildTheme(
     ColorScheme colorScheme,
     Brightness brightness,
-    AppColors appColors,
-  ) {
-    final textTheme = _buildTextTheme(colorScheme);
+    AppColors appColors, {
+    Locale? locale,
+  }) {
+    final textTheme = _buildTextTheme(colorScheme, locale: locale);
 
     return ThemeData(
       useMaterial3: true,
@@ -261,12 +286,12 @@ class AppTheme {
     );
   }
 
-  static TextTheme _buildTextTheme(ColorScheme colorScheme) {
+  static TextTheme _buildTextTheme(ColorScheme colorScheme, {Locale? locale}) {
     final baseTextTheme = GoogleFonts.ibmPlexSansTextTheme();
 
     // Headlines: Space Grotesk — geometric, distinctive, avoids generic Poppins
     // Body/Labels: IBM Plex Sans — professional & readable, avoids generic Inter
-    return baseTextTheme.copyWith(
+    final textTheme = baseTextTheme.copyWith(
       displayLarge: GoogleFonts.spaceGrotesk(
         fontSize: 57,
         fontWeight: FontWeight.w700,
@@ -354,6 +379,11 @@ class AppTheme {
         color: colorScheme.onSurfaceVariant,
       ),
     );
+
+    if (locale?.languageCode.toLowerCase() == 'zh') {
+      return textTheme.apply(fontFamilyFallback: _zhFontFallback);
+    }
+    return textTheme;
   }
 }
 

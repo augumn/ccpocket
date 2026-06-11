@@ -468,14 +468,17 @@ class _CcpocketAppState extends State<CcpocketApp> {
         if (settings.fcmEnabledMachines.isNotEmpty && settings.fcmAvailable) {
           _initFcmHandlers();
         }
+        final appLocale = settings.appLocaleId.isEmpty
+            ? null
+            : Locale(settings.appLocaleId);
+        final themeLocale =
+            appLocale ?? WidgetsBinding.instance.platformDispatcher.locale;
         return MaterialApp.router(
           title: 'CC Pocket',
-          theme: AppTheme.lightTheme,
-          darkTheme: AppTheme.darkTheme,
+          theme: AppTheme.lightThemeForLocale(themeLocale),
+          darkTheme: AppTheme.darkThemeForLocale(themeLocale),
           themeMode: settings.themeMode,
-          locale: settings.appLocaleId.isEmpty
-              ? null
-              : Locale(settings.appLocaleId),
+          locale: appLocale,
           localizationsDelegates: AppLocalizations.localizationsDelegates,
           supportedLocales: AppLocalizations.supportedLocales,
           routerConfig: _appRouter.config(
