@@ -2,6 +2,11 @@
 
 All notable changes to `@ccpocket/bridge` will be documented in this file.
 
+## [1.63.5] - 2026-06-12
+
+### Fixed
+- Surface rollout-derived first prompt, last prompt, and summary text for Codex recent sessions loaded through the native thread list.
+
 ## [1.63.4] - 2026-06-06
 
 ### Fixed
