@@ -4,12 +4,6 @@ on:
   push:
     branches:
       - codex/self-use-release
-    paths:
-      - ".github/workflows/self-use-release.yml"
-      - "package.json"
-      - "package-lock.json"
-      - "packages/bridge/**"
-      - "apps/mobile/**"
   workflow_dispatch:
     inputs:
       release_tag:
