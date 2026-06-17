@@ -308,6 +308,17 @@ jobs:
             exit 1
           fi
 
+          # The release entitlements are appropriate for formally signed
+          # distribution, but they are too strict for this self-use ad-hoc
+          # package on another Mac. In particular, the app sandbox and empty
+          # keychain access groups can produce an app that verifies yet fails
+          # to launch after download. Strip those capabilities for the
+          # self-use artifact and keep only the capabilities needed at runtime.
+          SELF_USE_ENTITLEMENTS_PATH="$RUNNER_TEMP/self-use-macos.entitlements"
+          cp "$ENTITLEMENTS_PATH" "$SELF_USE_ENTITLEMENTS_PATH"
+          /usr/libexec/PlistBuddy -c "Delete :com.apple.security.app-sandbox" "$SELF_USE_ENTITLEMENTS_PATH" || true
+          /usr/libexec/PlistBuddy -c "Delete :keychain-access-groups" "$SELF_USE_ENTITLEMENTS_PATH" || true
+
           # Re-sign nested binaries consistently so the bundle remains launchable
           # after being moved to another Mac, even without Developer ID signing.
           SPARKLE_FRAMEWORK_PATH="$APP_PATH/Contents/Frameworks/Sparkle.framework"
@@ -335,10 +346,12 @@ jobs:
             done
 
           codesign --force --deep --sign - \
-            --entitlements "$ENTITLEMENTS_PATH" \
+            --entitlements "$SELF_USE_ENTITLEMENTS_PATH" \
             "$APP_PATH"
 
           codesign --verify --deep --strict --verbose=2 "$APP_PATH"
+          echo "Entitlements used for self-use package:"
+          plutil -p "$SELF_USE_ENTITLEMENTS_PATH"
           spctl --assess --type execute --verbose=4 "$APP_PATH" || true
 
       - name: Install create-dmg
