@@ -98,6 +98,21 @@ jobs:
               flutter build windows --release
               exit 0
             } catch {
+              $firebaseCmake = Join-Path (Get-Location) "build/windows/x64/extracted/firebase_cpp_sdk_windows/CMakeLists.txt"
+              if (Test-Path $firebaseCmake) {
+                $cmakeText = Get-Content $firebaseCmake -Raw
+                $patchedText = $cmakeText -replace 'cmake_minimum_required\(VERSION\s+[0-9.]+\)', 'cmake_minimum_required(VERSION 3.5...3.31)'
+                if ($patchedText -ne $cmakeText) {
+                  Write-Warning "Patching Firebase Windows CMakeLists for newer CMake compatibility..."
+                  Set-Content -Path $firebaseCmake -Value $patchedText -NoNewline
+                  try {
+                    flutter build windows --release
+                    exit 0
+                  } catch {
+                    Write-Warning "Windows build still failed after Firebase CMake patch on attempt $attempt."
+                  }
+                }
+              }
               if ($attempt -eq 3) { throw }
               Write-Warning "flutter build windows failed on attempt $attempt, retrying..."
               flutter clean
