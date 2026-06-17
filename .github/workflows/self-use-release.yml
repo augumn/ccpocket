@@ -111,8 +111,13 @@ jobs:
         run: |
           $distDir = Join-Path $env:RUNNER_TEMP "windows-dist"
           $bundleDir = Join-Path $distDir "CC-Pocket-windows-x64"
+          $sourceDir = "apps/mobile/build/windows/x64/runner/Release"
+          if (!(Test-Path $sourceDir)) {
+            Write-Error "Windows build output not found at $sourceDir"
+            exit 1
+          }
           New-Item -ItemType Directory -Force -Path $bundleDir | Out-Null
-          Copy-Item -Path "apps/mobile/build/windows/x64/runner/Release/*" -Destination $bundleDir -Recurse -Force
+          Copy-Item -Path "$sourceDir/*" -Destination $bundleDir -Recurse -Force
           Compress-Archive -Path $bundleDir -DestinationPath "CC-Pocket-windows-x64-self-use.zip" -Force
 
       - uses: actions/upload-artifact@v4
