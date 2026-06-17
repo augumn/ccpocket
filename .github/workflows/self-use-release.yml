@@ -125,15 +125,22 @@ jobs:
         shell: pwsh
         run: |
           $distDir = Join-Path $env:RUNNER_TEMP "windows-dist"
-          $bundleDir = Join-Path $distDir "CC-Pocket-windows-x64"
+          $bundleName = "CC-Pocket-windows-x64"
+          $archiveName = "CC-Pocket-windows-x64-self-use.zip"
           $sourceDir = "apps/mobile/build/windows/x64/runner/Release"
+          $bundleDir = Join-Path $distDir $bundleName
+
           if (!(Test-Path $sourceDir)) {
-            Write-Error "Windows build output not found at $sourceDir"
+            Write-Host "Windows build output was not found at the expected path."
+            Write-Host "Contents under apps/mobile/build/windows/x64:"
+            Get-ChildItem "apps/mobile/build/windows/x64" -Recurse -Force -ErrorAction SilentlyContinue |
+              Select-Object -First 200 FullName
             exit 1
           }
+
           New-Item -ItemType Directory -Force -Path $bundleDir | Out-Null
           Copy-Item -Path "$sourceDir/*" -Destination $bundleDir -Recurse -Force
-          Compress-Archive -Path $bundleDir -DestinationPath "CC-Pocket-windows-x64-self-use.zip" -Force
+          Compress-Archive -Path $bundleDir -DestinationPath $archiveName -Force
 
       - uses: actions/upload-artifact@v4
         with:
