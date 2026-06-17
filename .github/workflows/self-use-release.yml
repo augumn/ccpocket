@@ -130,22 +130,12 @@ jobs:
             }
 
             $scriptText = Get-Content $superNativeResolveScript -Raw
-            $needle = @'
-        $item = Get-Item $realPath
-        if ($item.LinkTarget) {
-'@
+            $needle = "        $item = Get-Item $realPath`n        if ($item.LinkTarget) {"
             if (-not $scriptText.Contains($needle)) {
               return $false
             }
 
-            $replacement = @'
-        if (!(Test-Path $realPath)) {
-            continue
-        }
-
-        $item = Get-Item $realPath
-        if ($item.LinkTarget) {
-'@
+            $replacement = "        if (!(Test-Path $realPath)) {`n            continue`n        }`n`n        $item = Get-Item $realPath`n        if ($item.LinkTarget) {"
             Write-Warning "Patching super_native_extensions Windows symlink resolver for GitHub runner compatibility..."
             $patchedText = $scriptText.Replace($needle, $replacement)
             Set-Content -Path $superNativeResolveScript -Value $patchedText -NoNewline
