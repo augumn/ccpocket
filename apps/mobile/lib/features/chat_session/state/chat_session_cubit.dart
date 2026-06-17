@@ -744,16 +744,23 @@ class ChatSessionCubit extends Cubit<ChatSessionState> {
 
     merged.addAll(historyEntries.skip(historyCursor));
 
-    // Keep the previous live-tail behavior for non-user messages. This covers
-    // history snapshots that lag behind the latest assistant/tool/result events,
-    // while the loop above also protects locally sent user turns in the middle
-    // of the timeline.
-    final tailStart = lastMatchedExistingIndex == -1
-        ? existingNonPast.length
+    // Keep live server content when a history snapshot lags behind the current
+    // runtime timeline, even if it still overlaps earlier user turns.
+    final preserveLaggingLiveContent =
+        _historyIsLaggingLiveServerContent(existingNonPast, historyEntries) ||
+        lastMatchedExistingIndex == -1;
+    final tailStart = preserveLaggingLiveContent
+        ? 0
         : lastMatchedExistingIndex + 1;
     for (final candidate in existingNonPast.skip(tailStart)) {
       if (candidate is UserChatEntry) continue;
-      if (!_shouldPreserveEntryAcrossHistoryReplace(candidate)) continue;
+      if (preserveLaggingLiveContent) {
+        if (!_shouldPreserveLiveContentAcrossLaggingHistory(candidate)) {
+          continue;
+        }
+      } else if (!_shouldPreserveEntryAcrossHistoryReplace(candidate)) {
+        continue;
+      }
       if (_indexOfEquivalentEntry(merged, candidate, allowWeakMatch: true) !=
           -1) {
         continue;
@@ -762,6 +769,24 @@ class ChatSessionCubit extends Cubit<ChatSessionState> {
     }
 
     return merged;
+  }
+
+  bool _historyIsLaggingLiveServerContent(
+    List<ChatEntry> existingNonPast,
+    List<ChatEntry> historyEntries,
+  ) {
+    for (final existing in existingNonPast) {
+      if (!_shouldPreserveLiveContentAcrossLaggingHistory(existing)) continue;
+      if (_indexOfEquivalentEntry(
+            historyEntries,
+            existing,
+            allowWeakMatch: true,
+          ) ==
+          -1) {
+        return true;
+      }
+    }
+    return false;
   }
 
   ({List<ChatEntry> entries, bool didChange}) _appendEntriesDeduped(
@@ -970,6 +995,20 @@ class ChatSessionCubit extends Cubit<ChatSessionState> {
     }
     final uuid = entry.messageUuid;
     return uuid != null && uuid.startsWith('codex:user-turn:');
+  }
+
+  bool _shouldPreserveLiveContentAcrossLaggingHistory(ChatEntry entry) {
+    if (entry is! ServerChatEntry) return false;
+    return switch (entry.message) {
+      AssistantServerMessage() => true,
+      ResultMessage() => true,
+      ToolResultMessage() => true,
+      PermissionRequestMessage() => true,
+      PermissionResolvedMessage() => true,
+      ToolUseSummaryMessage() => true,
+      ErrorMessage() => true,
+      _ => false,
+    };
   }
 
   bool _shouldPreserveEntryAcrossHistoryReplace(ChatEntry entry) {

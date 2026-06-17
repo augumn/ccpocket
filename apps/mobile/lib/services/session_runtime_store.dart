@@ -86,14 +86,24 @@ class SessionRuntimeStore {
       return;
     }
     if (message is HistoryMessage) {
-      state._messages
-        ..clear()
-        ..addAll(message.messages.where((m) => !_shouldIgnore(m)));
-      state._messageSeqs
-        ..clear()
-        ..addAll(List<int?>.filled(state._messages.length, null));
-      state.historySeq = 0;
-      state.cachedHistorySeq = 0;
+      final incomingMessages = message.messages
+          .where((m) => !_shouldIgnore(m))
+          .toList();
+      final hasSequencedRuntime = state.historySeq > 0 || state.cachedHistorySeq > 0;
+      if (!hasSequencedRuntime || state._messages.isEmpty) {
+        state._messages
+          ..clear()
+          ..addAll(incomingMessages);
+        state._messageSeqs
+          ..clear()
+          ..addAll(List<int?>.filled(state._messages.length, null));
+        state.historySeq = 0;
+        state.cachedHistorySeq = 0;
+      } else {
+        for (final incoming in incomingMessages) {
+          _mergeUnsequencedHistoryMessage(state, incoming);
+        }
+      }
       _trim(state);
       return;
     }
@@ -255,6 +265,99 @@ class SessionRuntimeStore {
     }
     state._messages.add(message);
     state._messageSeqs.add(historySeq);
+  }
+
+  void _mergeUnsequencedHistoryMessage(
+    SessionRuntimeState state,
+    ServerMessage message,
+  ) {
+    final existingIndex = state._messages.indexWhere(
+      (existing) => _messagesEquivalent(existing, message),
+    );
+    if (existingIndex >= 0) {
+      state._messages[existingIndex] = message;
+      return;
+    }
+    _upsertMessage(state, message, null);
+  }
+
+  bool _messagesEquivalent(ServerMessage a, ServerMessage b) {
+    final aStableKey = _messageStableKey(a);
+    final bStableKey = _messageStableKey(b);
+    if (aStableKey != null && bStableKey != null) {
+      return aStableKey == bStableKey;
+    }
+
+    final aWeakKey = _messageWeakKey(a);
+    final bWeakKey = _messageWeakKey(b);
+    if (aWeakKey != null && bWeakKey != null) {
+      return aWeakKey == bWeakKey;
+    }
+
+    if (a is UserInputMessage && b is UserInputMessage) {
+      return a.text == b.text &&
+          a.clientMessageId == b.clientMessageId &&
+          a.userMessageUuid == b.userMessageUuid;
+    }
+
+    return false;
+  }
+
+  String? _messageStableKey(ServerMessage message) {
+    return switch (message) {
+      AssistantServerMessage(:final message, :final messageUuid) =>
+        messageUuid != null && messageUuid.isNotEmpty
+          ? 'assistant:uuid:$messageUuid'
+          : message.id.isNotEmpty
+          ? 'assistant:id:${message.id}'
+          : null,
+      ToolResultMessage(:final toolUseId) => 'tool_result:$toolUseId',
+      PermissionRequestMessage(:final toolUseId) =>
+        'permission_request:$toolUseId',
+      PermissionResolvedMessage(:final toolUseId) =>
+        'permission_resolved:$toolUseId',
+      UserInputMessage(:final userMessageUuid)
+          when userMessageUuid != null && userMessageUuid.isNotEmpty =>
+        'user:uuid:$userMessageUuid',
+      UserInputMessage(:final clientMessageId)
+          when clientMessageId != null && clientMessageId.isNotEmpty =>
+        'user:client:$clientMessageId',
+      _ => null,
+    };
+  }
+
+  String? _messageWeakKey(ServerMessage message) {
+    return switch (message) {
+      StatusMessage(:final status) => 'status:${status.name}',
+      UserInputMessage(:final text) => 'user:text:$text',
+      AssistantServerMessage(:final message) =>
+        'assistant:${_assistantContentSignature(message)}',
+      ResultMessage(
+        :final subtype,
+        :final sessionId,
+        :final stopReason,
+        :final result,
+        :final error,
+      ) =>
+        ['result', subtype, sessionId, stopReason, result, error].join('\u0001'),
+      ErrorMessage(:final message, :final errorCode) =>
+        ['error', errorCode, message].join('\u0001'),
+      ToolUseSummaryMessage(:final summary, :final precedingToolUseIds) =>
+        ['tool_use_summary', summary, ...precedingToolUseIds].join('\u0001'),
+      _ => null,
+    };
+  }
+
+  String _assistantContentSignature(AssistantMessage message) {
+    return message.content
+        .map((content) {
+          return switch (content) {
+            TextContent(:final text) => 'text:$text',
+            ThinkingContent(:final thinking) => 'thinking:$thinking',
+            ToolUseContent(:final id, :final name) => 'tool_use:$id:$name',
+          };
+        })
+        .join('\u0001');
   }
 
   void _sortSequencedMessages(SessionRuntimeState state) {

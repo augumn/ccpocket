@@ -78,6 +78,68 @@ void main() {
       expect(store.cachedHistorySeq('s1'), 0);
     });
 
+    test(
+      'history merges into sequenced runtime timeline instead of replacing it',
+      () {
+        final store = SessionRuntimeStore();
+        store.applyServerMessage(
+          's1',
+          const StatusMessage(status: ProcessStatus.idle),
+          historySeq: 1,
+        );
+        store.applyServerMessage(
+          's1',
+          const UserInputMessage(
+            text: 'live input',
+            clientMessageId: 'cm-live',
+            userMessageUuid: 'codex:user-turn:1',
+          ),
+          historySeq: 2,
+        );
+        store.applyServerMessage(
+          's1',
+          AssistantServerMessage(
+            message: AssistantMessage(
+              id: 'assistant-live',
+              role: 'assistant',
+              content: const [TextContent(text: 'live answer')],
+              model: 'codex',
+            ),
+          ),
+          historySeq: 3,
+        );
+
+        store.applyServerMessage(
+          's1',
+          HistoryMessage(
+            messages: [
+              const StatusMessage(status: ProcessStatus.idle),
+              const UserInputMessage(
+                text: 'live input',
+                clientMessageId: 'cm-live',
+                userMessageUuid: 'codex:user-turn:1',
+              ),
+            ],
+          ),
+        );
+
+        final messages = store.messages('s1');
+        expect(messages.map((message) => message.runtimeType), [
+          StatusMessage,
+          UserInputMessage,
+          AssistantServerMessage,
+        ]);
+        expect(
+          (((messages.last as AssistantServerMessage).message.content.single)
+                  as TextContent)
+              .text,
+          'live answer',
+        );
+        expect(store.latestHistorySeq('s1'), 3);
+        expect(store.cachedHistorySeq('s1'), 3);
+      },
+    );
+
     test('history delta appends newer sequenced entries', () {
       final store = SessionRuntimeStore();
       store.applyServerMessage(

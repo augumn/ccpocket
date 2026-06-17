@@ -797,6 +797,84 @@ void main() {
     );
 
     test(
+      'history replace preserves live assistant and result when lagging history only has older user turn',
+      () async {
+        final cubit = createCubit('s1', provider: Provider.codex);
+        addTearDown(cubit.close);
+        mockBridge.emitMessage(
+          const StatusMessage(status: ProcessStatus.idle),
+          sessionId: 's1',
+        );
+        await Future.microtask(() {});
+
+        cubit.sendMessage('keep my live timeline');
+        final payload =
+            jsonDecode(mockBridge.sentMessages.single.toJson())
+                as Map<String, dynamic>;
+        final clientMessageId = payload['clientMessageId'] as String;
+
+        mockBridge.emitMessage(
+          UserInputMessage(
+            text: 'keep my live timeline',
+            clientMessageId: clientMessageId,
+            userMessageUuid: 'codex:user-turn:keep-live',
+            timestamp: '2026-04-28T12:00:00.000Z',
+          ),
+          sessionId: 's1',
+        );
+        mockBridge.emitMessage(
+          AssistantServerMessage(
+            message: AssistantMessage(
+              id: 'assistant-live',
+              role: 'assistant',
+              content: [const TextContent(text: 'live answer survives')],
+              model: 'codex',
+            ),
+          ),
+          sessionId: 's1',
+        );
+        mockBridge.emitMessage(
+          const ResultMessage(
+            subtype: 'success',
+            result: 'live answer survives',
+          ),
+          sessionId: 's1',
+        );
+        await Future<void>.delayed(const Duration(milliseconds: 10));
+
+        mockBridge.emitMessage(
+          HistoryMessage(
+            messages: [
+              UserInputMessage(
+                text: 'keep my live timeline',
+                clientMessageId: clientMessageId,
+                userMessageUuid: 'codex:user-turn:keep-live',
+                timestamp: '2026-04-28T12:00:00.000Z',
+              ),
+            ],
+          ),
+          sessionId: 's1',
+        );
+        await Future<void>.delayed(const Duration(milliseconds: 10));
+
+        final entries = cubit.state.entries;
+        expect(entries.whereType<UserChatEntry>(), hasLength(1));
+        expect(
+          entries
+              .whereType<ServerChatEntry>()
+              .where((entry) => entry.message is AssistantServerMessage),
+          hasLength(1),
+        );
+        expect(
+          entries
+              .whereType<ServerChatEntry>()
+              .where((entry) => entry.message is ResultMessage),
+          hasLength(1),
+        );
+      },
+    );
+
+    test(
       'codex assistant response clears delivery pending without ack',
       () async {
         final cubit = createCubit('s1', provider: Provider.codex);
