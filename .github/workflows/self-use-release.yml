@@ -93,24 +93,47 @@ jobs:
         working-directory: apps/mobile
         run: |
           $ErrorActionPreference = 'Stop'
+          $releaseExe = Join-Path (Get-Location) "build/windows/x64/runner/Release/ccpocket.exe"
+          $firebaseCmake = Join-Path (Get-Location) "build/windows/x64/extracted/firebase_cpp_sdk_windows/CMakeLists.txt"
+
+          function Invoke-WindowsBuild {
+            flutter build windows --release
+            $exitCode = $LASTEXITCODE
+            if ($exitCode -ne 0) {
+              throw "flutter build windows exited with code $exitCode"
+            }
+            if (!(Test-Path $releaseExe)) {
+              throw "Windows build finished without producing $releaseExe"
+            }
+          }
+
+          function Patch-FirebaseCmakeIfNeeded {
+            if (!(Test-Path $firebaseCmake)) {
+              return $false
+            }
+
+            $cmakeText = Get-Content $firebaseCmake -Raw
+            $patchedText = $cmakeText -replace 'cmake_minimum_required\(VERSION\s+[0-9.]+\)', 'cmake_minimum_required(VERSION 3.5...3.31)'
+            if ($patchedText -eq $cmakeText) {
+              return $false
+            }
+
+            Write-Warning "Patching Firebase Windows CMakeLists for newer CMake compatibility..."
+            Set-Content -Path $firebaseCmake -Value $patchedText -NoNewline
+            return $true
+          }
+
           for ($attempt = 1; $attempt -le 3; $attempt++) {
             try {
-              flutter build windows --release
+              Invoke-WindowsBuild
               exit 0
             } catch {
-              $firebaseCmake = Join-Path (Get-Location) "build/windows/x64/extracted/firebase_cpp_sdk_windows/CMakeLists.txt"
-              if (Test-Path $firebaseCmake) {
-                $cmakeText = Get-Content $firebaseCmake -Raw
-                $patchedText = $cmakeText -replace 'cmake_minimum_required\(VERSION\s+[0-9.]+\)', 'cmake_minimum_required(VERSION 3.5...3.31)'
-                if ($patchedText -ne $cmakeText) {
-                  Write-Warning "Patching Firebase Windows CMakeLists for newer CMake compatibility..."
-                  Set-Content -Path $firebaseCmake -Value $patchedText -NoNewline
-                  try {
-                    flutter build windows --release
-                    exit 0
-                  } catch {
-                    Write-Warning "Windows build still failed after Firebase CMake patch on attempt $attempt."
-                  }
+              if (Patch-FirebaseCmakeIfNeeded) {
+                try {
+                  Invoke-WindowsBuild
+                  exit 0
+                } catch {
+                  Write-Warning "Windows build still failed after Firebase CMake patch on attempt $attempt."
                 }
               }
               if ($attempt -eq 3) { throw }
