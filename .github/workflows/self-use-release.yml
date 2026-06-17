@@ -96,6 +96,7 @@ jobs:
           $releaseExe = Join-Path (Get-Location) "build/windows/x64/runner/Release/ccpocket.exe"
           $firebaseCmake = Join-Path (Get-Location) "build/windows/x64/extracted/firebase_cpp_sdk_windows/CMakeLists.txt"
           $superNativeResolveScript = Join-Path (Get-Location) "windows/flutter/ephemeral/.plugin_symlinks/super_native_extensions/cargokit/cmake/resolve_symlinks.ps1"
+          $notificationsSrcCmake = Join-Path (Get-Location) "windows/flutter/ephemeral/.plugin_symlinks/flutter_local_notifications_windows/src/CMakeLists.txt"
 
           function Invoke-WindowsBuild {
             flutter build windows --release
@@ -130,15 +131,40 @@ jobs:
             }
 
             $scriptText = Get-Content $superNativeResolveScript -Raw
-            $needle = "        $item = Get-Item $realPath`n        if ($item.LinkTarget) {"
-            if (-not $scriptText.Contains($needle)) {
+            if ($scriptText.Contains("if (!(Test-Path `$realPath))")) {
               return $false
             }
 
-            $replacement = "        if (!(Test-Path $realPath)) {`n            continue`n        }`n`n        $item = Get-Item $realPath`n        if ($item.LinkTarget) {"
             Write-Warning "Patching super_native_extensions Windows symlink resolver for GitHub runner compatibility..."
-            $patchedText = $scriptText.Replace($needle, $replacement)
+            $patchedText = [regex]::Replace(
+              $scriptText,
+              '(?m)^(\s*)\$item = Get-Item \$realPath\r?\n',
+              "`$1if (!(Test-Path `$realPath)) {`r`n`$1    continue`r`n`$1}`r`n`$1`$item = Get-Item `$realPath`r`n"
+            )
+            if ($patchedText -eq $scriptText) {
+              return $false
+            }
             Set-Content -Path $superNativeResolveScript -Value $patchedText -NoNewline
+            return $true
+          }
+
+          function Patch-FlutterLocalNotificationsCmakeIfNeeded {
+            if (!(Test-Path $notificationsSrcCmake)) {
+              return $false
+            }
+
+            $cmakeText = Get-Content $notificationsSrcCmake -Raw
+            if ($cmakeText.Contains('_SILENCE_EXPERIMENTAL_COROUTINE_DEPRECATION_WARNINGS')) {
+              return $false
+            }
+
+            $patchedText = $cmakeText -replace 'target_compile_definitions\(flutter_local_notifications_windows PUBLIC DART_SHARED_LIB\)', "target_compile_definitions(flutter_local_notifications_windows PUBLIC DART_SHARED_LIB)`r`ntarget_compile_definitions(flutter_local_notifications_windows PRIVATE _SILENCE_EXPERIMENTAL_COROUTINE_DEPRECATION_WARNINGS)"
+            if ($patchedText -eq $cmakeText) {
+              return $false
+            }
+
+            Write-Warning "Patching flutter_local_notifications_windows CMakeLists for newer MSVC coroutine deprecation handling..."
+            Set-Content -Path $notificationsSrcCmake -Value $patchedText -NoNewline
             return $true
           }
 
@@ -152,6 +178,9 @@ jobs:
                 $patchedSomething = $true
               }
               if (Patch-SuperNativeExtensionsSymlinkScriptIfNeeded) {
+                $patchedSomething = $true
+              }
+              if (Patch-FlutterLocalNotificationsCmakeIfNeeded) {
                 $patchedSomething = $true
               }
               if ($patchedSomething) {
