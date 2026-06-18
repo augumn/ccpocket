@@ -1463,7 +1463,7 @@ class BridgeService implements BridgeServiceBase {
   @override
   void requestSessionHistory(String sessionId) {
     final snapshot = _runtimeStore.snapshot(sessionId);
-    if (snapshot.messages.isNotEmpty && snapshot.cachedHistorySeq > 0) {
+    if (snapshot.messages.isNotEmpty) {
       _pendingHistoryDeltaSinceSeq[sessionId] = snapshot.cachedHistorySeq;
       send(
         ClientMessage.getHistoryDelta(

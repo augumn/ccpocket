@@ -843,10 +843,6 @@ class ChatSessionCubit extends Cubit<ChatSessionState> {
     ChatEntry b, {
     bool allowWeakMatch = false,
   }) {
-    if (a is UserChatEntry && b is UserChatEntry) {
-      if (_userEntriesEquivalent(a, b)) return true;
-    }
-
     final aKey = _entryStableKey(a);
     final bKey = _entryStableKey(b);
     if (aKey != null && bKey != null) return aKey == bKey;
@@ -866,30 +862,6 @@ class ChatSessionCubit extends Cubit<ChatSessionState> {
           a.imageCount == b.imageCount;
     }
     return false;
-  }
-
-  bool _userEntriesEquivalent(UserChatEntry a, UserChatEntry b) {
-    final aUuid = a.messageUuid;
-    final bUuid = b.messageUuid;
-    if (aUuid != null &&
-        aUuid.isNotEmpty &&
-        bUuid != null &&
-        bUuid.isNotEmpty) {
-      return aUuid == bUuid;
-    }
-
-    final aClientId = a.clientMessageId;
-    final bClientId = b.clientMessageId;
-    if (aClientId != null &&
-        aClientId.isNotEmpty &&
-        bClientId != null &&
-        bClientId.isNotEmpty) {
-      return aClientId == bClientId;
-    }
-
-    return (a.status != MessageStatus.sent || b.status != MessageStatus.sent) &&
-        a.text == b.text &&
-        a.imageCount == b.imageCount;
   }
 
   String? _entryStableKey(ChatEntry entry) {

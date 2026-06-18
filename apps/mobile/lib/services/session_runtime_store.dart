@@ -108,33 +108,20 @@ class SessionRuntimeStore {
       return;
     }
     if (message is HistorySnapshotMessage) {
-      final previousBySeq = <int, ServerMessage>{};
-      for (var i = 0; i < state._messages.length; i++) {
-        final seq = state._messageSeqs[i];
-        if (seq != null) {
-          previousBySeq[seq] = state._messages[i];
-        }
-      }
-
-      final nextMessages = <ServerMessage>[];
-      final nextSeqs = <int?>[];
-      for (final entry in message.entries) {
-        if (_shouldIgnore(entry.message)) continue;
-        final previous = previousBySeq[entry.seq];
-        nextMessages.add(
-          previous == null
-              ? entry.message
-              : _mergeEquivalentMessage(previous, entry.message),
-        );
-        nextSeqs.add(entry.seq);
-      }
-
       state._messages
         ..clear()
-        ..addAll(nextMessages);
+        ..addAll(
+          message.entries
+              .map((entry) => entry.message)
+              .where((m) => !_shouldIgnore(m)),
+        );
       state._messageSeqs
         ..clear()
-        ..addAll(nextSeqs);
+        ..addAll(
+          message.entries
+              .where((entry) => !_shouldIgnore(entry.message))
+              .map((entry) => entry.seq),
+        );
       state.historySeq = message.toSeq;
       state.cachedHistorySeq = message.toSeq;
       _trim(state);
@@ -272,10 +259,7 @@ class SessionRuntimeStore {
         ? -1
         : state._messageSeqs.indexOf(historySeq);
     if (existingIndex >= 0) {
-      state._messages[existingIndex] = _mergeEquivalentMessage(
-        state._messages[existingIndex],
-        message,
-      );
+      state._messages[existingIndex] = message;
       state._messageSeqs[existingIndex] = historySeq;
       return;
     }
@@ -291,46 +275,13 @@ class SessionRuntimeStore {
       (existing) => _messagesEquivalent(existing, message),
     );
     if (existingIndex >= 0) {
-      state._messages[existingIndex] = _mergeEquivalentMessage(
-        state._messages[existingIndex],
-        message,
-      );
+      state._messages[existingIndex] = message;
       return;
     }
     _upsertMessage(state, message, null);
   }
 
-  ServerMessage _mergeEquivalentMessage(
-    ServerMessage existing,
-    ServerMessage incoming,
-  ) {
-    if (existing is UserInputMessage && incoming is UserInputMessage) {
-      return UserInputMessage(
-        text: existing.text.isNotEmpty ? existing.text : incoming.text,
-        clientMessageId: existing.clientMessageId ?? incoming.clientMessageId,
-        userMessageUuid: existing.userMessageUuid ?? incoming.userMessageUuid,
-        isSynthetic: existing.isSynthetic || incoming.isSynthetic,
-        isMeta: existing.isMeta || incoming.isMeta,
-        imageCount: incoming.imageCount > 0
-            ? incoming.imageCount
-            : existing.imageCount,
-        imageUrls: incoming.imageUrls.isNotEmpty
-            ? incoming.imageUrls
-            : existing.imageUrls,
-        timestamp: existing.timestamp ?? incoming.timestamp,
-      );
-    }
-    if (existing is AssistantServerMessage && incoming is AssistantServerMessage) {
-      return _mergeAssistantServerMessage(existing, incoming);
-    }
-    return incoming;
-  }
-
   bool _messagesEquivalent(ServerMessage a, ServerMessage b) {
-    if (a is UserInputMessage && b is UserInputMessage) {
-      if (_userMessagesEquivalent(a, b)) return true;
-    }
-
     final aStableKey = _messageStableKey(a);
     final bStableKey = _messageStableKey(b);
     if (aStableKey != null && bStableKey != null) {
@@ -350,33 +301,6 @@ class SessionRuntimeStore {
     }
 
     return false;
-  }
-
-  bool _userMessagesEquivalent(UserInputMessage a, UserInputMessage b) {
-    final aUuid = a.userMessageUuid;
-    final bUuid = b.userMessageUuid;
-    if (aUuid != null &&
-        aUuid.isNotEmpty &&
-        bUuid != null &&
-        bUuid.isNotEmpty) {
-      return aUuid == bUuid;
-    }
-
-    final aClientId = a.clientMessageId;
-    final bClientId = b.clientMessageId;
-    if (aClientId != null &&
-        aClientId.isNotEmpty &&
-        bClientId != null &&
-        bClientId.isNotEmpty) {
-      return aClientId == bClientId;
-    }
-
-    return a.text == b.text &&
-        a.imageCount == b.imageCount &&
-        (aClientId == null ||
-            aClientId.isEmpty ||
-            bClientId == null ||
-            bClientId.isEmpty);
   }
 
   String? _messageStableKey(ServerMessage message) {
@@ -434,35 +358,6 @@ class SessionRuntimeStore {
           };
         })
         .join('\u0001');
-  }
-
-  int _assistantMessageRichnessScore(AssistantMessage message) {
-    var score = 0;
-    for (final content in message.content) {
-      switch (content) {
-        case TextContent(:final text):
-          score += 1000 + text.trim().length;
-        case ToolUseContent():
-          score += 100;
-        case ThinkingContent(:final thinking):
-          score += thinking.trim().length;
-      }
-    }
-    return score;
-  }
-
-  AssistantServerMessage _mergeAssistantServerMessage(
-    AssistantServerMessage existing,
-    AssistantServerMessage incoming,
-  ) {
-    final existingScore = _assistantMessageRichnessScore(existing.message);
-    final incomingScore = _assistantMessageRichnessScore(incoming.message);
-    if (incomingScore < existingScore) return existing;
-    if (incomingScore == existingScore &&
-        incoming.message.content.length < existing.message.content.length) {
-      return existing;
-    }
-    return incoming;
   }
 
   void _sortSequencedMessages(SessionRuntimeState state) {

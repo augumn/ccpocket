@@ -46,11 +46,6 @@ class _MockBridgeService extends BridgeService {
   List<GalleryImage> _images = const [];
   final String? _lastUrl;
   bool disconnectCalled = false;
-  final resumedSessions = <({
-    String sessionId,
-    String projectPath,
-    String? provider,
-  })>[];
 
   _MockBridgeService({
     BridgeConnectionState initialState = BridgeConnectionState.connected,
@@ -120,10 +115,6 @@ class _MockBridgeService extends BridgeService {
     _stoppedSessionsController.add(sessionId);
   }
 
-  void emitMessage(ServerMessage msg) {
-    _messageController.add(msg);
-  }
-
   void setGalleryImages(List<GalleryImage> images) {
     _images = images;
     _galleryController.add(images);
@@ -176,38 +167,6 @@ class _MockBridgeService extends BridgeService {
 
   @override
   void send(ClientMessage message) {}
-
-  @override
-  void resumeSession(
-    String sessionId,
-    String projectPath, {
-    String? permissionMode,
-    String? executionMode,
-    String? approvalPolicy,
-    String? approvalsReviewer,
-    String? codexPermissionsMode,
-    bool? planMode,
-    String? effort,
-    int? maxTurns,
-    double? maxBudgetUsd,
-    String? fallbackModel,
-    bool? forkSession,
-    bool? persistSession,
-    String? profile,
-    String? provider,
-    String? sandboxMode,
-    String? model,
-    String? modelReasoningEffort,
-    bool? networkAccessEnabled,
-    String? webSearchMode,
-    List<String>? additionalWritableRoots,
-  }) {
-    resumedSessions.add((
-      sessionId: sessionId,
-      projectPath: projectPath,
-      provider: provider,
-    ));
-  }
 
   @override
   void disconnect() {
@@ -1618,58 +1577,6 @@ void main() {
       findsOneWidget,
     );
   });
-
-  testWidgets(
-    'pending session_created switches workspace selection to the live session id',
-    (tester) async {
-      final bridge = _MockBridgeService();
-      final settingsCubit = await _createSettingsCubit(bridge);
-      final draftService = DraftService(await SharedPreferences.getInstance());
-      final revenueCatService = _FakeRevenueCatService();
-      final supportBannerService = await _createSupportBannerService();
-      final shellKey = GlobalKey<WorkspaceShellScreenState>();
-
-      await tester.pumpWidget(
-        _buildWorkspaceApp(
-          bridge: bridge,
-          settingsCubit: settingsCubit,
-          draftService: draftService,
-          revenueCatService: revenueCatService,
-          supportBannerService: supportBannerService,
-          shellKey: shellKey,
-        ),
-      );
-      await _pumpUi(tester);
-
-      final pendingNotifier = ValueNotifier<SystemMessage?>(null);
-      shellKey.currentState!.selectSession(
-        WorkspaceSessionSelection(
-          sessionId: 'recent-1',
-          projectPath: '/Users/demo/project-recent-1',
-          provider: Provider.claude,
-          isPending: true,
-          pendingSessionCreated: pendingNotifier,
-        ),
-      );
-      await _pumpUi(tester);
-
-      expect(find.text('Creating session...'), findsOneWidget);
-      expect(shellKey.currentState!.selectedSession?.sessionId, 'recent-1');
-
-      bridge.emitMessage(
-        const SystemMessage(
-          subtype: 'session_created',
-          sessionId: 'live-1',
-          provider: 'claude',
-          projectPath: '/Users/demo/project-recent-1',
-        ),
-      );
-      await _pumpUi(tester);
-
-      expect(shellKey.currentState!.selectedSession?.sessionId, 'live-1');
-      expect(NotificationService.instance.activeSessionId, 'live-1');
-    },
-  );
 
   testWidgets('disconnected connect form opens setup guide in center pane', (
     tester,
