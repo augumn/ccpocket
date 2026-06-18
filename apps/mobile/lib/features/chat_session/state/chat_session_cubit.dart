@@ -723,15 +723,10 @@ class ChatSessionCubit extends Cubit<ChatSessionState> {
         allowWeakMatch: true,
       );
       if (matchIndex != -1) {
-        if (matchIndex > historyCursor) {
-          merged.addAll(
-            historyEntries
-                .skip(historyCursor)
-                .take(matchIndex - historyCursor),
-          );
-        }
-        merged.add(
-          _mergeEquivalentEntry(existing, historyEntries[matchIndex]),
+        merged.addAll(
+          historyEntries
+              .skip(historyCursor)
+              .take(matchIndex - historyCursor + 1),
         );
         historyCursor = matchIndex + 1;
         lastMatchedExistingIndex = existingIndex;
@@ -988,35 +983,6 @@ class ChatSessionCubit extends Cubit<ChatSessionState> {
         .join('\u0001');
   }
 
-  int _assistantMessageRichnessScore(AssistantMessage message) {
-    var score = 0;
-    for (final content in message.content) {
-      switch (content) {
-        case TextContent(:final text):
-          score += 1000 + text.trim().length;
-        case ToolUseContent():
-          score += 100;
-        case ThinkingContent(:final thinking):
-          score += thinking.trim().length;
-      }
-    }
-    return score;
-  }
-
-  AssistantServerMessage _mergeAssistantServerMessage(
-    AssistantServerMessage existing,
-    AssistantServerMessage incoming,
-  ) {
-    final existingScore = _assistantMessageRichnessScore(existing.message);
-    final incomingScore = _assistantMessageRichnessScore(incoming.message);
-    if (incomingScore < existingScore) return existing;
-    if (incomingScore == existingScore &&
-        incoming.message.content.length < existing.message.content.length) {
-      return existing;
-    }
-    return incoming;
-  }
-
   bool _isLocalUnconfirmedUserEntry(ChatEntry entry) {
     return entry is UserChatEntry && entry.status != MessageStatus.sent;
   }
@@ -1082,15 +1048,7 @@ class ChatSessionCubit extends Cubit<ChatSessionState> {
       );
     }
     if (existing is ServerChatEntry && incoming is ServerChatEntry) {
-      final mergedMessage =
-          existing.message is AssistantServerMessage &&
-              incoming.message is AssistantServerMessage
-          ? _mergeAssistantServerMessage(
-              existing.message as AssistantServerMessage,
-              incoming.message as AssistantServerMessage,
-            )
-          : incoming.message;
-      return ServerChatEntry(mergedMessage, timestamp: existing.timestamp);
+      return ServerChatEntry(incoming.message, timestamp: existing.timestamp);
     }
     return existing;
   }
