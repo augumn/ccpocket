@@ -61,7 +61,13 @@ jobs:
       - name: Resolve release tag
         id: tag
         shell: bash
-        run: echo "tag=self-use-bridge-latest" >> "$GITHUB_OUTPUT"
+        run: |
+          set -euo pipefail
+          BRIDGE_VERSION="$(node -p "require('./packages/bridge/package.json').version")"
+          IMMUTABLE_TAG="self-use-bridge-v${BRIDGE_VERSION}-run${GITHUB_RUN_NUMBER}"
+          echo "tag=self-use-bridge-latest" >> "$GITHUB_OUTPUT"
+          echo "immutable_tag=$IMMUTABLE_TAG" >> "$GITHUB_OUTPUT"
+          echo "bridge_version=$BRIDGE_VERSION" >> "$GITHUB_OUTPUT"
 
       - name: Point release tag at this build
         env:
@@ -85,9 +91,15 @@ jobs:
           \`\`\`powershell
           npx -y https://github.com/augumn/ccpocket/releases/download/${{ steps.tag.outputs.tag }}/ccpocket-bridge-self-use.tgz ccpocket-bridge
           \`\`\`
+
+          Immutable versioned tag:
+
+          \`\`\`powershell
+          npx -y https://github.com/augumn/ccpocket/releases/download/${{ steps.tag.outputs.immutable_tag }}/ccpocket-bridge-self-use.tgz ccpocket-bridge
+          \`\`\`
           EOF
 
-      - name: Create GitHub release
+      - name: Create latest GitHub release
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ steps.tag.outputs.tag }}
@@ -103,6 +115,30 @@ jobs:
             gh release create "$TAG" \
               --target "$GITHUB_SHA" \
               --title "CC Pocket bridge self-use $TAG" \
+              --notes-file "$RUNNER_TEMP/bridge-release-notes.md" \
+              --prerelease
+          fi
+          gh release upload "$TAG" "$RUNNER_TEMP/bridge-dist/ccpocket-bridge-self-use.tgz" --clobber
+
+      - name: Create immutable versioned release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.tag.outputs.immutable_tag }}
+          BRIDGE_VERSION: ${{ steps.tag.outputs.bridge_version }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          git tag -f "$TAG" "$GITHUB_SHA"
+          git push origin "refs/tags/$TAG" --force
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release edit "$TAG" \
+              --title "CC Pocket bridge self-use v${BRIDGE_VERSION} (${TAG})" \
+              --notes-file "$RUNNER_TEMP/bridge-release-notes.md" \
+              --prerelease
+          else
+            gh release create "$TAG" \
+              --target "$GITHUB_SHA" \
+              --title "CC Pocket bridge self-use v${BRIDGE_VERSION} (${TAG})" \
               --notes-file "$RUNNER_TEMP/bridge-release-notes.md" \
               --prerelease
           fi

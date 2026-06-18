@@ -503,10 +503,14 @@ jobs:
         run: |
           set -euo pipefail
           TAG="${{ github.event.inputs.release_tag }}"
+          APP_VERSION="$(grep '^version:' apps/mobile/pubspec.yaml | head -n 1 | awk '{print $2}' | cut -d'+' -f1)"
+          IMMUTABLE_TAG="self-use-v${APP_VERSION}-run${GITHUB_RUN_NUMBER}"
           if [[ -z "$TAG" ]]; then
             TAG="self-use-latest"
           fi
           echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "immutable_tag=$IMMUTABLE_TAG" >> "$GITHUB_OUTPUT"
+          echo "app_version=$APP_VERSION" >> "$GITHUB_OUTPUT"
 
       - name: Point release tag at this build
         env:
@@ -545,10 +549,16 @@ jobs:
             echo "npx -y https://github.com/augumn/ccpocket/releases/download/${{ steps.tag.outputs.tag }}/ccpocket-bridge-self-use.tgz ccpocket-bridge"
             echo '```'
             echo
+            echo "Immutable versioned tag:"
+            echo
+            echo '```bash'
+            echo "npx -y https://github.com/augumn/ccpocket/releases/download/${{ steps.tag.outputs.immutable_tag }}/ccpocket-bridge-self-use.tgz ccpocket-bridge"
+            echo '```'
+            echo
             echo "Unselected assets remain from the previous self-use release state."
           } > release-notes.md
 
-      - name: Create or update GitHub release
+      - name: Create or update latest GitHub release
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ steps.tag.outputs.tag }}
@@ -563,6 +573,30 @@ jobs:
           else
             gh release create "$TAG" \
               --title "CC Pocket self-use $TAG" \
+              --notes-file release-notes.md \
+              --prerelease \
+              --target "$GITHUB_SHA"
+          fi
+          gh release upload "$TAG" dist/* --clobber
+
+      - name: Create or update immutable versioned release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.tag.outputs.immutable_tag }}
+          APP_VERSION: ${{ steps.tag.outputs.app_version }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          git tag -f "$TAG" "$GITHUB_SHA"
+          git push origin "refs/tags/$TAG" --force
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release edit "$TAG" \
+              --title "CC Pocket self-use v${APP_VERSION} (${TAG})" \
+              --notes-file release-notes.md \
+              --prerelease
+          else
+            gh release create "$TAG" \
+              --title "CC Pocket self-use v${APP_VERSION} (${TAG})" \
               --notes-file release-notes.md \
               --prerelease \
               --target "$GITHUB_SHA"
