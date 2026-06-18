@@ -1,11 +1,33 @@
 name: Self-use Release
 
 on:
-  push:
-    branches:
-      - codex/self-use-release
   workflow_dispatch:
     inputs:
+      build_bridge:
+        description: "Build bridge tarball"
+        required: false
+        default: true
+        type: boolean
+      build_windows:
+        description: "Build Windows x64 zip"
+        required: false
+        default: false
+        type: boolean
+      build_android:
+        description: "Build Android APK"
+        required: false
+        default: false
+        type: boolean
+      build_macos:
+        description: "Build macOS DMG"
+        required: false
+        default: false
+        type: boolean
+      build_ios:
+        description: "Build iOS no-codesign IPA"
+        required: false
+        default: false
+        type: boolean
       release_tag:
         description: "Release tag to create. Leave empty to update self-use-latest."
         required: false
@@ -16,6 +38,7 @@ permissions:
 
 jobs:
   bridge:
+    if: ${{ inputs.build_bridge }}
     name: Bridge tarball
     runs-on: ubuntu-latest
     steps:
@@ -49,6 +72,7 @@ jobs:
           path: ${{ runner.temp }}/bridge-dist/ccpocket-bridge-self-use.tgz
 
   windows:
+    if: ${{ inputs.build_windows }}
     name: Windows x64
     runs-on: windows-latest
     steps:
@@ -226,6 +250,7 @@ jobs:
           path: CC-Pocket-windows-x64-self-use.zip
 
   android:
+    if: ${{ inputs.build_android }}
     name: Android APK
     runs-on: ubuntu-latest
     steps:
@@ -271,6 +296,7 @@ jobs:
           path: ${{ runner.temp }}/android-dist/CC-Pocket-android-arm64-self-use.apk
 
   macos:
+    if: ${{ inputs.build_macos }}
     name: macOS self-use DMG
     runs-on: macos-15
     steps:
@@ -308,19 +334,11 @@ jobs:
             exit 1
           fi
 
-          # The release entitlements are appropriate for formally signed
-          # distribution, but they are too strict for this self-use ad-hoc
-          # package on another Mac. In particular, the app sandbox and empty
-          # keychain access groups can produce an app that verifies yet fails
-          # to launch after download. Strip those capabilities for the
-          # self-use artifact and keep only the capabilities needed at runtime.
           SELF_USE_ENTITLEMENTS_PATH="$RUNNER_TEMP/self-use-macos.entitlements"
           cp "$ENTITLEMENTS_PATH" "$SELF_USE_ENTITLEMENTS_PATH"
           /usr/libexec/PlistBuddy -c "Delete :com.apple.security.app-sandbox" "$SELF_USE_ENTITLEMENTS_PATH" || true
           /usr/libexec/PlistBuddy -c "Delete :keychain-access-groups" "$SELF_USE_ENTITLEMENTS_PATH" || true
 
-          # Re-sign nested binaries consistently so the bundle remains launchable
-          # after being moved to another Mac, even without Developer ID signing.
           SPARKLE_FRAMEWORK_PATH="$APP_PATH/Contents/Frameworks/Sparkle.framework"
           if [[ -d "$SPARKLE_FRAMEWORK_PATH" ]]; then
             SPARKLE_VERSION_DIR="$SPARKLE_FRAMEWORK_PATH/Versions/B"
@@ -384,6 +402,7 @@ jobs:
           path: CC-Pocket-macos-self-use.dmg
 
   ios:
+    if: ${{ inputs.build_ios }}
     name: iOS no-codesign app
     runs-on: macos-15
     steps:
@@ -430,6 +449,7 @@ jobs:
 
   release:
     name: Create GitHub release
+    if: ${{ always() && (inputs.build_bridge || inputs.build_windows || inputs.build_android || inputs.build_macos || inputs.build_ios) }}
     needs:
       - bridge
       - windows
@@ -439,6 +459,38 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Verify selected jobs succeeded
+        shell: bash
+        env:
+          BUILD_BRIDGE: ${{ inputs.build_bridge }}
+          BUILD_WINDOWS: ${{ inputs.build_windows }}
+          BUILD_ANDROID: ${{ inputs.build_android }}
+          BUILD_MACOS: ${{ inputs.build_macos }}
+          BUILD_IOS: ${{ inputs.build_ios }}
+          BRIDGE_RESULT: ${{ needs.bridge.result }}
+          WINDOWS_RESULT: ${{ needs.windows.result }}
+          ANDROID_RESULT: ${{ needs.android.result }}
+          MACOS_RESULT: ${{ needs.macos.result }}
+          IOS_RESULT: ${{ needs.ios.result }}
+        run: |
+          set -euo pipefail
+
+          check_job() {
+            local enabled="$1"
+            local result="$2"
+            local name="$3"
+            if [[ "$enabled" == "true" && "$result" != "success" ]]; then
+              echo "::error::$name was selected but finished with result '$result'"
+              exit 1
+            fi
+          }
+
+          check_job "$BUILD_BRIDGE" "$BRIDGE_RESULT" "Bridge"
+          check_job "$BUILD_WINDOWS" "$WINDOWS_RESULT" "Windows"
+          check_job "$BUILD_ANDROID" "$ANDROID_RESULT" "Android"
+          check_job "$BUILD_MACOS" "$MACOS_RESULT" "macOS"
+          check_job "$BUILD_IOS" "$IOS_RESULT" "iOS"
 
       - uses: actions/download-artifact@v4
         with:
@@ -467,25 +519,34 @@ jobs:
 
       - name: Create release notes
         shell: bash
+        env:
+          BUILD_BRIDGE: ${{ inputs.build_bridge }}
+          BUILD_WINDOWS: ${{ inputs.build_windows }}
+          BUILD_ANDROID: ${{ inputs.build_android }}
+          BUILD_MACOS: ${{ inputs.build_macos }}
+          BUILD_IOS: ${{ inputs.build_ios }}
         run: |
-          cat > release-notes.md <<'EOF'
-          Self-use build from augumn/ccpocket.
-
-          This self-use prerelease contains the Codex 429 auto-continuation bridge/client changes for testing before an upstream release.
-
-          Assets:
-          - Windows: unzip `CC-Pocket-windows-x64-self-use.zip` and run `ccpocket.exe`.
-          - macOS: ad-hoc signed self-use DMG. If Gatekeeper still blocks it, remove quarantine locally before opening.
-          - Android: release APK signed with the debug fallback key when no release keystore is configured.
-          - iOS: unsigned IPA for local re-signing. It is not installable until signed with your own certificate/provisioning profile.
-          - Bridge: npm tarball. Example:
-
-          ```bash
-          npx -y https://github.com/augumn/ccpocket/releases/download/${{ steps.tag.outputs.tag }}/ccpocket-bridge-self-use.tgz ccpocket-bridge
-          ```
-
-          This is intentionally separate from the upstream formal release workflow and does not upload to App Store, TestFlight, Google Play, Shorebird, or npm.
-          EOF
+          set -euo pipefail
+          {
+            echo "Self-use build from augumn/ccpocket."
+            echo
+            echo "This self-use prerelease was built on demand and may only refresh a subset of assets."
+            echo
+            echo "Selected assets in this run:"
+            [[ "$BUILD_BRIDGE" == "true" ]] && echo "- Bridge tarball"
+            [[ "$BUILD_WINDOWS" == "true" ]] && echo "- Windows x64 zip"
+            [[ "$BUILD_ANDROID" == "true" ]] && echo "- Android APK"
+            [[ "$BUILD_MACOS" == "true" ]] && echo "- macOS DMG"
+            [[ "$BUILD_IOS" == "true" ]] && echo "- iOS no-codesign IPA"
+            echo
+            echo "Bridge example:"
+            echo
+            echo '```bash'
+            echo "npx -y https://github.com/augumn/ccpocket/releases/download/${{ steps.tag.outputs.tag }}/ccpocket-bridge-self-use.tgz ccpocket-bridge"
+            echo '```'
+            echo
+            echo "Unselected assets remain from the previous self-use release state."
+          } > release-notes.md
 
       - name: Create or update GitHub release
         env:
