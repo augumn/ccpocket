@@ -19,6 +19,7 @@ const COMPLETION_FETCH_COOLDOWN_MS = 1000;
 const DEFAULT_CODEX_RATE_LIMIT_MAX_RETRIES = 5;
 const DEFAULT_CODEX_RATE_LIMIT_BASE_DELAY_MS = 10_000;
 const DEFAULT_CODEX_RATE_LIMIT_MAX_DELAY_MS = 10_000;
+const DEFAULT_CODEX_TURN_START_TIMEOUT_MS = 25_000;
 const DEFAULT_CODEX_RATE_LIMIT_CONTINUE_PROMPT =
   "Continue exactly where you left off. Do not repeat completed work.";
 const CODEX_RATE_LIMIT_RETRYING_ERROR_CODE = "codex_rate_limit_retrying";
@@ -445,6 +446,7 @@ export class CodexProcess extends EventEmitter<CodexProcessEvents> {
   private pendingTurnCompletion: PendingTurnCompletion | null = null;
   private pendingRateLimitInput: PendingInput | null = null;
   private pendingRateLimitTimer: ReturnType<typeof setTimeout> | null = null;
+  private pendingTurnStartTimer: ReturnType<typeof setTimeout> | null = null;
   private rateLimitRecoveryAttempt = 0;
   private pendingApprovals = new Map<string, PendingApproval>();
   private pendingUserInputs = new Map<string, PendingUserInputRequest>();
@@ -900,6 +902,7 @@ export class CodexProcess extends EventEmitter<CodexProcessEvents> {
       const line = chunk.trim();
       if (line) {
         console.log(`[codex-process] stderr: ${line}`);
+        this.handleTransportLogLine(line);
       }
     });
 
@@ -1804,6 +1807,61 @@ export class CodexProcess extends EventEmitter<CodexProcessEvents> {
     this.pendingRateLimitInput = null;
   }
 
+  private clearPendingTurnStartTimer(): void {
+    if (this.pendingTurnStartTimer) {
+      clearTimeout(this.pendingTurnStartTimer);
+      this.pendingTurnStartTimer = null;
+    }
+  }
+
+  private codexTurnStartTimeoutMs(): number {
+    const raw = process.env.BRIDGE_CODEX_TURN_START_TIMEOUT_MS?.trim();
+    if (!raw) return DEFAULT_CODEX_TURN_START_TIMEOUT_MS;
+    const parsed = Number(raw);
+    if (!Number.isFinite(parsed) || parsed <= 0) {
+      return DEFAULT_CODEX_TURN_START_TIMEOUT_MS;
+    }
+    return parsed;
+  }
+
+  private failPendingTurn(message: string): void {
+    this.clearPendingTurnStartTimer();
+    this.pendingTurnId = null;
+    this.pendingTurnCompletion = null;
+    this.emitMessage({ type: "error", message });
+    this.emitMessage({
+      type: "result",
+      subtype: "error",
+      error: message,
+      sessionId: this._threadId ?? undefined,
+    });
+    this.setStatus("idle");
+  }
+
+  private schedulePendingTurnStartTimeout(): void {
+    this.clearPendingTurnStartTimer();
+    const timeoutMs = this.codexTurnStartTimeoutMs();
+    this.pendingTurnStartTimer = setTimeout(() => {
+      if (!this.pendingTurnCompletion || this.stopped) return;
+      this.failPendingTurn(
+        `Codex did not acknowledge turn/start within ${Math.round(timeoutMs / 1000)}s. The turn was aborted so you can retry.`,
+      );
+    }, timeoutMs);
+  }
+
+  private handleTransportLogLine(line: string): void {
+    if (!this.pendingTurnCompletion) return;
+    const lowered = line.toLowerCase();
+    if (
+      lowered.includes("worker quit with fatal") ||
+      lowered.includes("transport channel closed")
+    ) {
+      this.failPendingTurn(
+        `Codex app-server failed during the turn: ${line}`,
+      );
+    }
+  }
+
   private resolveOrQueueRateLimitInput(input: PendingInput): void {
     if (this.inputResolve) {
       const resolve = this.inputResolve;
@@ -1917,6 +1975,7 @@ export class CodexProcess extends EventEmitter<CodexProcessEvents> {
 
       const completion = await new Promise<void>((resolve, reject) => {
         this.pendingTurnCompletion = { resolve, reject };
+        this.schedulePendingTurnStartTimeout();
 
         const params: Record<string, unknown> = {
           threadId: this._threadId,
@@ -1974,6 +2033,7 @@ export class CodexProcess extends EventEmitter<CodexProcessEvents> {
             }
           })
           .catch((err) => {
+            this.clearPendingTurnStartTimer();
             this.pendingTurnCompletion = null;
             reject(err instanceof Error ? err : new Error(String(err)));
           });
@@ -2297,6 +2357,7 @@ export class CodexProcess extends EventEmitter<CodexProcessEvents> {
         if (typeof turn?.id === "string") {
           this.pendingTurnId = turn.id;
         }
+        this.clearPendingTurnStartTimer();
         this.setStatus("running");
         break;
       }
@@ -2494,6 +2555,7 @@ export class CodexProcess extends EventEmitter<CodexProcessEvents> {
       });
     }
 
+    this.clearPendingTurnStartTimer();
     this.pendingTurnId = null;
 
     // Plan mode: emit synthetic plan approval and wait for user decision
@@ -3000,6 +3062,7 @@ export class CodexProcess extends EventEmitter<CodexProcessEvents> {
   }
 
   private rejectAllPending(error: Error): void {
+    this.clearPendingTurnStartTimer();
     for (const pending of this.pendingRpc.values()) {
       pending.reject(error);
     }

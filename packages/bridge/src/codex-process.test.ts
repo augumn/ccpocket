@@ -50,6 +50,7 @@ const originalCodexAppServerEnv = {
   rateLimitBaseDelay: process.env.BRIDGE_CODEX_RATE_LIMIT_BASE_DELAY_MS,
   rateLimitMaxDelay: process.env.BRIDGE_CODEX_RATE_LIMIT_MAX_DELAY_MS,
   rateLimitContinuePrompt: process.env.BRIDGE_CODEX_RATE_LIMIT_CONTINUE_PROMPT,
+  turnStartTimeout: process.env.BRIDGE_CODEX_TURN_START_TIMEOUT_MS,
 };
 
 function restoreCodexAppServerEnv(): void {
@@ -80,6 +81,10 @@ function restoreCodexAppServerEnv(): void {
   restoreEnvVar(
     "BRIDGE_CODEX_RATE_LIMIT_CONTINUE_PROMPT",
     originalCodexAppServerEnv.rateLimitContinuePrompt,
+  );
+  restoreEnvVar(
+    "BRIDGE_CODEX_TURN_START_TIMEOUT_MS",
+    originalCodexAppServerEnv.turnStartTimeout,
   );
 }
 
@@ -792,6 +797,84 @@ describe("CodexProcess (app-server)", () => {
         },
       ],
     });
+
+    proc.stop();
+  });
+
+  it("fails the turn when turn/start is never acknowledged", async () => {
+    process.env.BRIDGE_CODEX_TURN_START_TIMEOUT_MS = "1";
+
+    const proc = new CodexProcess("linux");
+    const messages: unknown[] = [];
+    proc.on("message", (msg) => messages.push(msg));
+    const child = await startReadyCodexThread(proc, "thr_turn_timeout");
+
+    proc.sendInput("hello");
+    await tick();
+
+    const turnReq = nextOutgoingRequest(child);
+    expect(turnReq.method).toBe("turn/start");
+
+    await waitForTimers();
+
+    expect(messages).toContainEqual(
+      expect.objectContaining({
+        type: "error",
+        message: expect.stringContaining(
+          "did not acknowledge turn/start within",
+        ),
+      }),
+    );
+    expect(messages).toContainEqual(
+      expect.objectContaining({
+        type: "result",
+        subtype: "error",
+        error: expect.stringContaining(
+          "did not acknowledge turn/start within",
+        ),
+      }),
+    );
+    expect(proc.status).toBe("idle");
+
+    proc.stop();
+  });
+
+  it("fails the turn when app-server logs a fatal transport error mid-turn", async () => {
+    const proc = new CodexProcess("linux");
+    const messages: unknown[] = [];
+    proc.on("message", (msg) => messages.push(msg));
+    const child = await startReadyCodexThread(proc, "thr_transport_fatal");
+
+    proc.sendInput("hello");
+    await tick();
+
+    const turnReq = nextOutgoingRequest(child);
+    expect(turnReq.method).toBe("turn/start");
+
+    child.stderr.emit(
+      "data",
+      'ERROR rmcp::transport::worker: worker quit with fatal: Transport channel closed, when Client(HttpRequest(HttpRequest("http/request failed: error sending request for url (https://developers.openai.com/mcp)")))\n',
+    );
+    await tick();
+
+    expect(messages).toContainEqual(
+      expect.objectContaining({
+        type: "error",
+        message: expect.stringContaining(
+          "Codex app-server failed during the turn",
+        ),
+      }),
+    );
+    expect(messages).toContainEqual(
+      expect.objectContaining({
+        type: "result",
+        subtype: "error",
+        error: expect.stringContaining(
+          "Codex app-server failed during the turn",
+        ),
+      }),
+    );
+    expect(proc.status).toBe("idle");
 
     proc.stop();
   });
