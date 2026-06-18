@@ -1047,9 +1047,6 @@ class ChatSessionCubit extends Cubit<ChatSessionState> {
         timestamp: existing.timestamp,
       );
     }
-    if (existing is ServerChatEntry && incoming is ServerChatEntry) {
-      return ServerChatEntry(incoming.message, timestamp: existing.timestamp);
-    }
     return existing;
   }
 
