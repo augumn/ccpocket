@@ -456,16 +456,7 @@ jobs:
 
   release:
     name: Create GitHub release
-    if: ${{ always() && (
-      (github.event_name == 'workflow_dispatch' && (inputs.build_bridge || inputs.build_windows || inputs.build_android || inputs.build_macos || inputs.build_ios)) ||
-      (github.event_name == 'push' && (
-        github.ref_name == 'self-use-run-bridge' ||
-        github.ref_name == 'self-use-run-windows' ||
-        github.ref_name == 'self-use-run-android' ||
-        github.ref_name == 'self-use-run-macos' ||
-        github.ref_name == 'self-use-run-ios'
-      ))
-    ) }}
+    if: ${{ always() && ((github.event_name == 'workflow_dispatch' && (inputs.build_bridge || inputs.build_windows || inputs.build_android || inputs.build_macos || inputs.build_ios)) || (github.event_name == 'push' && (github.ref_name == 'self-use-run-bridge' || github.ref_name == 'self-use-run-windows' || github.ref_name == 'self-use-run-android' || github.ref_name == 'self-use-run-macos' || github.ref_name == 'self-use-run-ios'))) }}
     needs:
       - bridge
       - windows
