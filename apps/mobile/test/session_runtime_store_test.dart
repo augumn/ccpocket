@@ -140,6 +140,138 @@ void main() {
       },
     );
 
+    test(
+      'unsequenced history merge keeps cached user uuid and timestamp instead of downgrading local user entry',
+      () {
+        final store = SessionRuntimeStore();
+        store.applyServerMessage(
+          's1',
+          const UserInputMessage(
+            text: 'Need UAT verification',
+            clientMessageId: 'cm-1',
+            userMessageUuid: 'codex:user-turn:1',
+            timestamp: '2026-06-18T06:00:00.000Z',
+          ),
+          historySeq: 8,
+        );
+
+        store.applyServerMessage(
+          's1',
+          const HistoryMessage(
+            messages: [
+              UserInputMessage(
+                text: 'Need UAT verification',
+                clientMessageId: 'cm-1',
+              ),
+            ],
+          ),
+        );
+
+        final messages = store.messages('s1');
+        expect(messages, hasLength(1));
+        final user = messages.single as UserInputMessage;
+        expect(user.text, 'Need UAT verification');
+        expect(user.clientMessageId, 'cm-1');
+        expect(user.userMessageUuid, 'codex:user-turn:1');
+        expect(user.timestamp, '2026-06-18T06:00:00.000Z');
+      },
+    );
+
+    test(
+      'unsequenced history merge does not downgrade assistant text into thinking-only content',
+      () {
+        final store = SessionRuntimeStore();
+        store.applyServerMessage(
+          's1',
+          AssistantServerMessage(
+            message: AssistantMessage(
+              id: 'assistant-1',
+              role: 'assistant',
+              content: const [
+                TextContent(text: 'Freight result explanation stays visible.'),
+              ],
+              model: 'codex',
+            ),
+          ),
+          historySeq: 9,
+        );
+
+        store.applyServerMessage(
+          's1',
+          HistoryMessage(
+            messages: [
+              AssistantServerMessage(
+                message: AssistantMessage(
+                  id: 'assistant-1',
+                  role: 'assistant',
+                  content: const [
+                    ThinkingContent(thinking: 'Finalizing report details'),
+                  ],
+                  model: 'codex',
+                ),
+              ),
+            ],
+          ),
+        );
+
+        final messages = store.messages('s1');
+        expect(messages, hasLength(1));
+        final assistant = messages.single as AssistantServerMessage;
+        final texts = assistant.message.content
+            .whereType<TextContent>()
+            .map((part) => part.text)
+            .join('\n');
+        expect(texts, contains('Freight result explanation stays visible.'));
+        expect(assistant.message.content.whereType<ThinkingContent>(), isEmpty);
+      },
+    );
+
+    test(
+      'sequenced updates with the same history seq do not downgrade assistant text into thinking-only content',
+      () {
+        final store = SessionRuntimeStore();
+        store.applyServerMessage(
+          's1',
+          AssistantServerMessage(
+            message: AssistantMessage(
+              id: 'assistant-seq-1',
+              role: 'assistant',
+              content: const [
+                TextContent(text: 'Token usage summary remains visible.'),
+              ],
+              model: 'codex',
+            ),
+          ),
+          historySeq: 12,
+        );
+
+        store.applyServerMessage(
+          's1',
+          AssistantServerMessage(
+            message: AssistantMessage(
+              id: 'assistant-seq-1',
+              role: 'assistant',
+              content: const [
+                ThinkingContent(thinking: 'Summarizing token totals'),
+              ],
+              model: 'codex',
+            ),
+          ),
+          historySeq: 12,
+        );
+
+        final messages = store.messages('s1');
+        expect(messages, hasLength(1));
+        final assistant = messages.single as AssistantServerMessage;
+        final texts = assistant.message.content
+            .whereType<TextContent>()
+            .map((part) => part.text)
+            .join('\n');
+        expect(texts, contains('Token usage summary remains visible.'));
+        expect(assistant.message.content.whereType<ThinkingContent>(), isEmpty);
+      },
+    );
+
     test('history delta appends newer sequenced entries', () {
       final store = SessionRuntimeStore();
       store.applyServerMessage(
@@ -224,6 +356,83 @@ void main() {
       expect(store.latestHistorySeq('s1'), 7);
       expect(store.cachedHistorySeq('s1'), 7);
     });
+
+    test(
+      'history snapshot preserves richer cached user and assistant content for matching seq entries',
+      () {
+        final store = SessionRuntimeStore();
+        store.applyServerMessage(
+          's1',
+          const UserInputMessage(
+            text: 'Need the exact token cost.',
+            clientMessageId: 'cm-snap-1',
+            userMessageUuid: 'codex:user-turn:snap-1',
+            timestamp: '2026-06-18T06:00:00.000Z',
+          ),
+          historySeq: 1,
+        );
+        store.applyServerMessage(
+          's1',
+          AssistantServerMessage(
+            message: AssistantMessage(
+              id: 'assistant-snap-1',
+              role: 'assistant',
+              content: const [
+                TextContent(text: 'The exact token cost is 12345.'),
+              ],
+              model: 'codex',
+            ),
+          ),
+          historySeq: 2,
+        );
+
+        store.applyServerMessage(
+          's1',
+          const HistorySnapshotMessage(
+            fromSeq: 1,
+            toSeq: 2,
+            reason: 'refresh',
+            entries: [
+              HistoryEntry(
+                seq: 1,
+                message: UserInputMessage(
+                  text: 'Need the exact token cost.',
+                  clientMessageId: 'cm-snap-1',
+                ),
+              ),
+              HistoryEntry(
+                seq: 2,
+                message: AssistantServerMessage(
+                  message: AssistantMessage(
+                    id: 'assistant-snap-1',
+                    role: 'assistant',
+                    content: [
+                      ThinkingContent(thinking: 'Calculating token totals'),
+                    ],
+                    model: 'codex',
+                  ),
+                ),
+              ),
+            ],
+          ),
+        );
+
+        final messages = store.messages('s1');
+        expect(messages, hasLength(2));
+
+        final user = messages[0] as UserInputMessage;
+        expect(user.userMessageUuid, 'codex:user-turn:snap-1');
+        expect(user.timestamp, '2026-06-18T06:00:00.000Z');
+
+        final assistant = messages[1] as AssistantServerMessage;
+        final texts = assistant.message.content
+            .whereType<TextContent>()
+            .map((part) => part.text)
+            .join('\n');
+        expect(texts, contains('The exact token cost is 12345.'));
+        expect(assistant.message.content.whereType<ThinkingContent>(), isEmpty);
+      },
+    );
 
     test('tracks latest and cached history sequence separately', () {
       final store = SessionRuntimeStore();

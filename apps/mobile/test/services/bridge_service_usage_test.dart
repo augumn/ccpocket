@@ -297,9 +297,7 @@ void main() {
       bridge.dispose();
     });
 
-    test(
-      'requestSessionHistory falls back when delta is unsupported',
-      () async {
+    test('requestSessionHistory requests full history without cached delta base', () async {
         final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
         final socketReady = Completer<WebSocket>();
 
@@ -323,29 +321,123 @@ void main() {
         await Future<void>.delayed(const Duration(milliseconds: 50));
 
         bridge.requestSessionHistory('s1');
-        socket.add(
-          jsonEncode({
-            'type': 'error',
-            'errorCode': 'unsupported_message',
-            'message': 'get_history_delta',
-          }),
-        );
         await Future<void>.delayed(const Duration(milliseconds: 50));
 
         final requests = outgoing
             .map(
               (message) => jsonDecode(message.toJson()) as Map<String, dynamic>,
             )
+            .where((request) => request['type'] != 'client_capabilities')
             .toList();
-        expect(
-          requests.any(
-            (request) =>
-                request['type'] == 'get_history_delta' &&
-                request['sessionId'] == 's1',
-          ),
-          isTrue,
+        expect(requests, [
+          {'type': 'get_history', 'sessionId': 's1'},
+        ]);
+
+        bridge.disconnect();
+        await socket.close();
+        await server.close(force: true);
+        bridge.dispose();
+      },
+    );
+
+    test(
+      'history snapshot does not downgrade richer cached assistant and user entries',
+      () async {
+        final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+        final socketReady = Completer<WebSocket>();
+
+        server.transform(WebSocketTransformer()).listen((socket) {
+          socketReady.complete(socket);
+        });
+
+        final bridge = BridgeService();
+        bridge.connect('ws://127.0.0.1:${server.port}');
+
+        final socket = await socketReady.future;
+        socket.add(
+          jsonEncode({
+            'type': 'user_input',
+            'sessionId': 's1',
+            'historySeq': 1,
+            'text': 'Need the exact token cost.',
+            'clientMessageId': 'cm-bridge-snap-1',
+            'userMessageUuid': 'codex:user-turn:bridge-snap-1',
+            'timestamp': '2026-06-18T06:00:00.000Z',
+          }),
         );
-        expect(requests.last, {'type': 'get_history', 'sessionId': 's1'});
+        socket.add(
+          jsonEncode({
+            'type': 'assistant',
+            'sessionId': 's1',
+            'historySeq': 2,
+            'message': {
+              'id': 'assistant-bridge-snap-1',
+              'role': 'assistant',
+              'content': [
+                {
+                  'type': 'text',
+                  'text': 'The exact token cost is 12345.',
+                },
+              ],
+              'model': 'gpt-5.5',
+            },
+          }),
+        );
+        await Future<void>.delayed(const Duration(milliseconds: 50));
+
+        socket.add(
+          jsonEncode({
+            'type': 'history_snapshot',
+            'sessionId': 's1',
+            'fromSeq': 1,
+            'toSeq': 2,
+            'reason': 'refresh',
+            'messages': [
+              {
+                'seq': 1,
+                'message': {
+                  'type': 'user_input',
+                  'text': 'Need the exact token cost.',
+                  'clientMessageId': 'cm-bridge-snap-1',
+                },
+              },
+              {
+                'seq': 2,
+                'message': {
+                  'type': 'assistant',
+                  'message': {
+                    'id': 'assistant-bridge-snap-1',
+                    'role': 'assistant',
+                    'content': [
+                      {
+                        'type': 'thinking',
+                        'thinking': 'Calculating token totals',
+                      },
+                    ],
+                    'model': 'gpt-5.5',
+                  },
+                },
+              },
+            ],
+          }),
+        );
+        await Future<void>.delayed(const Duration(milliseconds: 50));
+
+        final messages = bridge.cachedSessionMessages('s1');
+        expect(messages, hasLength(2));
+
+        final user = messages[0] as UserInputMessage;
+        expect(user.userMessageUuid, 'codex:user-turn:bridge-snap-1');
+        expect(user.timestamp, '2026-06-18T06:00:00.000Z');
+
+        final assistant = messages[1] as AssistantServerMessage;
+        final texts = assistant.message.content
+            .whereType<TextContent>()
+            .map((part) => part.text)
+            .join('\n');
+        expect(texts, contains('The exact token cost is 12345.'));
+        expect(assistant.message.content.whereType<ThinkingContent>(), isEmpty);
+        expect(bridge.cachedSessionHistorySeq('s1'), 2);
 
         bridge.disconnect();
         await socket.close();

@@ -367,6 +367,25 @@ class _SessionListScreenState extends State<SessionListScreen>
             // Chat screen may not have its listener yet — store for replay.
             _pendingNavigation = false;
             _pendingSessionCreated.value = msg;
+            if (widget.embedded) {
+              widget.onSelectWorkspaceSession?.call(
+                WorkspaceSessionSelection(
+                  sessionId: msg.sessionId!,
+                  projectPath: msg.projectPath ?? _pendingResumeProjectPath,
+                  gitBranch: msg.worktreeBranch ?? _pendingResumeGitBranch,
+                  worktreePath: msg.worktreePath,
+                  isPending: true,
+                  provider: Provider.values
+                      .where((p) => p.value == msg.provider)
+                      .firstOrNull,
+                  permissionMode: msg.permissionMode,
+                  sandboxMode: msg.sandboxMode,
+                  approvalPolicy: msg.approvalPolicy,
+                  approvalsReviewer: msg.approvalsReviewer,
+                  pendingSessionCreated: _pendingSessionCreated,
+                ),
+              );
+            }
           } else {
             _navigateToChat(
               msg.sessionId!,
@@ -1480,6 +1499,23 @@ class _SessionListScreenState extends State<SessionListScreen>
     final resumeProjectPath = session.resumeCwd ?? session.projectPath;
     _pendingResumeProjectPath = resumeProjectPath;
     _pendingResumeGitBranch = session.gitBranch;
+    if (bridge.isConnected) {
+      _pendingNavigation = true;
+      _navigateToChat(
+        session.sessionId,
+        projectPath: resumeProjectPath,
+        gitBranch: session.gitBranch,
+        worktreePath: session.resumeCwd,
+        isPending: true,
+        provider: Provider.values
+            .where((p) => p.value == session.provider)
+            .firstOrNull,
+        permissionMode: session.permissionMode,
+        sandboxMode: session.codexSandboxMode,
+        approvalPolicy: session.codexApprovalPolicy,
+        approvalsReviewer: session.codexApprovalsReviewer,
+      );
+    }
 
     final isCodex = session.provider == Provider.codex.value;
     final useCodexProfile =
@@ -1632,6 +1668,25 @@ class _SessionListScreenState extends State<SessionListScreen>
     final resumeProjectPath = session.resumeCwd ?? session.projectPath;
     _pendingResumeProjectPath = resumeProjectPath;
     _pendingResumeGitBranch = session.gitBranch;
+    if (bridge.isConnected) {
+      _pendingNavigation = true;
+      _navigateToChat(
+        session.sessionId,
+        projectPath: resumeProjectPath,
+        gitBranch: session.gitBranch,
+        worktreePath: session.resumeCwd,
+        isPending: true,
+        provider: edited.provider,
+        permissionMode: edited.permissionMode.value,
+        sandboxMode: edited.sandboxMode?.value,
+        approvalPolicy: edited.provider == Provider.codex
+            ? edited.codexApprovalPolicy.value
+            : null,
+        approvalsReviewer: edited.provider == Provider.codex
+            ? edited.codexApprovalsReviewer
+            : null,
+      );
+    }
 
     final isCodex = edited.provider == Provider.codex;
     final useCodexProfile =

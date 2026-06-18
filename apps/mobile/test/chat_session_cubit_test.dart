@@ -943,6 +943,96 @@ void main() {
     );
 
     test(
+      'cached user entry survives a lagging history replace with the same client message id',
+      () async {
+        mockBridge.cachedMessagesBySession['s1'] = [
+          const UserInputMessage(
+            text: 'Please verify UAT data again.',
+            clientMessageId: 'cm-keep-user',
+            userMessageUuid: 'codex:user-turn:keep-user',
+            timestamp: '2026-06-18T06:00:00.000Z',
+          ),
+        ];
+
+        final cubit = createCubit('s1', provider: Provider.codex);
+        addTearDown(cubit.close);
+        await Future.microtask(() {});
+
+        expect(cubit.state.entries.whereType<UserChatEntry>(), hasLength(1));
+
+        mockBridge.emitMessage(
+          const HistoryMessage(
+            messages: [
+              UserInputMessage(
+                text: 'Please verify UAT data again.',
+                clientMessageId: 'cm-keep-user',
+              ),
+            ],
+          ),
+          sessionId: 's1',
+        );
+        await Future<void>.delayed(const Duration(milliseconds: 10));
+
+        final users = cubit.state.entries.whereType<UserChatEntry>().toList();
+        expect(users, hasLength(1));
+        expect(users.single.text, 'Please verify UAT data again.');
+        expect(users.single.clientMessageId, 'cm-keep-user');
+        expect(users.single.messageUuid, 'codex:user-turn:keep-user');
+      },
+    );
+
+    test(
+      'history replace does not collapse repeated sent user messages when lagging history omits ids',
+      () async {
+        final cubit = createCubit('s1', provider: Provider.codex);
+        addTearDown(cubit.close);
+        mockBridge.emitMessage(
+          const StatusMessage(status: ProcessStatus.idle),
+          sessionId: 's1',
+        );
+        await Future.microtask(() {});
+
+        mockBridge.emitMessage(
+          const UserInputMessage(
+            text: 'continue',
+            clientMessageId: 'cm-repeat-1',
+            userMessageUuid: 'codex:user-turn:repeat-1',
+            timestamp: '2026-06-18T06:00:00.000Z',
+          ),
+          sessionId: 's1',
+        );
+        mockBridge.emitMessage(
+          const UserInputMessage(
+            text: 'continue',
+            clientMessageId: 'cm-repeat-2',
+            userMessageUuid: 'codex:user-turn:repeat-2',
+            timestamp: '2026-06-18T06:01:00.000Z',
+          ),
+          sessionId: 's1',
+        );
+        await Future<void>.delayed(const Duration(milliseconds: 10));
+
+        mockBridge.emitMessage(
+          const HistoryMessage(
+            messages: [
+              UserInputMessage(text: 'continue'),
+              UserInputMessage(text: 'continue'),
+            ],
+          ),
+          sessionId: 's1',
+        );
+        await Future<void>.delayed(const Duration(milliseconds: 10));
+
+        final users = cubit.state.entries.whereType<UserChatEntry>().toList();
+        expect(users, hasLength(2));
+        expect(
+          users.map((entry) => entry.messageUuid),
+          containsAll(['codex:user-turn:repeat-1', 'codex:user-turn:repeat-2']),
+        );
+      },
+    );
+
+    test(
       'history replace does not downgrade complete assistant text into thinking-only content',
       () async {
         final cubit = createCubit('s1', provider: Provider.codex);
@@ -1563,6 +1653,78 @@ void main() {
         'Cached response',
       );
     });
+
+    test(
+      'restored cached runtime keeps richer entries when the next history replay is weaker',
+      () async {
+        mockBridge.cachedMessagesBySession['s1'] = [
+          const UserInputMessage(
+            text: 'Need the exact token cost.',
+            clientMessageId: 'cm-restore-1',
+            userMessageUuid: 'codex:user-turn:restore-1',
+            timestamp: '2026-06-18T06:00:00.000Z',
+          ),
+          AssistantServerMessage(
+            message: AssistantMessage(
+              id: 'cached-assistant-restore-1',
+              role: 'assistant',
+              content: const [
+                TextContent(text: 'The exact token cost is 12345.'),
+              ],
+              model: 'codex',
+            ),
+          ),
+        ];
+
+        final cubit = createCubit('s1', provider: Provider.codex);
+        addTearDown(cubit.close);
+        await Future.microtask(() {});
+
+        mockBridge.emitMessage(
+          const HistoryMessage(
+            messages: [
+              UserInputMessage(
+                text: 'Need the exact token cost.',
+                clientMessageId: 'cm-restore-1',
+              ),
+              AssistantServerMessage(
+                message: AssistantMessage(
+                  id: 'cached-assistant-restore-1',
+                  role: 'assistant',
+                  content: [
+                    ThinkingContent(thinking: 'Calculating token totals'),
+                  ],
+                  model: 'codex',
+                ),
+              ),
+            ],
+          ),
+          sessionId: 's1',
+        );
+        await Future<void>.delayed(const Duration(milliseconds: 10));
+
+        final users = cubit.state.entries.whereType<UserChatEntry>().toList();
+        expect(users, hasLength(1));
+        expect(users.single.messageUuid, 'codex:user-turn:restore-1');
+
+        final assistantEntries = cubit.state.entries
+            .whereType<ServerChatEntry>()
+            .where((entry) => entry.message is AssistantServerMessage)
+            .toList();
+        expect(assistantEntries, hasLength(1));
+        final assistantMessage =
+            assistantEntries.single.message as AssistantServerMessage;
+        final textParts = assistantMessage.message.content
+            .whereType<TextContent>()
+            .map((content) => content.text)
+            .join('\n');
+        expect(textParts, contains('The exact token cost is 12345.'));
+        expect(
+          assistantMessage.message.content.whereType<ThinkingContent>(),
+          isEmpty,
+        );
+      },
+    );
 
     test('restores cached queue state without visible ack entries', () {
       mockBridge.cachedMessagesBySession['s1'] = [
