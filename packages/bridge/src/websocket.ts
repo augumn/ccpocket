@@ -8,6 +8,7 @@ import { promisify } from "node:util";
 import { WebSocketServer, WebSocket } from "ws";
 import {
   SessionManager,
+  MAX_HISTORY_PER_SESSION,
   type HistoryEntry,
   type SessionInfo,
   type WorktreeOptions,
@@ -72,7 +73,7 @@ import {
   unstageHunks,
   gitCommit,
   gitPush,
-  listProjectFilesAndDirectories,
+  listProjectFilesAndDirectoriesForClient,
   listBranches,
   createBranch,
   checkoutBranch,
@@ -99,8 +100,14 @@ import {
   resolvePlatformPath,
   resolvePlatformPathFrom,
 } from "./path-utils.js";
+import {
+  deriveCodexPermissionsMode,
+  normalizeCodexPermissionsMode,
+  withDerivedCodexPermissionsMode,
+} from "./codex-permissions.js";
 
 type SystemServerMessage = Extract<ServerMessage, { type: "system" }>;
+type InputClientMessage = Extract<ClientMessage, { type: "input" }>;
 type ClaudePermissionMode =
   | "default"
   | "auto"
@@ -131,6 +138,9 @@ const FALLBACK_CLAUDE_MODEL_EFFORTS: Record<string, ClaudeEffortLevel[]> = {
 };
 
 const FALLBACK_CODEX_MODELS: string[] = [
+  "gpt-5.6-sol",
+  "gpt-5.6-terra",
+  "gpt-5.6-luna",
   "gpt-5.5",
   "gpt-5.4",
   "gpt-5.4-mini",
@@ -139,6 +149,34 @@ const FALLBACK_CODEX_MODELS: string[] = [
 ];
 
 const FALLBACK_CODEX_REASONING_EFFORTS = ["low", "medium", "high", "xhigh"];
+const FALLBACK_GPT_5_6_REASONING_EFFORTS = [
+  ...FALLBACK_CODEX_REASONING_EFFORTS,
+  "max",
+];
+const FALLBACK_GPT_5_6_ULTRA_REASONING_EFFORTS = [
+  ...FALLBACK_GPT_5_6_REASONING_EFFORTS,
+  "ultra",
+];
+
+function fallbackCodexReasoningEfforts(model: string): string[] {
+  if (model === "gpt-5.6-sol" || model === "gpt-5.6-terra") {
+    return FALLBACK_GPT_5_6_ULTRA_REASONING_EFFORTS;
+  }
+  if (model === "gpt-5.6-luna") return FALLBACK_GPT_5_6_REASONING_EFFORTS;
+  return FALLBACK_CODEX_REASONING_EFFORTS;
+}
+
+function fallbackCodexServiceTiers(model: string): string[] {
+  return [
+    "gpt-5.6-sol",
+    "gpt-5.6-terra",
+    "gpt-5.6-luna",
+    "gpt-5.5",
+    "gpt-5.4",
+  ].includes(model)
+    ? ["fast"]
+    : [];
+}
 
 const CODEX_RECENT_THREAD_SOURCE_KINDS: CodexThreadSourceKind[] = [
   "cli",
@@ -150,8 +188,14 @@ const CODEX_USER_TURN_UUID_RE = /^codex:user-turn:(\d+)$/;
 
 const OPT_IN_SERVER_MESSAGES = new Set<string>([
   "conversation_queue",
+  "goal_state",
+  "guardian_approval",
   "prompt_history_status",
 ]);
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
 
 function parseCodexUserTurnOrdinal(uuid: string | undefined): number | null {
   if (!uuid) return null;
@@ -334,20 +378,6 @@ interface CodexPermissionSettings {
   sandboxMode?: CodexStartOptions["sandboxMode"];
 }
 
-function normalizeCodexPermissionsMode(
-  value?: string,
-): CodexPermissionsMode | undefined {
-  switch (value) {
-    case "default":
-    case "autoReview":
-    case "fullAccess":
-    case "custom":
-      return value;
-    default:
-      return undefined;
-  }
-}
-
 function sanitizeCodexModel(model: unknown): string | undefined {
   if (typeof model !== "string") return undefined;
   const normalized = model.trim();
@@ -383,26 +413,6 @@ function codexSettingsFromPermissionsMode(
     case "custom":
       return { codexPermissionsMode: mode };
   }
-}
-
-function inferCodexPermissionsMode(params: {
-  approvalPolicy?: string;
-  approvalsReviewer?: string;
-  sandboxMode?: string;
-}): CodexPermissionsMode | undefined {
-  const approvalPolicy = params.approvalPolicy;
-  const approvalsReviewer = params.approvalsReviewer ?? "user";
-  const sandboxMode = params.sandboxMode;
-  if (approvalPolicy === "never" && sandboxMode === "danger-full-access") {
-    return "fullAccess";
-  }
-  if (approvalPolicy === "on-request" && sandboxMode === "workspace-write") {
-    return approvalsReviewer === "auto_review" ||
-      approvalsReviewer === "guardian_subagent"
-      ? "autoReview"
-      : "default";
-  }
-  return undefined;
 }
 
 function errorMessageOf(err: unknown): string {
@@ -512,6 +522,47 @@ function envFlagEnabled(name: string): boolean {
   return value === "1" || value === "true" || value === "yes" || value === "on";
 }
 
+const MAX_TIMER_DELAY_MS = 2_147_483_647;
+
+function positiveEnvInt(name: string, fallback: number): number {
+  const raw = process.env[name]?.trim();
+  if (!raw) return fallback;
+  const value = Number(raw);
+  return Number.isSafeInteger(value) && value > 0 ? value : fallback;
+}
+
+function nonNegativeEnvInt(name: string, fallback: number): number {
+  const raw = process.env[name]?.trim();
+  if (!raw) return fallback;
+  const value = Number(raw);
+  return Number.isSafeInteger(value) &&
+    value >= 0 &&
+    value <= MAX_TIMER_DELAY_MS
+    ? value
+    : fallback;
+}
+
+function normalizePositiveLimit(
+  value: number | undefined,
+  fallback: number,
+): number {
+  return value !== undefined && Number.isSafeInteger(value) && value > 0
+    ? value
+    : fallback;
+}
+
+function normalizeNonNegativeLimit(
+  value: number | undefined,
+  fallback: number,
+): number {
+  return value !== undefined &&
+    Number.isSafeInteger(value) &&
+    value >= 0 &&
+    value <= MAX_TIMER_DELAY_MS
+    ? value
+    : fallback;
+}
+
 function codexThreadToRecentSession(
   thread: CodexThreadSummary,
   indexed?: CodexSessionIndexMetadata,
@@ -579,11 +630,36 @@ export interface BridgeServerOptions {
   promptHistoryBackup?: PromptHistoryBackupStore;
   promptHistoryStore?: PromptHistoryStore;
   platform?: NodeJS.Platform;
+  fileListMaxEntries?: number;
+  fileListMaxBytes?: number;
+  deltaBatchMs?: number;
+  deltaBatchMaxChars?: number;
+}
+
+type DeltaServerMessage = Extract<
+  ServerMessage,
+  { type: "stream_delta" | "thinking_delta" }
+>;
+
+interface DeltaBatch {
+  messages: DeltaServerMessage[];
+  timer: NodeJS.Timeout;
+  charCount: number;
+}
+
+interface DeltaTextChunk {
+  text: string;
+  charCount: number;
 }
 
 export class BridgeWebSocketServer {
   private static readonly MAX_DEBUG_EVENTS = 800;
   private static readonly MAX_HISTORY_SUMMARY_ITEMS = 300;
+  private static readonly CONNECT_METADATA_REFRESH_COOLDOWN_MS = 5 * 60 * 1000;
+  private static readonly DEFAULT_FILE_LIST_MAX_ENTRIES = 5000;
+  private static readonly DEFAULT_FILE_LIST_MAX_BYTES = 512 * 1024;
+  private static readonly DEFAULT_DELTA_BATCH_MS = 100;
+  private static readonly DEFAULT_DELTA_BATCH_MAX_CHARS = 4096;
 
   private wss: WebSocketServer;
   private sessionManager: SessionManager;
@@ -605,7 +681,8 @@ export class BridgeWebSocketServer {
   private archiveStore: ArchiveStore;
   private codexProfiles: string[] = [];
   private defaultCodexProfile: string | undefined;
-  private codexProfilesRequest: Promise<void> | null = null;
+  private codexMetadataRequest: Promise<void> | null = null;
+  private lastConnectMetadataRefreshAt: number | null = null;
   private claudeModels: string[] = FALLBACK_CLAUDE_MODELS;
   private claudeModelEfforts: Record<string, ClaudeEffortLevel[]> = {
     ...FALLBACK_CLAUDE_MODEL_EFFORTS,
@@ -616,10 +693,15 @@ export class BridgeWebSocketServer {
     Object.fromEntries(
       FALLBACK_CODEX_MODELS.map((model) => [
         model,
-        FALLBACK_CODEX_REASONING_EFFORTS,
+        fallbackCodexReasoningEfforts(model),
       ]),
     );
-  private codexModelsRequest: Promise<void> | null = null;
+  private codexModelServiceTiers: Record<string, string[]> = Object.fromEntries(
+    FALLBACK_CODEX_MODELS.map((model) => [
+      model,
+      fallbackCodexServiceTiers(model),
+    ]),
+  );
   /** FCM token → push notification locale */
   private tokenLocales = new Map<string, PushLocale>();
   private tokenPrivacyMode = new Map<string, boolean>();
@@ -627,8 +709,17 @@ export class BridgeWebSocketServer {
     "BRIDGE_FAIL_SET_PERMISSION_MODE",
   );
   private failSetSandboxMode = envFlagEnabled("BRIDGE_FAIL_SET_SANDBOX_MODE");
+  private readonly fileListMaxEntries: number;
+  private readonly fileListMaxBytes: number;
+  private readonly deltaBatchMs: number;
+  private readonly deltaBatchMaxChars: number;
+  private deltaBatches = new Map<WebSocket, Map<string, DeltaBatch>>();
   private platform: NodeJS.Platform;
   private clientSupportedServerMessages = new WeakMap<WebSocket, Set<string>>();
+  private pendingClaudeResumeInputs = new WeakMap<
+    WebSocket,
+    Map<string, InputClientMessage[]>
+  >();
 
   constructor(options: BridgeServerOptions) {
     const {
@@ -644,6 +735,10 @@ export class BridgeWebSocketServer {
       promptHistoryBackup,
       promptHistoryStore,
       platform,
+      fileListMaxEntries,
+      fileListMaxBytes,
+      deltaBatchMs,
+      deltaBatchMaxChars,
     } = options;
     this.apiKey = apiKey ?? null;
     this.allowedDirs = allowedDirs ?? [];
@@ -657,6 +752,34 @@ export class BridgeWebSocketServer {
     this.promptHistoryBackup = promptHistoryBackup ?? null;
     this.promptHistoryStore = promptHistoryStore ?? null;
     this.platform = platform ?? process.platform;
+    this.fileListMaxEntries = normalizePositiveLimit(
+      fileListMaxEntries,
+      positiveEnvInt(
+        "BRIDGE_FILE_LIST_MAX_ENTRIES",
+        BridgeWebSocketServer.DEFAULT_FILE_LIST_MAX_ENTRIES,
+      ),
+    );
+    this.fileListMaxBytes = normalizePositiveLimit(
+      fileListMaxBytes,
+      positiveEnvInt(
+        "BRIDGE_FILE_LIST_MAX_BYTES",
+        BridgeWebSocketServer.DEFAULT_FILE_LIST_MAX_BYTES,
+      ),
+    );
+    this.deltaBatchMs = normalizeNonNegativeLimit(
+      deltaBatchMs,
+      nonNegativeEnvInt(
+        "BRIDGE_DELTA_BATCH_MS",
+        BridgeWebSocketServer.DEFAULT_DELTA_BATCH_MS,
+      ),
+    );
+    this.deltaBatchMaxChars = normalizePositiveLimit(
+      deltaBatchMaxChars,
+      positiveEnvInt(
+        "BRIDGE_DELTA_BATCH_MAX_CHARS",
+        BridgeWebSocketServer.DEFAULT_DELTA_BATCH_MAX_CHARS,
+      ),
+    );
 
     this.archiveStore = new ArchiveStore();
     void this.debugTraceStore.init().catch((err) => {
@@ -803,6 +926,9 @@ export class BridgeWebSocketServer {
       pluginMetadata,
       sourceSessionId,
     } = params;
+    const derivedCodexSettings = provider === "codex"
+      ? withDerivedCodexPermissionsMode(session?.codexSettings)
+      : session?.codexSettings;
 
     const msg: SystemServerMessage = {
       type: "system",
@@ -820,16 +946,16 @@ export class BridgeWebSocketServer {
               | "plan",
           }
         : {}),
-      ...((approvalsReviewer ?? session?.codexSettings?.approvalsReviewer)
+      ...((approvalsReviewer ?? derivedCodexSettings?.approvalsReviewer)
         ? {
             approvalsReviewer:
-              approvalsReviewer ?? session?.codexSettings?.approvalsReviewer,
+              approvalsReviewer ?? derivedCodexSettings?.approvalsReviewer,
           }
         : {}),
-      ...((codexPermissionsMode ?? session?.codexSettings?.codexPermissionsMode)
+      ...((codexPermissionsMode ?? derivedCodexSettings?.codexPermissionsMode)
         ? {
             codexPermissionsMode: (codexPermissionsMode ??
-              session?.codexSettings?.codexPermissionsMode) as
+              derivedCodexSettings?.codexPermissionsMode) as
               | "default"
               | "autoReview"
               | "fullAccess"
@@ -911,32 +1037,35 @@ export class BridgeWebSocketServer {
       ...(sourceSessionId ? { sourceSessionId } : {}),
     };
 
-    if (provider === "codex" && session?.codexSettings) {
-      if (session.codexSettings.model !== undefined) {
-        msg.model = session.codexSettings.model;
+    if (provider === "codex" && derivedCodexSettings) {
+      if (derivedCodexSettings.model !== undefined) {
+        msg.model = derivedCodexSettings.model;
       }
-      if (session.codexSettings.approvalPolicy !== undefined) {
-        msg.approvalPolicy = session.codexSettings.approvalPolicy;
+      if (derivedCodexSettings.approvalPolicy !== undefined) {
+        msg.approvalPolicy = derivedCodexSettings.approvalPolicy;
       }
-      if (session.codexSettings.codexPermissionsMode !== undefined) {
-        msg.codexPermissionsMode = session.codexSettings.codexPermissionsMode as
+      if (derivedCodexSettings.codexPermissionsMode !== undefined) {
+        msg.codexPermissionsMode = derivedCodexSettings.codexPermissionsMode as
           | "default"
           | "autoReview"
           | "fullAccess"
           | "custom";
       }
-      if (session.codexSettings.modelReasoningEffort !== undefined) {
-        msg.modelReasoningEffort = session.codexSettings.modelReasoningEffort;
+      if (derivedCodexSettings.modelReasoningEffort !== undefined) {
+        msg.modelReasoningEffort = derivedCodexSettings.modelReasoningEffort;
       }
-      if (session.codexSettings.networkAccessEnabled !== undefined) {
-        msg.networkAccessEnabled = session.codexSettings.networkAccessEnabled;
+      if (derivedCodexSettings.serviceTier !== undefined) {
+        msg.serviceTier = derivedCodexSettings.serviceTier;
       }
-      if (session.codexSettings.webSearchMode !== undefined) {
-        msg.webSearchMode = session.codexSettings.webSearchMode;
+      if (derivedCodexSettings.networkAccessEnabled !== undefined) {
+        msg.networkAccessEnabled = derivedCodexSettings.networkAccessEnabled;
       }
-      if (session.codexSettings.additionalWritableRoots !== undefined) {
+      if (derivedCodexSettings.webSearchMode !== undefined) {
+        msg.webSearchMode = derivedCodexSettings.webSearchMode;
+      }
+      if (derivedCodexSettings.additionalWritableRoots !== undefined) {
         msg.additionalWritableRoots =
-          session.codexSettings.additionalWritableRoots;
+          derivedCodexSettings.additionalWritableRoots;
       }
     }
 
@@ -1051,7 +1180,7 @@ export class BridgeWebSocketServer {
       expectedUserTurns: targetOrdinal - 1,
       fallback: buildCodexHistoryPrefix(session, targetOrdinal - 1),
     });
-    this.sessionManager.destroy(sessionId);
+    this.destroySession(sessionId);
     const newSessionId = this.sessionManager.create(
       projectPath,
       undefined,
@@ -1274,9 +1403,10 @@ export class BridgeWebSocketServer {
     const threadId = this.codexThreadIdForSession(session);
     if (!threadId) return null;
 
-    const history = await this.getCodexThreadHistory(
+    const history = await this.getCodexThreadHistoryFromRpc(
       threadId,
       session.projectPath,
+      session.process as CodexProcess,
     );
     session.claudeSessionId = threadId;
 
@@ -1290,7 +1420,7 @@ export class BridgeWebSocketServer {
       history,
       entries,
     );
-    return [...entries, ...session.historyEntries];
+    return entries;
   }
 
   private applyCodexCanonicalHistoryBaseline(
@@ -1298,16 +1428,38 @@ export class BridgeWebSocketServer {
     history: SessionHistoryMessage[],
     canonicalEntries: HistoryEntry[],
   ): void {
-    const liveEntries = session.historyEntries.map((entry) => ({
+    const orderedRevision = session.codexOrderedHistoryRevision ?? 0;
+    const liveEntries: HistoryEntry[] = [
+      ...(session.codexOrderedHistoryEntries ?? []),
+      ...session.historyEntries.filter((entry) => entry.seq > orderedRevision),
+    ].map((entry) => ({
       seq: entry.seq,
       message: entry.message,
     }));
-    const canonicalKeys = new Set<string>();
+    const latestUserInput = session.codexLatestUserInput;
+    const latestUserKeys = latestUserInput
+      ? this.codexHistoryMessageIdentityKeys(latestUserInput)
+      : [];
+    if (
+      latestUserInput &&
+      !liveEntries.some(
+        (entry) =>
+          entry.message === latestUserInput ||
+          (entry.message.type === "user_input" &&
+            this.codexHistoryMessageIdentityKeys(entry.message).some((key) =>
+              latestUserKeys.includes(key),
+            )),
+      )
+    ) {
+      const historySeq = (latestUserInput as Record<string, unknown>)
+        .historySeq;
+      liveEntries.unshift({
+        seq: typeof historySeq === "number" ? historySeq : 0,
+        message: latestUserInput,
+      });
+    }
     const canonicalUserUuids = new Set<string>();
     for (const entry of canonicalEntries) {
-      for (const key of this.codexHistoryMessageIdentityKeys(entry.message)) {
-        canonicalKeys.add(key);
-      }
       const message = entry.message;
       if (message.type === "user_input" && message.userMessageUuid) {
         canonicalUserUuids.add(message.userMessageUuid);
@@ -1316,24 +1468,92 @@ export class BridgeWebSocketServer {
 
     this.seedCodexCanonicalUserTurnUuidMap(session, history);
 
-    let nextSeq = canonicalEntries.at(-1)?.seq ?? 0;
+    const merged: Array<{ message: ServerMessage; retained: boolean }> = [];
+    let canonicalCursor = 0;
+    let hasCanonicalAnchor = false;
+    let canMatchAssistantContent = false;
+    const appendCanonicalUntil = (endExclusive: number): void => {
+      while (canonicalCursor < endExclusive) {
+        const message = canonicalEntries[canonicalCursor].message;
+        merged.push({ message, retained: false });
+        canonicalCursor += 1;
+        hasCanonicalAnchor = true;
+        if (message.type === "user_input") {
+          canMatchAssistantContent = true;
+        }
+      }
+    };
+
+    for (let liveIndex = 0; liveIndex < liveEntries.length; liveIndex++) {
+      const liveEntry = liveEntries[liveIndex];
+      const matchIndex = this.findCodexCanonicalMatchIndex(
+        canonicalEntries,
+        liveEntry.message,
+        canonicalCursor,
+        canMatchAssistantContent,
+      );
+      if (matchIndex === -1) {
+        let nextMatchIndex = -1;
+        for (
+          let nextLiveIndex = liveIndex + 1;
+          nextLiveIndex < liveEntries.length;
+          nextLiveIndex++
+        ) {
+          nextMatchIndex = this.findCodexCanonicalMatchIndex(
+            canonicalEntries,
+            liveEntries[nextLiveIndex].message,
+            canonicalCursor,
+            canMatchAssistantContent,
+          );
+          if (nextMatchIndex !== -1) break;
+        }
+        if (nextMatchIndex !== -1) {
+          appendCanonicalUntil(nextMatchIndex);
+        } else if (!hasCanonicalAnchor) {
+          appendCanonicalUntil(canonicalEntries.length);
+        }
+        if (this.shouldRetainCodexLiveHistoryMessage(liveEntry.message)) {
+          merged.push({ message: liveEntry.message, retained: true });
+        }
+        continue;
+      }
+
+      appendCanonicalUntil(matchIndex + 1);
+    }
+    appendCanonicalUntil(canonicalEntries.length);
+
     const retainedMessages: ServerMessage[] = [];
     const retainedEntries: HistoryEntry[] = [];
-    for (const entry of liveEntries) {
-      if (!this.shouldRetainCodexLiveHistoryMessage(entry.message)) continue;
-      const keys = this.codexHistoryMessageIdentityKeys(entry.message);
-      if (keys.some((key) => canonicalKeys.has(key))) continue;
-      const seq = ++nextSeq;
-      (entry.message as Record<string, unknown>).historySeq = seq;
-      retainedMessages.push(entry.message);
-      retainedEntries.push({ seq, message: entry.message });
-    }
+    let canonicalRevision = 0;
+    const previousRevision = session.historyRevision;
+    const requiresNewBaselineRevision = previousRevision > 0;
+    const targetRevision = requiresNewBaselineRevision
+      ? Math.max(merged.length, previousRevision + 1)
+      : merged.length;
+    const sequenceOffset = targetRevision - merged.length;
+    const mergedEntries = merged.map(({ message, retained }, index) => {
+      const seq = sequenceOffset + index + 1;
+      if (retained) {
+        (message as Record<string, unknown>).historySeq = seq;
+        retainedMessages.push(message);
+        retainedEntries.push({ seq, message });
+      } else {
+        canonicalRevision = seq;
+      }
+      return { seq, message };
+    });
+    canonicalEntries.splice(0, canonicalEntries.length, ...mergedEntries);
+
+    session.codexOrderedHistoryEntries =
+      this.buildCodexOrderedHistoryWindow(mergedEntries);
+    session.codexOrderedHistoryRevision = targetRevision;
 
     session.pastMessages = history;
     session.history = retainedMessages;
     session.historyEntries = retainedEntries;
-    session.historyRevision = nextSeq;
-    session.codexCanonicalHistoryRevision = canonicalEntries.at(-1)?.seq ?? 0;
+    session.historyRevision = targetRevision;
+    session.codexCanonicalHistoryRevision = canonicalRevision;
+    session.codexHistoryResetRevision = targetRevision;
     session.historyLowWatermark =
       retainedEntries[0]?.seq ?? session.historyRevision + 1;
 
@@ -1349,6 +1569,66 @@ export class BridgeWebSocketServer {
         if (!stillLive) session.pendingCodexUserEchoUuids.delete(uuid);
       }
     }
+  }
+
+  private buildCodexOrderedHistoryWindow(
+    entries: HistoryEntry[],
+  ): HistoryEntry[] {
+    if (entries.length <= MAX_HISTORY_PER_SESSION) {
+      return entries.map((entry) => ({
+        seq: entry.seq,
+        message: entry.message,
+      }));
+    }
+
+    const tail = entries.slice(-MAX_HISTORY_PER_SESSION);
+    if (tail.some((entry) => entry.message.type === "user_input")) {
+      return tail;
+    }
+
+    let latestUser: HistoryEntry | undefined;
+    for (let index = entries.length - 1; index >= 0; index--) {
+      if (entries[index].message.type === "user_input") {
+        latestUser = entries[index];
+        break;
+      }
+    }
+    return latestUser
+      ? [latestUser, ...entries.slice(-(MAX_HISTORY_PER_SESSION - 1))]
+      : tail;
+  }
+
+  private findCodexCanonicalMatchIndex(
+    canonicalEntries: HistoryEntry[],
+    liveMessage: ServerMessage,
+    start: number,
+    allowAssistantContentMatch: boolean,
+  ): number {
+    const liveKeys = this.codexHistoryMessageIdentityKeys(liveMessage);
+    if (liveKeys.length > 0) {
+      for (let index = start; index < canonicalEntries.length; index++) {
+        const canonicalKeys = this.codexHistoryMessageIdentityKeys(
+          canonicalEntries[index].message,
+        );
+        if (liveKeys.some((key) => canonicalKeys.includes(key))) return index;
+      }
+    }
+
+    if (!allowAssistantContentMatch || liveMessage.type !== "assistant") {
+      return -1;
+    }
+    const liveContent = this.historyValueKey(liveMessage.message.content);
+    for (let index = start; index < canonicalEntries.length; index++) {
+      const canonicalMessage = canonicalEntries[index].message;
+      if (canonicalMessage.type === "user_input") break;
+      if (
+        canonicalMessage.type === "assistant" &&
+        this.historyValueKey(canonicalMessage.message.content) === liveContent
+      ) {
+        return index;
+      }
+    }
+    return -1;
   }
 
   private seedCodexCanonicalUserTurnUuidMap(
@@ -1406,6 +1686,33 @@ export class BridgeWebSocketServer {
     }
   }
 
+  private sendCodexCurrentSettings(
+    ws: WebSocket,
+    sessionId: string,
+    session: SessionInfo,
+  ): void {
+    const process = session.process instanceof CodexProcess
+      ? session.process
+      : undefined;
+    const settings = session.codexSettings;
+    this.send(ws, {
+      type: "system",
+      subtype: "codex_settings",
+      sessionId,
+      provider: "codex",
+      ...(settings?.model ?? process?.model
+        ? { model: settings?.model ?? process?.model }
+        : {}),
+      ...(settings?.modelReasoningEffort ?? process?.modelReasoningEffort
+        ? {
+            modelReasoningEffort:
+              settings?.modelReasoningEffort ?? process?.modelReasoningEffort,
+          }
+        : {}),
+      serviceTier: settings?.serviceTier ?? process?.serviceTier ?? "standard",
+    });
+  }
+
   private async sendCodexCanonicalHistorySnapshot(
     ws: WebSocket,
     sessionId: string,
@@ -1418,13 +1725,15 @@ export class BridgeWebSocketServer {
       this.send(ws, {
         type: "history_snapshot",
         sessionId,
-        fromSeq: entries[0]?.seq ?? 1,
-        toSeq: entries.at(-1)?.seq ?? 0,
+        fromSeq: entries[0]?.seq ?? session.historyRevision + 1,
+        toSeq: session.historyRevision,
         messages: entries,
         status: session.status,
         reason: "reset",
       } satisfies Extract<ServerMessage, { type: "history_snapshot" }>);
+      this.sendCodexCurrentSettings(ws, sessionId, session);
       this.sendCodexQueueState(ws, sessionId, session);
+      this.sendCodexGoalState(ws, sessionId, session);
       if (options.includeCachedCommands) {
         this.sendCachedCommands(ws, sessionId, session);
       }
@@ -1453,12 +1762,14 @@ export class BridgeWebSocketServer {
         messages: entries.map((entry) => entry.message),
         sessionId,
       } as Record<string, unknown>);
+      this.sendCodexCurrentSettings(ws, sessionId, session);
       this.send(ws, {
         type: "status",
         status: session.status,
         sessionId,
       } as Record<string, unknown>);
       this.sendCodexQueueState(ws, sessionId, session);
+      this.sendCodexGoalState(ws, sessionId, session);
       this.sendCachedCommands(ws, sessionId, session);
       return true;
     } catch (err) {
@@ -1478,8 +1789,10 @@ export class BridgeWebSocketServer {
     resultKind: "delta" | "snapshot",
   ): boolean {
     if (!this.codexThreadIdForSession(session)) return false;
-    if (typeof session.codexCanonicalHistoryRevision !== "number") return true;
-    if (sinceSeq < session.codexCanonicalHistoryRevision) return true;
+    const resetRevision = session.codexHistoryResetRevision ??
+      session.codexCanonicalHistoryRevision;
+    if (typeof resetRevision !== "number") return true;
+    if (sinceSeq < resetRevision) return true;
     return resultKind === "snapshot";
   }
 
@@ -1741,8 +2054,9 @@ export class BridgeWebSocketServer {
   private async getCodexThreadHistoryFromRpc(
     threadId: string,
     projectPath?: string,
+    preferredProcess?: CodexProcess,
   ): Promise<SessionHistoryMessage[]> {
-    const activeProcess = this.getActiveCodexProcess();
+    const activeProcess = preferredProcess ?? this.getActiveCodexProcess();
     const process =
       activeProcess ?? (await this.createStandaloneCodexProcess(projectPath));
     const isStandalone = process !== activeProcess;
@@ -1848,7 +2162,9 @@ export class BridgeWebSocketServer {
 
   close(): void {
     console.log("[ws] Shutting down...");
+    this.flushAllDeltaBatches();
     this.sessionManager.destroyAll();
+    this.flushAllDeltaBatches();
     stopManagedCodexAppServers();
     this.debugEvents.clear();
     this.wss.close();
@@ -1866,9 +2182,7 @@ export class BridgeWebSocketServer {
 
   private handleConnection(ws: WebSocket): void {
     // Send session list and project history on connect
-    void this.refreshCodexProfiles();
-    void this.refreshCodexModels();
-    void this.refreshClaudeModels();
+    this.refreshConnectionMetadata();
     this.sendSessionList(ws);
     const projects = this.projectHistory?.getProjects() ?? [];
     this.send(ws, { type: "project_history", projects });
@@ -1905,11 +2219,28 @@ export class BridgeWebSocketServer {
 
     ws.on("close", () => {
       console.log("[ws] Client disconnected");
+      this.discardClientDeltaBatches(ws);
+      this.clearPendingClaudeResumeInputs(ws);
     });
 
     ws.on("error", (err) => {
       console.error("[ws] Client error:", err.message);
     });
+  }
+
+  private refreshConnectionMetadata(now = Date.now()): void {
+    const lastRefreshAt = this.lastConnectMetadataRefreshAt;
+    if (
+      lastRefreshAt !== null &&
+      now >= lastRefreshAt &&
+      now - lastRefreshAt <
+        BridgeWebSocketServer.CONNECT_METADATA_REFRESH_COOLDOWN_MS
+    ) {
+      return;
+    }
+    this.lastConnectMetadataRefreshAt = now;
+    void this.refreshCodexMetadata();
+    void this.refreshClaudeModels();
   }
 
   private async handleClientMessage(
@@ -2022,10 +2353,6 @@ export class BridgeWebSocketServer {
             );
             break;
           }
-          const cached =
-            provider === "claude"
-              ? this.sessionManager.getCachedCommands(projectPath)
-              : undefined;
           const {
             sessionId,
             permissionMode: effectivePermissionMode,
@@ -2089,12 +2416,9 @@ export class BridgeWebSocketServer {
                         : sandboxModeToInternal(msg.sandboxMode),
                       model: msg.model,
                       modelReasoningEffort:
-                        (msg.modelReasoningEffort as
-                          | "minimal"
-                          | "low"
-                          | "medium"
-                          | "high"
-                          | "xhigh") ?? undefined,
+                        (msg.modelReasoningEffort as CodexStartOptions["modelReasoningEffort"]) ??
+                        undefined,
+                      serviceTier: msg.serviceTier,
                       networkAccessEnabled: msg.networkAccessEnabled,
                       webSearchMode:
                         (msg.webSearchMode as "disabled" | "cached" | "live") ??
@@ -2112,6 +2436,10 @@ export class BridgeWebSocketServer {
                   usedFallback: false,
                 };
           const createdSession = this.sessionManager.get(sessionId);
+          const cached = this.sessionManager.getCachedCommands(
+            provider,
+            createdSession?.worktreePath ?? projectPath,
+          );
 
           // Load saved session name from CLI storage (for resumed sessions)
           void this.loadAndSetSessionName(
@@ -2164,7 +2492,7 @@ export class BridgeWebSocketServer {
             );
             this.broadcastSessionList();
             if (provider === "codex") {
-              void this.refreshCodexModels(projectPath);
+              void this.refreshCodexMetadata(projectPath);
             } else {
               void this.refreshClaudeModels(projectPath);
             }
@@ -2207,6 +2535,13 @@ export class BridgeWebSocketServer {
       case "input": {
         const session = this.resolveSession(msg.sessionId);
         if (!session) {
+          const pendingInputs = msg.sessionId
+            ? this.pendingClaudeResumeInputs.get(ws)?.get(msg.sessionId)
+            : undefined;
+          if (pendingInputs) {
+            pendingInputs.push(msg);
+            return;
+          }
           this.send(ws, {
             type: "error",
             message: "No active session. Send 'start' first.",
@@ -2435,13 +2770,21 @@ export class BridgeWebSocketServer {
         // Claude Code input path — enqueue first, then interrupt if busy
         const claudeProc = session.process as SdkProcess;
         let wasQueued = false;
+        let shouldInterrupt = false;
         if (images.length > 0) {
           console.log(
             `[ws] Sending message with ${images.length} inline Base64 image(s)`,
           );
-          const result = claudeProc.sendInputWithImages(text, images);
-          wasQueued =
-            typeof result === "boolean" ? result : isAgentBusySnapshot;
+          if (typeof claudeProc.dispatchInputWithImages === "function") {
+            const result = claudeProc.dispatchInputWithImages(text, images);
+            wasQueued = result.queued;
+            shouldInterrupt = result.shouldInterrupt;
+          } else {
+            const result = claudeProc.sendInputWithImages(text, images);
+            wasQueued =
+              typeof result === "boolean" ? result : isAgentBusySnapshot;
+            shouldInterrupt = wasQueued;
+          }
         }
         // Legacy imageId mode (backward compatibility)
         else if (msg.imageId && this.galleryStore) {
@@ -2457,43 +2800,64 @@ export class BridgeWebSocketServer {
             .then((imageData) => {
               let queuedAfterResolve = false;
               if (imageData) {
-                const result = claudeProc.sendInputWithImages(text, [
-                  imageData,
-                ]);
-                queuedAfterResolve =
-                  typeof result === "boolean" ? result : isAgentBusySnapshot;
+                if (typeof claudeProc.dispatchInputWithImages === "function") {
+                  const result = claudeProc.dispatchInputWithImages(text, [
+                    imageData,
+                  ]);
+                  queuedAfterResolve = result.queued;
+                  if (result.shouldInterrupt) claudeProc.interrupt();
+                } else {
+                  const result = claudeProc.sendInputWithImages(text, [
+                    imageData,
+                  ]);
+                  queuedAfterResolve =
+                    typeof result === "boolean"
+                      ? result
+                      : isAgentBusySnapshot;
+                  if (queuedAfterResolve) claudeProc.interrupt();
+                }
               } else {
                 console.warn(`[ws] Image not found: ${msg.imageId}`);
-                const result = session.process.sendInput(text);
-                queuedAfterResolve =
-                  typeof result === "boolean" ? result : isAgentBusySnapshot;
-              }
-              if (queuedAfterResolve) {
-                console.log(
-                  `[ws] Agent is busy — will queue input and interrupt current turn`,
-                );
-                claudeProc.interrupt();
+                if (typeof claudeProc.dispatchInput === "function") {
+                  const result = claudeProc.dispatchInput(text);
+                  queuedAfterResolve = result.queued;
+                  if (result.shouldInterrupt) claudeProc.interrupt();
+                } else {
+                  const result = session.process.sendInput(text);
+                  queuedAfterResolve =
+                    typeof result === "boolean"
+                      ? result
+                      : isAgentBusySnapshot;
+                  if (queuedAfterResolve) claudeProc.interrupt();
+                }
               }
             })
             .catch((err) => {
               console.error(`[ws] Failed to load image: ${err}`);
-              const result = session.process.sendInput(text);
-              const queuedAfterResolve =
-                typeof result === "boolean" ? result : isAgentBusySnapshot;
-              if (queuedAfterResolve) {
-                console.log(
-                  `[ws] Agent is busy — will queue input and interrupt current turn`,
-                );
-                claudeProc.interrupt();
+              if (typeof claudeProc.dispatchInput === "function") {
+                const result = claudeProc.dispatchInput(text);
+                if (result.shouldInterrupt) claudeProc.interrupt();
+              } else {
+                const result = session.process.sendInput(text);
+                const queuedAfterResolve =
+                  typeof result === "boolean" ? result : isAgentBusySnapshot;
+                if (queuedAfterResolve) claudeProc.interrupt();
               }
             });
           break;
         }
         // Text-only message
         else {
-          const result = session.process.sendInput(text);
-          wasQueued =
-            typeof result === "boolean" ? result : isAgentBusySnapshot;
+          if (typeof claudeProc.dispatchInput === "function") {
+            const result = claudeProc.dispatchInput(text);
+            wasQueued = result.queued;
+            shouldInterrupt = result.shouldInterrupt;
+          } else {
+            const result = session.process.sendInput(text);
+            wasQueued =
+              typeof result === "boolean" ? result : isAgentBusySnapshot;
+            shouldInterrupt = wasQueued;
+          }
         }
 
         // Acknowledge receipt so the client can mark the message state.
@@ -2507,7 +2871,7 @@ export class BridgeWebSocketServer {
           queued: wasQueued,
         });
 
-        if (wasQueued) {
+        if (shouldInterrupt) {
           console.log(
             `[ws] Agent is busy — will queue input and interrupt current turn`,
           );
@@ -2726,7 +3090,7 @@ export class BridgeWebSocketServer {
           const newPermissionsMode =
             codexPermissionSettings?.codexPermissionsMode ??
             (collaborationOnlyChange ? currentPermissionsMode : undefined) ??
-            inferCodexPermissionsMode({
+            deriveCodexPermissionsMode({
               approvalPolicy: newApproval,
               approvalsReviewer:
                 codexPermissionSettings?.approvalsReviewer ??
@@ -2812,7 +3176,7 @@ export class BridgeWebSocketServer {
           const worktreeBranch = session.worktreeBranch;
           const sessionName = session.name;
 
-          this.sessionManager.destroy(oldSessionId);
+          this.destroySession(oldSessionId);
           console.log(
             `[ws] Permission mode change: destroyed session ${oldSessionId}`,
           );
@@ -2845,14 +3209,9 @@ export class BridgeWebSocketServer {
                   | "danger-full-access"
                   | undefined,
                 model: oldSettings.model,
-                modelReasoningEffort: oldSettings.modelReasoningEffort as
-                  | "none"
-                  | "minimal"
-                  | "low"
-                  | "medium"
-                  | "high"
-                  | "xhigh"
-                  | undefined,
+                modelReasoningEffort:
+                  oldSettings.modelReasoningEffort as CodexStartOptions["modelReasoningEffort"],
+                serviceTier: oldSettings.serviceTier,
                 networkAccessEnabled: oldSettings.networkAccessEnabled as
                   | boolean
                   | undefined,
@@ -2941,14 +3300,9 @@ export class BridgeWebSocketServer {
                     | "danger-full-access"
                     | undefined,
                   model: oldSettings.model,
-                  modelReasoningEffort: oldSettings.modelReasoningEffort as
-                    | "none"
-                    | "minimal"
-                    | "low"
-                    | "medium"
-                    | "high"
-                    | "xhigh"
-                    | undefined,
+                  modelReasoningEffort:
+                    oldSettings.modelReasoningEffort as CodexStartOptions["modelReasoningEffort"],
+                  serviceTier: oldSettings.serviceTier,
                   networkAccessEnabled: oldSettings.networkAccessEnabled as
                     | boolean
                     | undefined,
@@ -3059,14 +3413,8 @@ export class BridgeWebSocketServer {
           break;
         }
 
-        const modelReasoningEffort = msg.modelReasoningEffort as
-          | "none"
-          | "minimal"
-          | "low"
-          | "medium"
-          | "high"
-          | "xhigh"
-          | undefined;
+        const modelReasoningEffort =
+          msg.modelReasoningEffort as CodexStartOptions["modelReasoningEffort"];
         const currentModel = sanitizeCodexModel(session.codexSettings?.model);
         const currentEffort = session.codexSettings?.modelReasoningEffort;
         if (model === currentModel && modelReasoningEffort === currentEffort) {
@@ -3103,6 +3451,124 @@ export class BridgeWebSocketServer {
         console.log(
           `[ws] set_codex_model(codex): model=${model} effort=${modelReasoningEffort ?? ""}`,
         );
+        break;
+      }
+
+      case "set_codex_speed": {
+        const session = this.resolveSession(msg.sessionId);
+        if (!session || session.provider !== "codex") {
+          this.send(ws, {
+            type: "error",
+            message: "No active Codex session.",
+            errorCode: "set_codex_speed_unsupported",
+          });
+          return;
+        }
+
+        const serviceTier = msg.serviceTier === "fast" ? "fast" : "standard";
+        if (session.codexSettings?.serviceTier === serviceTier) break;
+
+        const process = session.process as CodexProcess;
+        process.setServiceTier(serviceTier);
+        session.codexSettings = {
+          ...(session.codexSettings ?? {}),
+          serviceTier,
+        };
+        session.lastActivityAt = new Date();
+        this.broadcastSessionMessage(session.id, {
+          type: "system",
+          subtype: "set_codex_speed",
+          sessionId: session.id,
+          provider: "codex",
+          serviceTier,
+        });
+        this.broadcastSessionList();
+        console.log(
+          `[ws] set_codex_speed(codex): serviceTier=${serviceTier}`,
+        );
+        break;
+      }
+
+      case "get_goal": {
+        const session = this.resolveSession(msg.sessionId);
+        if (!session || session.provider !== "codex") {
+          this.send(ws, {
+            type: "error",
+            message: "Goal lookup is only supported for active Codex sessions.",
+            errorCode: "goal_get_unsupported",
+          });
+          break;
+        }
+        try {
+          const goal = await (session.process as CodexProcess).getGoal();
+          session.codexGoal = goal;
+          this.send(ws, { type: "goal_state", sessionId: session.id, goal });
+        } catch (err) {
+          this.send(ws, {
+            type: "error",
+            message: `Failed to get goal: ${errorMessageOf(err)}`,
+            errorCode: "goal_get_failed",
+          });
+        }
+        break;
+      }
+
+      case "set_goal": {
+        const session = this.resolveSession(msg.sessionId);
+        if (!session || session.provider !== "codex") {
+          this.send(ws, {
+            type: "error",
+            message: "Goal updates are only supported for active Codex sessions.",
+            errorCode: "goal_set_unsupported",
+          });
+          break;
+        }
+        try {
+          const goal = await (session.process as CodexProcess).setGoal({
+            ...(msg.objective !== undefined
+              ? { objective: msg.objective }
+              : {}),
+            ...(msg.status !== undefined ? { status: msg.status } : {}),
+          });
+          session.codexGoal = goal;
+          this.broadcastSessionMessage(session.id, {
+            type: "goal_state",
+            goal,
+          });
+        } catch (err) {
+          this.send(ws, {
+            type: "error",
+            message: `Failed to set goal: ${errorMessageOf(err)}`,
+            errorCode: "goal_set_failed",
+          });
+        }
+        break;
+      }
+
+      case "clear_goal": {
+        const session = this.resolveSession(msg.sessionId);
+        if (!session || session.provider !== "codex") {
+          this.send(ws, {
+            type: "error",
+            message: "Goal clearing is only supported for active Codex sessions.",
+            errorCode: "goal_clear_unsupported",
+          });
+          break;
+        }
+        try {
+          await (session.process as CodexProcess).clearGoal();
+          session.codexGoal = null;
+          this.broadcastSessionMessage(session.id, {
+            type: "goal_state",
+            goal: null,
+          });
+        } catch (err) {
+          this.send(ws, {
+            type: "error",
+            message: `Failed to clear goal: ${errorMessageOf(err)}`,
+            errorCode: "goal_clear_failed",
+          });
+        }
         break;
       }
 
@@ -3145,7 +3611,7 @@ export class BridgeWebSocketServer {
           const permissionMode = (session.process as SdkProcess).permissionMode;
           const model = (session.process as SdkProcess).model;
 
-          this.sessionManager.destroy(oldSessionId);
+          this.destroySession(oldSessionId);
           console.log(
             `[ws] Claude sandbox change: destroyed session ${oldSessionId}`,
           );
@@ -3230,7 +3696,7 @@ export class BridgeWebSocketServer {
           planMode,
         );
 
-        this.sessionManager.destroy(oldSessionId);
+        this.destroySession(oldSessionId);
         console.log(
           `[ws] Sandbox mode change: destroyed session ${oldSessionId}`,
         );
@@ -3265,14 +3731,9 @@ export class BridgeWebSocketServer {
                 | undefined,
               sandboxMode: newSandboxMode,
               model: oldSettings.model,
-              modelReasoningEffort: oldSettings.modelReasoningEffort as
-                | "none"
-                | "minimal"
-                | "low"
-                | "medium"
-                | "high"
-                | "xhigh"
-                | undefined,
+              modelReasoningEffort:
+                oldSettings.modelReasoningEffort as CodexStartOptions["modelReasoningEffort"],
+              serviceTier: oldSettings.serviceTier,
               networkAccessEnabled: oldSettings.networkAccessEnabled as
                 | boolean
                 | undefined,
@@ -3348,14 +3809,9 @@ export class BridgeWebSocketServer {
                   | undefined,
                 sandboxMode: newSandboxMode,
                 model: oldSettings.model,
-                modelReasoningEffort: oldSettings.modelReasoningEffort as
-                  | "none"
-                  | "minimal"
-                  | "low"
-                  | "medium"
-                  | "high"
-                  | "xhigh"
-                  | undefined,
+                modelReasoningEffort:
+                  oldSettings.modelReasoningEffort as CodexStartOptions["modelReasoningEffort"],
+                serviceTier: oldSettings.serviceTier,
                 networkAccessEnabled: oldSettings.networkAccessEnabled as
                   | boolean
                   | undefined,
@@ -3446,7 +3902,7 @@ export class BridgeWebSocketServer {
           const worktreePath = session.worktreePath;
           const worktreeBranch = session.worktreeBranch;
 
-          this.sessionManager.destroy(sessionId);
+          this.destroySession(sessionId);
           console.log(`[ws] Clear context: destroyed session ${sessionId}`);
 
           const newId = this.sessionManager.create(
@@ -3530,6 +3986,32 @@ export class BridgeWebSocketServer {
         break;
       }
 
+      case "install_tool_suggestion": {
+        const session = this.resolveSession(msg.sessionId);
+        if (!session) {
+          this.send(ws, { type: "error", message: "No active session." });
+          return;
+        }
+        if (session.provider !== "codex") {
+          this.send(ws, {
+            type: "error",
+            message: "Tool suggestions are only supported for Codex sessions.",
+          });
+          return;
+        }
+        try {
+          await (session.process as CodexProcess).installToolSuggestion(
+            msg.toolUseId,
+          );
+        } catch (err) {
+          this.send(ws, {
+            type: "error",
+            message: err instanceof Error ? err.message : String(err),
+          });
+        }
+        break;
+      }
+
       case "list_sessions": {
         this.sendSessionList(ws);
         break;
@@ -3544,7 +4026,7 @@ export class BridgeWebSocketServer {
             subtype: "stopped",
             sessionId: session.claudeSessionId,
           });
-          this.sessionManager.destroy(msg.sessionId);
+          this.destroySession(msg.sessionId);
           this.recordDebugEvent(msg.sessionId, {
             direction: "internal",
             channel: "bridge",
@@ -3594,6 +4076,9 @@ export class BridgeWebSocketServer {
             messages: [...splitPastHistory.historyMessages, ...session.history],
             sessionId: msg.sessionId,
           } as Record<string, unknown>);
+          if (session.provider === "codex") {
+            this.sendCodexCurrentSettings(ws, msg.sessionId, session);
+          }
           this.send(ws, {
             type: "status",
             status: session.status,
@@ -3601,6 +4086,7 @@ export class BridgeWebSocketServer {
           } as Record<string, unknown>);
           if (session.provider === "codex") {
             this.sendCodexQueueState(ws, msg.sessionId, session);
+            this.sendCodexGoalState(ws, msg.sessionId, session);
           }
 
           this.sendCachedCommands(ws, msg.sessionId, session);
@@ -3653,7 +4139,9 @@ export class BridgeWebSocketServer {
             status: session.status,
             ...(result.kind === "snapshot" ? { reason: result.reason } : {}),
           } as ServerMessage);
+          this.sendCodexCurrentSettings(ws, msg.sessionId, session);
           this.sendCodexQueueState(ws, msg.sessionId, session);
+          this.sendCodexGoalState(ws, msg.sessionId, session);
           break;
         }
 
@@ -4030,12 +4518,9 @@ export class BridgeWebSocketServer {
                   : sandboxModeToInternal(msg.sandboxMode),
                 model: msg.model,
                 modelReasoningEffort:
-                  (msg.modelReasoningEffort as
-                    | "minimal"
-                    | "low"
-                    | "medium"
-                    | "high"
-                    | "xhigh") ?? undefined,
+                  (msg.modelReasoningEffort as CodexStartOptions["modelReasoningEffort"]) ??
+                  undefined,
+                serviceTier: msg.serviceTier,
                 networkAccessEnabled: msg.networkAccessEnabled,
                 webSearchMode:
                   (msg.webSearchMode as "disabled" | "cached" | "live") ??
@@ -4047,6 +4532,10 @@ export class BridgeWebSocketServer {
               },
             );
             const createdSession = this.sessionManager.get(sessionId);
+            const cached = this.sessionManager.getCachedCommands(
+              "codex",
+              createdSession?.worktreePath ?? effectiveProjectPath,
+            );
             await this.loadAndSetSessionName(
               createdSession,
               "codex",
@@ -4070,6 +4559,23 @@ export class BridgeWebSocketServer {
                 permissionMode: legacyPermissionMode,
                 executionMode,
                 planMode,
+                ...(cached
+                  ? {
+                      slashCommands: cached.slashCommands,
+                      skills: cached.skills,
+                      ...(cached.skillMetadata
+                        ? { skillMetadata: cached.skillMetadata }
+                        : {}),
+                      apps: cached.apps,
+                      ...(cached.appMetadata
+                        ? { appMetadata: cached.appMetadata }
+                        : {}),
+                      plugins: cached.plugins,
+                      ...(cached.pluginMetadata
+                        ? { pluginMetadata: cached.pluginMetadata }
+                        : {}),
+                    }
+                  : {}),
               }),
             );
             this.broadcastSessionList();
@@ -4091,7 +4597,19 @@ export class BridgeWebSocketServer {
         }
 
         const claudeSessionId = sessionRefId;
-        const cached = this.sessionManager.getCachedCommands(resumeProjectPath);
+        let pendingResumes = this.pendingClaudeResumeInputs.get(ws);
+        if (!pendingResumes) {
+          pendingResumes = new Map();
+          this.pendingClaudeResumeInputs.set(ws, pendingResumes);
+        }
+        if (pendingResumes.has(claudeSessionId)) {
+          this.send(ws, {
+            type: "error",
+            message: `Session resume already in progress: ${claudeSessionId}`,
+          });
+          break;
+        }
+        pendingResumes.set(claudeSessionId, []);
 
         // Look up worktree mapping for this Claude session
         const wtMapping = this.worktreeStore.get(claudeSessionId);
@@ -4146,12 +4664,11 @@ export class BridgeWebSocketServer {
               worktreeOptions: worktreeOpts,
             });
             const createdSession = this.sessionManager.get(sessionId);
-            void this.loadAndSetSessionName(
-              createdSession,
+            const cached = this.sessionManager.getCachedCommands(
               "claude",
-              resumeProjectPath,
-              claudeSessionId,
-            ).then(() => {
+              createdSession?.worktreePath ?? resumeProjectPath,
+            );
+            const finishResume = () => {
               this.send(ws, {
                 ...this.buildSessionCreatedMessage({
                   sessionId,
@@ -4182,6 +4699,11 @@ export class BridgeWebSocketServer {
                 }),
                 claudeSessionId,
               });
+              const queuedInputs = pendingResumes.get(claudeSessionId) ?? [];
+              pendingResumes.delete(claudeSessionId);
+              for (const input of queuedInputs) {
+                void this.handleClientMessage({ ...input, sessionId }, ws);
+              }
               this.broadcastSessionList();
               if (autoFallbackUsed) {
                 this.sendTip(
@@ -4191,6 +4713,15 @@ export class BridgeWebSocketServer {
                   createdSession,
                 );
               }
+            };
+            void this.loadAndSetSessionName(
+              createdSession,
+              "claude",
+              resumeProjectPath,
+              claudeSessionId,
+            ).then(finishResume, (err) => {
+              console.error("[ws] Failed to load resumed session name:", err);
+              finishResume();
             });
             this.debugEvents.set(sessionId, []);
             this.recordDebugEvent(sessionId, {
@@ -4202,6 +4733,18 @@ export class BridgeWebSocketServer {
             this.projectHistory?.addProject(resumeProjectPath);
           })
           .catch((err) => {
+            const queuedInputs = pendingResumes.get(claudeSessionId) ?? [];
+            pendingResumes.delete(claudeSessionId);
+            for (const input of queuedInputs) {
+              if (input.clientMessageId) {
+                this.send(ws, {
+                  type: "input_rejected",
+                  sessionId: claudeSessionId,
+                  clientMessageId: input.clientMessageId,
+                  reason: "Session resume failed",
+                });
+              }
+            }
             this.send(ws, {
               type: "error",
               message: `Failed to load session history: ${err}`,
@@ -4453,13 +4996,19 @@ export class BridgeWebSocketServer {
         }
         void (async () => {
           try {
-            const files = await listProjectFilesAndDirectories(
+            const result = await listProjectFilesAndDirectoriesForClient(
               msg.projectPath,
+              {
+                maxEntries: this.fileListMaxEntries,
+                maxBytes: this.fileListMaxBytes,
+              },
             );
-            this.send(ws, { type: "file_list", files } as Record<
-              string,
-              unknown
-            >);
+            this.send(ws, {
+              type: "file_list",
+              files: result.files,
+              totalFiles: result.totalFiles,
+              truncated: result.truncated,
+            } as Record<string, unknown>);
           } catch (err) {
             const message = err instanceof Error ? err.message : String(err);
             this.send(ws, {
@@ -5158,6 +5707,7 @@ export class BridgeWebSocketServer {
         } else if (msg.mode === "conversation") {
           // Conversation-only rewind: restart session at the target UUID
           try {
+            this.flushSessionDeltaBatches(msg.sessionId);
             this.sessionManager.rewindConversation(
               msg.sessionId,
               msg.targetUuid,
@@ -5205,6 +5755,7 @@ export class BridgeWebSocketServer {
                 return;
               }
               try {
+                this.flushSessionDeltaBatches(msg.sessionId);
                 this.sessionManager.rewindConversation(
                   msg.sessionId,
                   msg.targetUuid,
@@ -5577,6 +6128,11 @@ export class BridgeWebSocketServer {
     }
   }
 
+  private clearPendingClaudeResumeInputs(ws: WebSocket): void {
+    this.pendingClaudeResumeInputs.get(ws)?.clear();
+    this.pendingClaudeResumeInputs.delete(ws);
+  }
+
   /**
    * Load the saved session name from CLI storage and set it on the SessionInfo.
    * Called after SessionManager.create() so that session_created carries the name.
@@ -5697,6 +6253,7 @@ export class BridgeWebSocketServer {
       claudeModelEfforts: this.claudeModelEfforts,
       codexModels: this.codexModels,
       codexModelReasoningEfforts: this.codexModelReasoningEfforts,
+      codexModelServiceTiers: this.codexModelServiceTiers,
       codexProfiles: this.codexProfiles,
       defaultCodexProfile: this.defaultCodexProfile,
       bridgeVersion: getPackageVersion(),
@@ -5732,6 +6289,7 @@ export class BridgeWebSocketServer {
       claudeModelEfforts: this.claudeModelEfforts,
       codexModels: this.codexModels,
       codexModelReasoningEfforts: this.codexModelReasoningEfforts,
+      codexModelServiceTiers: this.codexModelServiceTiers,
       codexProfiles: this.codexProfiles,
       defaultCodexProfile: this.defaultCodexProfile,
       bridgeVersion: getPackageVersion(),
@@ -5760,6 +6318,137 @@ export class BridgeWebSocketServer {
     msg: ServerMessage,
     exclude?: WebSocket,
   ): void {
+    if (this.shouldBatchDelta(msg, exclude)) {
+      this.trackSessionMessage(sessionId, msg);
+      const chunks = this.splitDeltaText(msg.text);
+      for (const client of this.wss.clients) {
+        if (client.readyState !== WebSocket.OPEN) continue;
+        if (!this.shouldSendToClient(client, msg)) continue;
+        this.queueDeltaForClient(client, sessionId, msg.type, chunks);
+      }
+      return;
+    }
+
+    this.flushSessionDeltaBatches(sessionId);
+    this.trackSessionMessage(sessionId, msg);
+    this.broadcastSessionMessageNow(sessionId, msg, exclude);
+  }
+
+  private shouldBatchDelta(
+    msg: ServerMessage,
+    exclude?: WebSocket,
+  ): msg is DeltaServerMessage {
+    if (this.deltaBatchMs === 0 || exclude) return false;
+    return msg.type === "stream_delta" || msg.type === "thinking_delta";
+  }
+
+  private queueDeltaForClient(
+    client: WebSocket,
+    sessionId: string,
+    type: DeltaServerMessage["type"],
+    chunks: DeltaTextChunk[],
+  ): void {
+    for (const chunk of chunks) {
+      let batch = this.deltaBatches.get(client)?.get(sessionId);
+      if (
+        batch &&
+        batch.charCount > 0 &&
+        batch.charCount + chunk.charCount > this.deltaBatchMaxChars
+      ) {
+        this.flushClientDeltaBatch(client, sessionId);
+        batch = undefined;
+      }
+
+      if (!batch) {
+        const clientBatches = this.deltaBatches.get(client) ?? new Map();
+        batch = {
+          messages: [],
+          charCount: 0,
+          timer: setTimeout(() => {
+            this.flushClientDeltaBatch(client, sessionId);
+          }, this.deltaBatchMs),
+        };
+        clientBatches.set(sessionId, batch);
+        this.deltaBatches.set(client, clientBatches);
+      }
+
+      const last = batch.messages.at(-1);
+      if (last?.type === type) {
+        last.text += chunk.text;
+      } else {
+        batch.messages.push({ type, text: chunk.text });
+      }
+      batch.charCount += chunk.charCount;
+
+      if (batch.charCount >= this.deltaBatchMaxChars) {
+        this.flushClientDeltaBatch(client, sessionId);
+      }
+    }
+  }
+
+  private splitDeltaText(text: string): DeltaTextChunk[] {
+    if (text.length === 0) return [{ text, charCount: 0 }];
+
+    const chunks: DeltaTextChunk[] = [];
+    let chars: string[] = [];
+    let charCount = 0;
+    for (const char of text) {
+      chars.push(char);
+      charCount += 1;
+      if (charCount >= this.deltaBatchMaxChars) {
+        chunks.push({ text: chars.join(""), charCount });
+        chars = [];
+        charCount = 0;
+      }
+    }
+    if (chars.length > 0) {
+      chunks.push({ text: chars.join(""), charCount });
+    }
+    return chunks;
+  }
+
+  private flushSessionDeltaBatches(sessionId: string): void {
+    for (const client of Array.from(this.deltaBatches.keys())) {
+      this.flushClientDeltaBatch(client, sessionId);
+    }
+  }
+
+  private flushAllDeltaBatches(): void {
+    for (const [client, batches] of Array.from(this.deltaBatches.entries())) {
+      for (const sessionId of Array.from(batches.keys())) {
+        this.flushClientDeltaBatch(client, sessionId);
+      }
+    }
+  }
+
+  private flushClientDeltaBatch(client: WebSocket, sessionId: string): void {
+    const clientBatches = this.deltaBatches.get(client);
+    const batch = clientBatches?.get(sessionId);
+    if (!batch) return;
+
+    clearTimeout(batch.timer);
+    clientBatches?.delete(sessionId);
+    if (clientBatches?.size === 0) this.deltaBatches.delete(client);
+    if (client.readyState !== WebSocket.OPEN) return;
+
+    for (const msg of batch.messages) {
+      client.send(JSON.stringify({ ...msg, sessionId }));
+    }
+  }
+
+  private discardClientDeltaBatches(client: WebSocket): void {
+    const batches = this.deltaBatches.get(client);
+    if (!batches) return;
+    for (const batch of batches.values()) clearTimeout(batch.timer);
+    this.deltaBatches.delete(client);
+  }
+
+  private destroySession(sessionId: string): void {
+    this.flushSessionDeltaBatches(sessionId);
+    this.sessionManager.destroy(sessionId);
+  }
+
+  private trackSessionMessage(sessionId: string, msg: ServerMessage): void {
     this.maybeSendPushNotification(sessionId, msg);
     this.recordDebugEvent(sessionId, {
       direction: "outgoing",
@@ -5785,13 +6474,26 @@ export class BridgeWebSocketServer {
         });
       }
     }
-    // Wrap the message with sessionId
-    const data = JSON.stringify({ ...msg, sessionId });
+  }
+
+  private broadcastSessionMessageNow(
+    sessionId: string,
+    msg: ServerMessage,
+    exclude?: WebSocket,
+  ): void {
     for (const client of this.wss.clients) {
       if (client === exclude) continue;
       if (client.readyState === WebSocket.OPEN) {
-        if (!this.shouldSendToClient(client, msg)) continue;
-        client.send(data);
+        const outboundMsg = {
+          ...(msg as unknown as Record<string, unknown>),
+          sessionId,
+        };
+        const compatibleMsg = this.prepareServerMessageForClient(
+          client,
+          outboundMsg,
+        );
+        if (!compatibleMsg) continue;
+        client.send(JSON.stringify(compatibleMsg));
       }
     }
   }
@@ -5882,26 +6584,64 @@ export class BridgeWebSocketServer {
     }
   }
 
-  private async refreshCodexModels(projectPath?: string): Promise<void> {
-    if (this.codexModelsRequest) return this.codexModelsRequest;
-    this.codexModelsRequest = this.loadCodexModels(projectPath)
-      .then((models) => {
-        if (models.length > 0) {
-          this.applyCodexModels(models);
-        } else {
-          this.applyFallbackCodexModels();
-        }
-        this.broadcastSessionList();
-      })
+  private async refreshCodexMetadata(projectPath?: string): Promise<void> {
+    if (this.codexMetadataRequest) {
+      if (projectPath) {
+        return this.codexMetadataRequest.then(() =>
+          this.refreshCodexMetadata(projectPath),
+        );
+      }
+      return this.codexMetadataRequest;
+    }
+    this.codexMetadataRequest = this.loadAndApplyCodexMetadata(projectPath)
       .catch((err) => {
-        console.warn(`[ws] Failed to load Codex models: ${err}`);
+        console.warn(`[ws] Failed to load Codex metadata: ${err}`);
+        this.codexProfiles = [];
+        this.defaultCodexProfile = undefined;
         this.applyFallbackCodexModels();
         this.broadcastSessionList();
       })
       .finally(() => {
-        this.codexModelsRequest = null;
+        this.codexMetadataRequest = null;
       });
-    return this.codexModelsRequest;
+    return this.codexMetadataRequest;
+  }
+
+  private async loadAndApplyCodexMetadata(
+    projectPath?: string,
+  ): Promise<void> {
+    const activeProcess = this.getActiveCodexProcess();
+    const codexProcess =
+      activeProcess ?? (await this.createStandaloneCodexProcess(projectPath));
+    try {
+      const [profileResult, modelResult] = await Promise.allSettled([
+        codexProcess.readProfileConfig(projectPath),
+        this.readCodexModels(codexProcess),
+      ]);
+
+      if (profileResult.status === "fulfilled") {
+        this.codexProfiles = profileResult.value.profiles;
+        this.defaultCodexProfile = profileResult.value.defaultProfile;
+      } else {
+        console.warn(
+          `[ws] Failed to load Codex profiles: ${profileResult.reason}`,
+        );
+        this.codexProfiles = [];
+        this.defaultCodexProfile = undefined;
+      }
+
+      if (modelResult.status === "fulfilled" && modelResult.value.length > 0) {
+        this.applyCodexModels(modelResult.value);
+      } else {
+        if (modelResult.status === "rejected") {
+          console.warn(`[ws] Failed to load Codex models: ${modelResult.reason}`);
+        }
+        this.applyFallbackCodexModels();
+      }
+      this.broadcastSessionList();
+    } finally {
+      if (!activeProcess) codexProcess.stop();
+    }
   }
 
   private async refreshClaudeModels(projectPath?: string): Promise<void> {
@@ -5950,33 +6690,24 @@ export class BridgeWebSocketServer {
     this.claudeModelEfforts = { ...FALLBACK_CLAUDE_MODEL_EFFORTS };
   }
 
-  private async loadCodexModels(
-    projectPath?: string,
+  private async readCodexModels(
+    codexProcess: CodexProcess,
   ): Promise<CodexModelMetadata[]> {
-    const process =
-      this.getActiveCodexProcess() ??
-      (await this.createStandaloneCodexProcess(projectPath));
-    const isStandalone = process !== this.getActiveCodexProcess();
-    try {
-      const modelSource = process as CodexProcess & {
-        listAvailableModelMetadata?: () => Promise<CodexModelMetadata[]>;
-        listAvailableModels?: () => Promise<string[]>;
-      };
-      if (typeof modelSource.listAvailableModelMetadata === "function") {
-        return await modelSource.listAvailableModelMetadata();
-      }
-      const models = typeof modelSource.listAvailableModels === "function"
-        ? await modelSource.listAvailableModels()
-        : [];
-      return models.map((model) => ({
-        model,
-        supportedReasoningEfforts: FALLBACK_CODEX_REASONING_EFFORTS,
-      }));
-    } finally {
-      if (isStandalone) {
-        process.stop();
-      }
+    const modelSource = codexProcess as CodexProcess & {
+      listAvailableModelMetadata?: () => Promise<CodexModelMetadata[]>;
+      listAvailableModels?: () => Promise<string[]>;
+    };
+    if (typeof modelSource.listAvailableModelMetadata === "function") {
+      return modelSource.listAvailableModelMetadata();
     }
+    const models = typeof modelSource.listAvailableModels === "function"
+      ? await modelSource.listAvailableModels()
+      : [];
+    return models.map((model) => ({
+      model,
+      supportedReasoningEfforts: fallbackCodexReasoningEfforts(model),
+      supportedServiceTiers: fallbackCodexServiceTiers(model),
+    }));
   }
 
   private applyCodexModels(models: CodexModelMetadata[]): void {
@@ -5986,7 +6717,15 @@ export class BridgeWebSocketServer {
         model.model,
         model.supportedReasoningEfforts.length > 0
           ? model.supportedReasoningEfforts
-          : FALLBACK_CODEX_REASONING_EFFORTS,
+          : fallbackCodexReasoningEfforts(model.model),
+      ]),
+    );
+    this.codexModelServiceTiers = Object.fromEntries(
+      models.map((model) => [
+        model.model,
+        (model.supportedServiceTiers?.length ?? 0) > 0
+          ? model.supportedServiceTiers
+          : fallbackCodexServiceTiers(model.model),
       ]),
     );
   }
@@ -5996,28 +6735,15 @@ export class BridgeWebSocketServer {
     this.codexModelReasoningEfforts = Object.fromEntries(
       FALLBACK_CODEX_MODELS.map((model) => [
         model,
-        FALLBACK_CODEX_REASONING_EFFORTS,
+        fallbackCodexReasoningEfforts(model),
       ]),
     );
-  }
-
-  private async refreshCodexProfiles(projectPath?: string): Promise<void> {
-    if (this.codexProfilesRequest) return this.codexProfilesRequest;
-    this.codexProfilesRequest = this.loadCodexProfiles(projectPath)
-      .then(({ profiles, defaultProfile }) => {
-        this.codexProfiles = profiles;
-        this.defaultCodexProfile = defaultProfile;
-        this.broadcastSessionList();
-      })
-      .catch((err) => {
-        console.warn(`[ws] Failed to load Codex profiles: ${err}`);
-        this.codexProfiles = [];
-        this.defaultCodexProfile = undefined;
-      })
-      .finally(() => {
-        this.codexProfilesRequest = null;
-      });
-    return this.codexProfilesRequest;
+    this.codexModelServiceTiers = Object.fromEntries(
+      FALLBACK_CODEX_MODELS.map((model) => [
+        model,
+        fallbackCodexServiceTiers(model),
+      ]),
+    );
   }
 
   private async loadCodexProfiles(
@@ -6156,8 +6882,13 @@ export class BridgeWebSocketServer {
     projectPath?: string,
   ): Promise<CodexProcess> {
     const proc = new CodexProcess();
-    await proc.initializeOnly(projectPath ?? process.cwd());
-    return proc;
+    try {
+      await proc.initializeOnly(projectPath ?? process.cwd());
+      return proc;
+    } catch (err) {
+      proc.stop();
+      throw err;
+    }
   }
 
   /** Extract a short project label from the full projectPath (last directory name). */
@@ -6352,13 +7083,42 @@ export class BridgeWebSocketServer {
   }
 
   private broadcast(msg: Record<string, unknown>): void {
-    const data = JSON.stringify(msg);
     for (const client of this.wss.clients) {
       if (client.readyState === WebSocket.OPEN) {
-        if (!this.shouldSendToClient(client, msg)) continue;
-        client.send(data);
+        const compatibleMsg = this.prepareServerMessageForClient(client, msg);
+        if (!compatibleMsg) continue;
+        client.send(JSON.stringify(compatibleMsg));
       }
     }
+  }
+
+  private prepareServerMessageForClient(
+    ws: WebSocket,
+    msg: ServerMessage | Record<string, unknown>,
+  ): ServerMessage | Record<string, unknown> | null {
+    if (!this.shouldSendToClient(ws, msg)) return null;
+    if (!("messages" in msg) || !Array.isArray(msg.messages)) return msg;
+    const messages = msg.messages as unknown[];
+
+    if (msg.type === "history") {
+      return {
+        ...(msg as unknown as Record<string, unknown>),
+        messages: messages.filter(
+          (message) =>
+            isRecord(message) && this.shouldSendToClient(ws, message),
+        ),
+      };
+    }
+    if (msg.type === "history_delta" || msg.type === "history_snapshot") {
+      return {
+        ...(msg as unknown as Record<string, unknown>),
+        messages: messages.filter((entry) => {
+          if (!isRecord(entry) || !isRecord(entry.message)) return true;
+          return this.shouldSendToClient(ws, entry.message);
+        }),
+      };
+    }
+    return msg;
   }
 
   private shouldSendToClient(
@@ -6373,10 +7133,12 @@ export class BridgeWebSocketServer {
   }
 
   private hasInputConflictSince(session: SessionInfo, baseSeq: number): boolean {
+    const codexResetRevision = session.codexHistoryResetRevision ??
+      session.codexCanonicalHistoryRevision;
     if (
       session.provider === "codex" &&
-      typeof session.codexCanonicalHistoryRevision === "number" &&
-      baseSeq < session.codexCanonicalHistoryRevision
+      typeof codexResetRevision === "number" &&
+      baseSeq < codexResetRevision
     ) {
       return true;
     }
@@ -6427,6 +7189,19 @@ export class BridgeWebSocketServer {
     } as Record<string, unknown>);
   }
 
+  private sendCodexGoalState(
+    ws: WebSocket,
+    sessionId: string,
+    session: SessionInfo,
+  ): void {
+    if (session.codexGoal === undefined) return;
+    this.send(ws, {
+      type: "goal_state",
+      sessionId,
+      goal: session.codexGoal,
+    });
+  }
+
   private sendCachedCommands(
     ws: WebSocket,
     sessionId: string,
@@ -6434,7 +7209,10 @@ export class BridgeWebSocketServer {
   ): void {
     // Restore command metadata when the original init/supported_commands event
     // has fallen out of the bounded in-memory history.
-    const cached = this.sessionManager.getCachedCommands(session.projectPath);
+    const cached = this.sessionManager.getCachedCommands(
+      session.provider,
+      session.worktreePath ?? session.projectPath,
+    );
     if (
       !cached ||
       (cached.slashCommands.length === 0 &&
@@ -6473,18 +7251,19 @@ export class BridgeWebSocketServer {
     ws: WebSocket,
     msg: ServerMessage | Record<string, unknown>,
   ): void {
-    if (!this.shouldSendToClient(ws, msg)) return;
-    const sessionId = this.extractSessionIdFromServerMessage(msg);
+    const compatibleMsg = this.prepareServerMessageForClient(ws, msg);
+    if (!compatibleMsg) return;
+    const sessionId = this.extractSessionIdFromServerMessage(compatibleMsg);
     if (sessionId) {
       this.recordDebugEvent(sessionId, {
         direction: "outgoing",
         channel: "ws",
-        type: String(msg.type ?? "unknown"),
-        detail: this.summarizeOutboundMessage(msg),
+        type: String(compatibleMsg.type ?? "unknown"),
+        detail: this.summarizeOutboundMessage(compatibleMsg),
       });
     }
     if (ws.readyState === WebSocket.OPEN) {
-      ws.send(JSON.stringify(msg));
+      ws.send(JSON.stringify(compatibleMsg));
     }
   }
 
@@ -6931,6 +7710,8 @@ export class BridgeWebSocketServer {
         return `id=${msg.id}`;
       case "answer":
         return `toolUseId=${msg.toolUseId}`;
+      case "install_tool_suggestion":
+        return `toolUseId=${msg.toolUseId}`;
       case "start":
         return `projectPath=${msg.projectPath} provider=${msg.provider ?? "claude"}`;
       case "resume_session":
@@ -7068,6 +7849,9 @@ export class BridgeWebSocketServer {
       }
       if (session.codexSettings.modelReasoningEffort !== undefined) {
         msg.modelReasoningEffort = session.codexSettings.modelReasoningEffort;
+      }
+      if (session.codexSettings.serviceTier !== undefined) {
+        msg.serviceTier = session.codexSettings.serviceTier;
       }
       if (session.codexSettings.networkAccessEnabled !== undefined) {
         msg.networkAccessEnabled = session.codexSettings.networkAccessEnabled;

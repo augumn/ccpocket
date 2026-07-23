@@ -21,6 +21,7 @@ String? _errorTitle(String? errorCode, AppLocalizations l) {
     'git_not_available' => l.gitUnavailableTitle,
     'bridge_update_required' => 'Bridge Update Required',
     'auto_mode_unavailable' => 'Auto Mode Unavailable',
+    'codex_warning' => 'Codex Warning',
     'codex_rate_limit_retrying' ||
     'codex_rate_limit_exhausted' => 'Codex Rate Limit',
     _ => null,
@@ -74,6 +75,7 @@ bool _isWarning(String? errorCode) {
   return errorCode == 'git_not_available' ||
       errorCode == 'bridge_update_required' ||
       errorCode == 'auto_mode_unavailable' ||
+      errorCode == 'codex_warning' ||
       errorCode == 'codex_rate_limit_retrying' ||
       errorCode == 'codex_rate_limit_exhausted';
 }

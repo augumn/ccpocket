@@ -4,6 +4,44 @@ import 'package:flutter_test/flutter_test.dart';
 
 void main() {
   group('SessionRuntimeStore', () {
+    test('keeps goal state out of the chat timeline cache', () {
+      final store = SessionRuntimeStore();
+      store.applyServerMessage(
+        's1',
+        const GoalStateMessage(
+          sessionId: 's1',
+          goal: CodexGoal(
+            threadId: 'thread-1',
+            objective: 'Goal',
+            status: CodexThreadGoalStatus.active,
+            tokenBudget: null,
+            tokensUsed: 0,
+            timeUsedSeconds: 0,
+            createdAt: 1,
+            updatedAt: 1,
+          ),
+        ),
+      );
+
+      expect(store.messages('s1'), isEmpty);
+    });
+
+    test('keeps repeated codex settings out of the chat timeline cache', () {
+      final store = SessionRuntimeStore();
+      const settings = SystemMessage(
+        subtype: 'codex_settings',
+        provider: 'codex',
+        model: 'gpt-5.6-terra',
+        modelReasoningEffort: 'xhigh',
+        serviceTier: 'fast',
+      );
+
+      store.applyServerMessage('s1', settings);
+      store.applyServerMessage('s1', settings);
+
+      expect(store.messages('s1'), isEmpty);
+    });
+
     test('keeps timeline and explorer history separated by session', () {
       final store = SessionRuntimeStore();
 

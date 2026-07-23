@@ -6,6 +6,7 @@ import {
   defaultCodexSharedAppServerUrl,
   readCodexSharedAppServerUrl,
 } from "./codex-app-server-config.js";
+import { parseBridgePort } from "./bridge-port.js";
 
 const PLIST_LABEL = "com.ccpocket.bridge";
 
@@ -43,13 +44,16 @@ interface SetupOptions {
 }
 
 export function setupLaunchd(opts: SetupOptions): void {
-  const port = opts.port ?? process.env.BRIDGE_PORT ?? "8765";
+  const port = parseBridgePort(opts.port ?? process.env.BRIDGE_PORT);
   const host = opts.host ?? process.env.BRIDGE_HOST ?? "0.0.0.0";
   const apiKey = opts.apiKey ?? process.env.BRIDGE_API_KEY ?? "";
   const allowedDirs = process.env.BRIDGE_ALLOWED_DIRS ?? "";
   const publicWsUrl =
     opts.publicWsUrl ?? process.env.BRIDGE_PUBLIC_WS_URL ?? "";
   const disableMdns = opts.disableMdns || process.env.BRIDGE_DISABLE_MDNS;
+  const codexAssistModel = process.env.BRIDGE_CODEX_ASSIST_MODEL?.trim() ?? "";
+  const codexAssistReasoningEffort =
+    process.env.BRIDGE_CODEX_ASSIST_REASONING_EFFORT?.trim() ?? "";
   const codexAppServerMode =
     opts.codexAppServerMode ?? process.env.BRIDGE_CODEX_APP_SERVER_MODE ?? "";
   const legacyCodexAppServerPort =
@@ -63,7 +67,7 @@ export function setupLaunchd(opts: SetupOptions): void {
     (codexAppServerMode === "managed"
       ? legacyCodexAppServerPort
         ? `ws://127.0.0.1:${legacyCodexAppServerPort}`
-        : defaultCodexSharedAppServerUrl(port)
+        : defaultCodexSharedAppServerUrl(String(port))
       : "");
   if (codexAppServerMode === "external" && !codexAppServerUrl) {
     throw new Error(
@@ -110,6 +114,18 @@ export function setupLaunchd(opts: SetupOptions): void {
     envBlock += `
         <key>BRIDGE_DISABLE_MDNS</key>
         <string>1</string>`;
+  }
+
+  if (codexAssistModel) {
+    envBlock += `
+        <key>BRIDGE_CODEX_ASSIST_MODEL</key>
+        <string>${codexAssistModel}</string>`;
+  }
+
+  if (codexAssistReasoningEffort) {
+    envBlock += `
+        <key>BRIDGE_CODEX_ASSIST_REASONING_EFFORT</key>
+        <string>${codexAssistReasoningEffort}</string>`;
   }
 
   if (codexAppServerMode) {

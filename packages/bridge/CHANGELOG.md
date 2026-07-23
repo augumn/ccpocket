@@ -2,6 +2,111 @@
 
 All notable changes to `@ccpocket/bridge` will be documented in this file.
 
+## [1.69.0] - 2026-07-21
+
+### Added
+- Emit structured Codex Guardian approval notices for medium- and high-risk auto-approved actions, with client capability negotiation and legacy history filtering.
+
+## [1.68.2] - 2026-07-21
+
+### Fixed
+- Preserve live Codex subagent tool logs before the final assistant response when canonical thread snapshots omit subagent activity, including compacted and multi-client history synchronization.
+
+## [1.68.1] - 2026-07-21
+
+### Changed
+- Reduce Codex skill-completion latency by reusing provider- and working-directory-scoped completion metadata and fetching skills, apps, and plugins in parallel with skills prioritized.
+- Log the elapsed time from session start until completion metadata becomes available.
+
+### Fixed
+- Propagate empty completion snapshots so removed skills, apps, and plugins do not remain cached.
+
+## [1.68.0] - 2026-07-20
+
+### Added
+- Support configuring the Codex model and reasoning effort used for session auto-rename and commit-message assistance, including persisted launchd and systemd service settings.
+
+## [1.67.4] - 2026-07-19
+
+### Fixed
+- Preserve streamed Codex assistant responses when completion notifications are missing or delayed.
+- Deduplicate canonical and live Codex history for the same user turn without collapsing distinct responses.
+
+## [1.67.3] - 2026-07-18
+
+### Fixed
+- Replay cached Codex goal state with history responses so active goals remain visible after turn completion and app relaunch.
+
+## [1.67.2] - 2026-07-17
+
+### Fixed
+- Run Codex commit-message and session-name assistance with no reasoning effort instead of inheriting a higher global setting.
+
+## [1.67.1] - 2026-07-16
+
+### Fixed
+- Suppress all approved Codex auto-review notifications regardless of reported risk while continuing to surface actionable warnings.
+
+## [1.67.0] - 2026-07-16
+
+### Changed
+- Limit retained idle sessions to the 30 most recently active sessions so stale processes release background resources.
+
+### Fixed
+- Read Codex history through the process that owns the session instead of an unrelated active process.
+- Suppress informational Codex auto-review approval notifications while continuing to surface actionable warnings.
+
+## [1.66.2] - 2026-07-16
+
+### Fixed
+- Handle Codex tool suggestion dialogs and preserve their pending state until installation or authentication completes.
+- Cover additional Codex app-server requests, warnings, review results, and typed MCP elicitation responses, including required and optional form fields.
+
+## [1.66.1] - 2026-07-16
+
+### Fixed
+- Classify Codex usage limits by window duration so a weekly-only limit is not mislabeled as the five-hour limit.
+
+## [1.66.0] - 2026-07-16
+
+### Added
+- Support selecting and changing Codex Standard and Fast service tiers for new and active sessions.
+- Expose Codex service-tier availability and current Model, Effort, and Speed settings to connected clients.
+
+### Changed
+- Persist Codex Speed across session resumes and restore Standard when the runtime no longer reports Fast mode.
+
+## [1.65.1] - 2026-07-15
+
+### Fixed
+- Disable mDNS advertising on macOS to prevent repeated Bonjour local hostname renaming after Bridge restarts.
+
+## [1.65.0] - 2026-07-14
+
+### Added
+- Add persisted Codex Goal support through the app-server, including get, set, pause, resume, clear, and live goal state notifications.
+
+## [1.64.0] - 2026-07-12
+
+### Added
+- Support GPT-5.6 `max` and `ultra` reasoning efforts, including model-specific availability for Sol, Terra, and Luna.
+
+### Changed
+- Read ordered reasoning effort metadata from the latest Codex app-server protocol while remaining compatible with legacy string responses.
+- Preserve future model-advertised reasoning effort values across session start, resume, and runtime model switching.
+
+## [1.63.6] - 2026-07-11
+
+### Changed
+- Batch session delta broadcasts per client and session to reduce streaming frame overhead without delaying recording or debug output.
+- Limit client file-list payloads, cache Claude message images per session, and cool down repeated connection metadata refreshes.
+
+### Fixed
+- Validate the configured server port before startup and report invalid, missing, or unavailable ports clearly.
+- Derive Codex permission displays from runtime settings and retain permission mode changes made while a session is idle.
+- Map AskUserQuestion answers to their original questions and require explicit opt-in for unrestricted project paths.
+- Preserve queued user input when interrupting or resuming Claude sessions.
+
 ## [1.63.5] - 2026-06-12
 
 ### Fixed

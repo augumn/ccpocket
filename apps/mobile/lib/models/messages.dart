@@ -104,6 +104,85 @@ enum ProcessStatus {
   }
 }
 
+enum CodexThreadGoalStatus {
+  active('active'),
+  paused('paused'),
+  blocked('blocked'),
+  usageLimited('usageLimited'),
+  budgetLimited('budgetLimited'),
+  complete('complete');
+
+  final String value;
+  const CodexThreadGoalStatus(this.value);
+
+  static CodexThreadGoalStatus fromString(String value) => switch (value) {
+    'paused' => CodexThreadGoalStatus.paused,
+    'blocked' => CodexThreadGoalStatus.blocked,
+    'usageLimited' => CodexThreadGoalStatus.usageLimited,
+    'budgetLimited' => CodexThreadGoalStatus.budgetLimited,
+    'complete' => CodexThreadGoalStatus.complete,
+    _ => CodexThreadGoalStatus.active,
+  };
+}
+
+class CodexGoal {
+  final String threadId;
+  final String objective;
+  final CodexThreadGoalStatus status;
+  final int? tokenBudget;
+  final int tokensUsed;
+  final int timeUsedSeconds;
+  final int createdAt;
+  final int updatedAt;
+
+  const CodexGoal({
+    required this.threadId,
+    required this.objective,
+    required this.status,
+    required this.tokenBudget,
+    required this.tokensUsed,
+    required this.timeUsedSeconds,
+    required this.createdAt,
+    required this.updatedAt,
+  });
+
+  factory CodexGoal.fromJson(Map<String, dynamic> json) => CodexGoal(
+    threadId: json['threadId'] as String,
+    objective: json['objective'] as String,
+    status: CodexThreadGoalStatus.fromString(json['status'] as String),
+    tokenBudget: json['tokenBudget'] as int?,
+    tokensUsed: json['tokensUsed'] as int? ?? 0,
+    timeUsedSeconds: json['timeUsedSeconds'] as int? ?? 0,
+    createdAt: json['createdAt'] as int? ?? 0,
+    updatedAt: json['updatedAt'] as int? ?? 0,
+  );
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is CodexGoal &&
+          threadId == other.threadId &&
+          objective == other.objective &&
+          status == other.status &&
+          tokenBudget == other.tokenBudget &&
+          tokensUsed == other.tokensUsed &&
+          timeUsedSeconds == other.timeUsedSeconds &&
+          createdAt == other.createdAt &&
+          updatedAt == other.updatedAt;
+
+  @override
+  int get hashCode => Object.hash(
+    threadId,
+    objective,
+    status,
+    tokenBudget,
+    tokensUsed,
+    timeUsedSeconds,
+    createdAt,
+    updatedAt,
+  );
+}
+
 // ---- Provider ----
 
 enum Provider {
@@ -230,22 +309,49 @@ CodexPermissionsMode codexPermissionsModeFromSettings({
 }) {
   final explicit = codexPermissionsModeFromRaw(codexPermissionsMode);
   if (explicit != null) return explicit;
+  if (codexPermissionsMode != null && codexPermissionsMode.isNotEmpty) {
+    return CodexPermissionsMode.custom;
+  }
   final normalizedSandbox = switch (sandboxMode) {
-    'danger-full-access' || 'off' => SandboxMode.off,
-    'workspace-write' || 'read-only' || 'on' => SandboxMode.on,
+    'danger-full-access' || 'off' => 'danger-full-access',
+    'workspace-write' || 'on' => 'workspace-write',
+    'read-only' => 'read-only',
     _ => null,
   };
   if (approvalPolicy == CodexApprovalPolicy.never.value &&
-      (normalizedSandbox == null || normalizedSandbox == SandboxMode.off)) {
+      normalizedSandbox == 'danger-full-access') {
     return CodexPermissionsMode.fullAccess;
   }
   if (approvalPolicy == CodexApprovalPolicy.onRequest.value &&
-      (normalizedSandbox == null || normalizedSandbox == SandboxMode.on)) {
-    return isCodexAutoReviewApprovalsReviewer(approvalsReviewer)
-        ? CodexPermissionsMode.autoReview
-        : CodexPermissionsMode.defaultPermissions;
+      normalizedSandbox == 'workspace-write') {
+    if (isCodexAutoReviewApprovalsReviewer(approvalsReviewer)) {
+      return CodexPermissionsMode.autoReview;
+    }
+    if (approvalsReviewer == null || approvalsReviewer == 'user') {
+      return CodexPermissionsMode.defaultPermissions;
+    }
   }
   return CodexPermissionsMode.custom;
+}
+
+String? _resolveCodexPermissionsMode(Map<String, dynamic>? codexSettings) {
+  if (codexSettings == null) return null;
+  final explicit = codexPermissionsModeFromRaw(
+    codexSettings['codexPermissionsMode'] as String?,
+  );
+  if (explicit != null) return explicit.value;
+  if (codexSettings['codexPermissionsMode'] != null) {
+    return CodexPermissionsMode.custom.value;
+  }
+  if (codexSettings['approvalPolicy'] == null ||
+      codexSettings['sandboxMode'] == null) {
+    return null;
+  }
+  return codexPermissionsModeFromSettings(
+    approvalPolicy: codexSettings['approvalPolicy'] as String?,
+    approvalsReviewer: codexSettings['approvalsReviewer'] as String?,
+    sandboxMode: codexSettings['sandboxMode'] as String?,
+  ).value;
 }
 
 CodexApprovalPolicy? approvalPolicyForCodexPermissionsMode(
@@ -370,26 +476,62 @@ enum SandboxMode {
   const SandboxMode(this.value, this.label);
 }
 
-enum ReasoningEffort {
-  none('none', 'None'),
-  minimal('minimal', 'Minimal'),
-  low('low', 'Low'),
-  medium('medium', 'Medium'),
-  high('high', 'High'),
-  xhigh('xhigh', 'XHigh');
+final class ReasoningEffort {
+  static const none = ReasoningEffort._('none', 'None');
+  static const minimal = ReasoningEffort._('minimal', 'Minimal');
+  static const low = ReasoningEffort._('low', 'Light');
+  static const medium = ReasoningEffort._('medium', 'Medium');
+  static const high = ReasoningEffort._('high', 'High');
+  static const xhigh = ReasoningEffort._('xhigh', 'Extra High');
+  static const max = ReasoningEffort._('max', 'Max');
+  static const ultra = ReasoningEffort._('ultra', 'Ultra');
+
+  static const values = [none, minimal, low, medium, high, xhigh, max, ultra];
 
   final String value;
   final String label;
-  const ReasoningEffort(this.value, this.label);
+  const ReasoningEffort._(this.value, this.label);
+
+  factory ReasoningEffort.fromValue(String value) {
+    for (final effort in values) {
+      if (effort.value == value) return effort;
+    }
+    final words = value.split(RegExp(r'[-_\s]+'));
+    final label = words
+        .where((word) => word.isNotEmpty)
+        .map((word) => '${word[0].toUpperCase()}${word.substring(1)}')
+        .join(' ');
+    return ReasoningEffort._(value, label.isEmpty ? value : label);
+  }
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is ReasoningEffort && other.value == value;
+
+  @override
+  int get hashCode => value.hashCode;
 }
 
 ReasoningEffort? reasoningEffortByValue(String? raw) {
-  if (raw == null) return null;
-  for (final effort in ReasoningEffort.values) {
-    if (effort.value == raw) return effort;
-  }
-  return null;
+  final value = raw?.trim();
+  if (value == null || value.isEmpty) return null;
+  return ReasoningEffort.fromValue(value);
 }
+
+enum CodexSpeed {
+  standard('standard', 'Standard'),
+  fast('fast', 'Fast');
+
+  final String value;
+  final String label;
+  const CodexSpeed(this.value, this.label);
+}
+
+CodexSpeed codexSpeedFromRaw(String? raw) => switch (raw?.trim()) {
+  'fast' => CodexSpeed.fast,
+  _ => CodexSpeed.standard,
+};
 
 enum WebSearchMode {
   disabled('disabled', 'Disabled'),
@@ -597,6 +739,7 @@ sealed class ServerMessage {
         planMode: json['planMode'] as bool?,
         sandboxMode: json['sandboxMode'] as String?,
         modelReasoningEffort: json['modelReasoningEffort'] as String?,
+        serviceTier: json['serviceTier'] as String?,
         networkAccessEnabled: json['networkAccessEnabled'] as bool?,
         webSearchMode: json['webSearchMode'] as String?,
         slashCommands:
@@ -677,6 +820,11 @@ sealed class ServerMessage {
         toolCalls: json['toolCalls'] as int?,
         fileEdits: json['fileEdits'] as int?,
       ),
+      'guardian_approval' => GuardianApprovalMessage(
+        risk: GuardianApprovalRisk.fromString(json['risk'] as String?),
+        reason: json['reason'] as String? ?? '',
+        authorization: json['authorization'] as String?,
+      ),
       'error' => ErrorMessage(
         message: json['message'] as String,
         errorCode: json['errorCode'] as String?,
@@ -724,6 +872,12 @@ sealed class ServerMessage {
                 .toList() ??
             const [],
       ),
+      'goal_state' => GoalStateMessage(
+        sessionId: json['sessionId'] as String?,
+        goal: json['goal'] is Map<String, dynamic>
+            ? CodexGoal.fromJson(json['goal'] as Map<String, dynamic>)
+            : null,
+      ),
       'permission_request' => PermissionRequestMessage(
         toolUseId: json['toolUseId'] as String,
         toolName: json['toolName'] as String,
@@ -757,6 +911,14 @@ sealed class ServerMessage {
             const [],
         codexModelReasoningEfforts:
             (json['codexModelReasoningEfforts'] as Map?)?.map(
+              (key, value) => MapEntry(
+                key as String,
+                (value as List?)?.whereType<String>().toList() ?? const [],
+              ),
+            ) ??
+            const {},
+        codexModelServiceTiers:
+            (json['codexModelServiceTiers'] as Map?)?.map(
               (key, value) => MapEntry(
                 key as String,
                 (value as List?)?.whereType<String>().toList() ?? const [],
@@ -847,6 +1009,8 @@ sealed class ServerMessage {
       ),
       'file_list' => FileListMessage(
         files: (json['files'] as List).cast<String>(),
+        totalFiles: json['totalFiles'] as int?,
+        truncated: json['truncated'] as bool? ?? false,
       ),
       'project_history' => ProjectHistoryMessage(
         projects: (json['projects'] as List).cast<String>(),
@@ -1283,6 +1447,7 @@ class SystemMessage implements ServerMessage {
   final bool? planMode;
   final String? sandboxMode;
   final String? modelReasoningEffort;
+  final String? serviceTier;
   final bool? networkAccessEnabled;
   final String? webSearchMode;
   final List<String> slashCommands;
@@ -1313,6 +1478,7 @@ class SystemMessage implements ServerMessage {
     this.planMode,
     this.sandboxMode,
     this.modelReasoningEffort,
+    this.serviceTier,
     this.networkAccessEnabled,
     this.webSearchMode,
     this.slashCommands = const [],
@@ -1403,6 +1569,27 @@ class ErrorMessage implements ServerMessage {
   const ErrorMessage({required this.message, this.errorCode});
 }
 
+enum GuardianApprovalRisk {
+  medium,
+  high;
+
+  static GuardianApprovalRisk fromString(String? value) => switch (value) {
+    'high' => GuardianApprovalRisk.high,
+    _ => GuardianApprovalRisk.medium,
+  };
+}
+
+class GuardianApprovalMessage implements ServerMessage {
+  final GuardianApprovalRisk risk;
+  final String reason;
+  final String? authorization;
+  const GuardianApprovalMessage({
+    required this.risk,
+    required this.reason,
+    this.authorization,
+  });
+}
+
 class StatusMessage implements ServerMessage {
   final ProcessStatus status;
   const StatusMessage({required this.status});
@@ -1460,6 +1647,32 @@ class HistorySnapshotMessage implements ServerMessage {
   });
 }
 
+class ToolSuggestionApp {
+  final String id;
+  final String name;
+  final String? description;
+  final String? installUrl;
+  final String? category;
+
+  const ToolSuggestionApp({
+    required this.id,
+    required this.name,
+    this.description,
+    this.installUrl,
+    this.category,
+  });
+
+  factory ToolSuggestionApp.fromJson(Map<String, dynamic> json) {
+    return ToolSuggestionApp(
+      id: json['id'] as String? ?? '',
+      name: json['name'] as String? ?? '',
+      description: json['description'] as String?,
+      installUrl: json['installUrl'] as String?,
+      category: json['category'] as String?,
+    );
+  }
+}
+
 class PermissionRequestMessage implements ServerMessage {
   final String toolUseId;
   final String toolName;
@@ -1475,6 +1688,35 @@ class PermissionRequestMessage implements ServerMessage {
 
   bool get isMcpElicitation => toolName == 'McpElicitation';
 
+  bool get isToolSuggestion => toolName == 'ToolSuggestion';
+
+  String get suggestedToolName =>
+      input['toolName'] as String? ?? displayToolName;
+
+  String get toolSuggestionReason =>
+      input['suggestReason'] as String? ??
+      input['message'] as String? ??
+      suggestedToolName;
+
+  String get toolSuggestionInstallState =>
+      input['installState'] as String? ?? 'idle';
+
+  String? get toolSuggestionInstallError => input['installError'] as String?;
+
+  String? get toolSuggestionInstallUrl => input['installUrl'] as String?;
+
+  String? get toolSuggestionType => input['toolType'] as String?;
+
+  List<ToolSuggestionApp> get appsNeedingAuthentication {
+    final raw = input['appsNeedingAuth'];
+    if (raw is! List) return const [];
+    return raw
+        .whereType<Map>()
+        .map((app) => ToolSuggestionApp.fromJson(app.cast<String, dynamic>()))
+        .where((app) => app.id.isNotEmpty && app.name.isNotEmpty)
+        .toList(growable: false);
+  }
+
   bool get hasQuestions => hasRequestUserInputQuestions(input);
 
   bool get isQuestionPrompt =>
@@ -1488,17 +1730,23 @@ class PermissionRequestMessage implements ServerMessage {
 
   bool get isPermissionGrantRequest => toolName == 'Permissions';
 
+  bool get isMalformedAskUserQuestion =>
+      toolName == 'AskUserQuestion' && !hasQuestions;
+
   List<String> get availableDecisions =>
       _stringList(input['availableDecisions']);
 
   bool get canApprove =>
-      availableDecisions.isEmpty || availableDecisions.contains('accept');
+      !isMalformedAskUserQuestion &&
+      (availableDecisions.isEmpty || availableDecisions.contains('accept'));
 
   bool get canApproveForSession =>
-      availableDecisions.isEmpty ||
-      availableDecisions.contains('acceptForSession');
+      !isMalformedAskUserQuestion &&
+      (availableDecisions.isEmpty ||
+          availableDecisions.contains('acceptForSession'));
 
   bool get canDecline =>
+      isMalformedAskUserQuestion ||
       availableDecisions.isEmpty ||
       availableDecisions.contains('decline') ||
       availableDecisions.contains('cancel');
@@ -1510,6 +1758,9 @@ class PermissionRequestMessage implements ServerMessage {
   PermissionPresentation get presentation => PermissionPresentation.from(this);
 
   String get displayToolName {
+    if (isToolSuggestion) {
+      return input['toolName'] as String? ?? 'Plugin suggestion';
+    }
     if (isQuestionApproval) {
       return requestUserInputHeader(input) ?? 'App Tool Approval';
     }
@@ -1555,6 +1806,17 @@ class PermissionPresentation {
   factory PermissionPresentation.from(PermissionRequestMessage message) {
     final input = message.input;
     final rawDetails = const JsonEncoder.withIndent('  ').convert(input);
+
+    if (message.isToolSuggestion) {
+      return PermissionPresentation(
+        title: message.suggestedToolName,
+        summary: message.toolSuggestionReason,
+        rawDetails: rawDetails,
+        riskBadge: message.toolSuggestionType == 'plugin'
+            ? 'Plugin'
+            : 'Connector',
+      );
+    }
 
     if (message.isQuestionApproval && !message.isMcpElicitation) {
       return PermissionPresentation(
@@ -2038,6 +2300,7 @@ class SessionListMessage implements ServerMessage {
   final Map<String, List<String>> claudeModelEfforts;
   final List<String> codexModels;
   final Map<String, List<String>> codexModelReasoningEfforts;
+  final Map<String, List<String>> codexModelServiceTiers;
   final List<String> codexProfiles;
   final String? defaultCodexProfile;
   final String? bridgeVersion;
@@ -2048,6 +2311,7 @@ class SessionListMessage implements ServerMessage {
     this.claudeModelEfforts = const {},
     this.codexModels = const [],
     this.codexModelReasoningEfforts = const {},
+    this.codexModelServiceTiers = const {},
     this.codexProfiles = const [],
     this.defaultCodexProfile,
     this.bridgeVersion,
@@ -2262,7 +2526,14 @@ class DebugBundleMessage implements ServerMessage {
 
 class FileListMessage implements ServerMessage {
   final List<String> files;
-  const FileListMessage({required this.files});
+  final int? totalFiles;
+  final bool truncated;
+
+  const FileListMessage({
+    required this.files,
+    this.totalFiles,
+    this.truncated = false,
+  });
 }
 
 class FileContentMessage implements ServerMessage {
@@ -2488,6 +2759,12 @@ class ConversationQueueMessage implements ServerMessage {
     required this.limit,
     required this.items,
   });
+}
+
+class GoalStateMessage implements ServerMessage {
+  final String? sessionId;
+  final CodexGoal? goal;
+  const GoalStateMessage({this.sessionId, required this.goal});
 }
 
 class InputRejectedMessage implements ServerMessage {
@@ -3105,6 +3382,7 @@ class RecentSession {
   final String? codexModel;
   final String? codexProfile;
   final String? codexModelReasoningEffort;
+  final String? codexServiceTier;
   final bool? codexNetworkAccessEnabled;
   final String? codexWebSearchMode;
   final List<String> codexAdditionalWritableRoots;
@@ -3134,6 +3412,7 @@ class RecentSession {
     this.codexModel,
     this.codexProfile,
     this.codexModelReasoningEffort,
+    this.codexServiceTier,
     this.codexNetworkAccessEnabled,
     this.codexWebSearchMode,
     this.codexAdditionalWritableRoots = const [],
@@ -3181,7 +3460,7 @@ class RecentSession {
         executionMode: json['executionMode'] as String?,
       ),
       codexApprovalsReviewer: codexSettings?['approvalsReviewer'] as String?,
-      codexPermissionsMode: codexSettings?['codexPermissionsMode'] as String?,
+      codexPermissionsMode: _resolveCodexPermissionsMode(codexSettings),
       executionMode:
           json['executionMode'] as String? ??
           deriveExecutionMode(
@@ -3198,6 +3477,7 @@ class RecentSession {
       codexProfile: codexSettings?['profile'] as String?,
       codexModelReasoningEffort:
           codexSettings?['modelReasoningEffort'] as String?,
+      codexServiceTier: codexSettings?['serviceTier'] as String?,
       codexNetworkAccessEnabled:
           codexSettings?['networkAccessEnabled'] as bool?,
       codexWebSearchMode: codexSettings?['webSearchMode'] as String?,
@@ -3245,6 +3525,7 @@ class RecentSession {
       codexModel: codexModel,
       codexProfile: codexProfile,
       codexModelReasoningEffort: codexModelReasoningEffort,
+      codexServiceTier: codexServiceTier,
       codexNetworkAccessEnabled: codexNetworkAccessEnabled,
       codexWebSearchMode: codexWebSearchMode,
       codexAdditionalWritableRoots: codexAdditionalWritableRoots,
@@ -3281,6 +3562,7 @@ class RecentSession {
       codexModel: codexModel,
       codexProfile: codexProfile,
       codexModelReasoningEffort: codexModelReasoningEffort,
+      codexServiceTier: codexServiceTier,
       codexNetworkAccessEnabled: codexNetworkAccessEnabled,
       codexWebSearchMode: codexWebSearchMode,
       codexAdditionalWritableRoots: codexAdditionalWritableRoots,
@@ -3318,6 +3600,7 @@ class SessionInfo {
   final String? codexModel;
   final String? codexProfile;
   final String? codexModelReasoningEffort;
+  final String? codexServiceTier;
   final bool? codexNetworkAccessEnabled;
   final String? codexWebSearchMode;
   final List<String> codexAdditionalWritableRoots;
@@ -3350,6 +3633,7 @@ class SessionInfo {
     this.codexModel,
     this.codexProfile,
     this.codexModelReasoningEffort,
+    this.codexServiceTier,
     this.codexNetworkAccessEnabled,
     this.codexWebSearchMode,
     this.codexAdditionalWritableRoots = const [],
@@ -3391,6 +3675,7 @@ class SessionInfo {
     String? codexModel,
     String? codexProfile,
     String? codexModelReasoningEffort,
+    String? codexServiceTier,
     bool? codexNetworkAccessEnabled,
     String? codexWebSearchMode,
     List<String>? codexAdditionalWritableRoots,
@@ -3427,6 +3712,7 @@ class SessionInfo {
       codexProfile: codexProfile ?? this.codexProfile,
       codexModelReasoningEffort:
           codexModelReasoningEffort ?? this.codexModelReasoningEffort,
+      codexServiceTier: codexServiceTier ?? this.codexServiceTier,
       codexNetworkAccessEnabled:
           codexNetworkAccessEnabled ?? this.codexNetworkAccessEnabled,
       codexWebSearchMode: codexWebSearchMode ?? this.codexWebSearchMode,
@@ -3476,12 +3762,13 @@ class SessionInfo {
         executionMode: json['executionMode'] as String?,
       ),
       codexApprovalsReviewer: codexSettings?['approvalsReviewer'] as String?,
-      codexPermissionsMode: codexSettings?['codexPermissionsMode'] as String?,
+      codexPermissionsMode: _resolveCodexPermissionsMode(codexSettings),
       codexSandboxMode: codexSettings?['sandboxMode'] as String?,
       codexModel: sanitizeCodexModelName(codexSettings?['model'] as String?),
       codexProfile: codexSettings?['profile'] as String?,
       codexModelReasoningEffort:
           codexSettings?['modelReasoningEffort'] as String?,
+      codexServiceTier: codexSettings?['serviceTier'] as String?,
       codexNetworkAccessEnabled:
           codexSettings?['networkAccessEnabled'] as bool?,
       codexWebSearchMode: codexSettings?['webSearchMode'] as String?,
@@ -3517,6 +3804,8 @@ class ClientMessage {
     int protocolVersion = 1,
     List<String> supportedServerMessages = const [
       'conversation_queue',
+      'goal_state',
+      'guardian_approval',
       'history_delta',
       'history_snapshot',
       'git_status_result',
@@ -3556,6 +3845,7 @@ class ClientMessage {
     String? model,
     String? sandboxMode,
     String? modelReasoningEffort,
+    String? serviceTier,
     bool? networkAccessEnabled,
     String? webSearchMode,
     List<String>? additionalWritableRoots,
@@ -3587,6 +3877,7 @@ class ClientMessage {
       'model': ?model,
       'sandboxMode': ?sandboxMode,
       'modelReasoningEffort': ?modelReasoningEffort,
+      'serviceTier': ?serviceTier,
       'networkAccessEnabled': ?networkAccessEnabled,
       'webSearchMode': ?webSearchMode,
       if (additionalWritableRoots != null && additionalWritableRoots.isNotEmpty)
@@ -3716,6 +4007,31 @@ class ClientMessage {
     });
   }
 
+  factory ClientMessage.setCodexSpeed(String serviceTier, {String? sessionId}) {
+    return ClientMessage._(<String, dynamic>{
+      'type': 'set_codex_speed',
+      'serviceTier': serviceTier,
+      'sessionId': ?sessionId,
+    });
+  }
+
+  factory ClientMessage.getGoal(String sessionId) =>
+      ClientMessage._({'type': 'get_goal', 'sessionId': sessionId});
+
+  factory ClientMessage.setGoal({
+    required String sessionId,
+    String? objective,
+    CodexThreadGoalStatus? status,
+  }) => ClientMessage._({
+    'type': 'set_goal',
+    'sessionId': sessionId,
+    'objective': ?objective,
+    if (status != null) 'status': status.value,
+  });
+
+  factory ClientMessage.clearGoal(String sessionId) =>
+      ClientMessage._({'type': 'clear_goal', 'sessionId': sessionId});
+
   factory ClientMessage.setSandboxMode(
     String sandboxMode, {
     String? sessionId,
@@ -3769,6 +4085,17 @@ class ClientMessage {
       'type': 'answer',
       'toolUseId': toolUseId,
       'result': result,
+      'sessionId': ?sessionId,
+    });
+  }
+
+  factory ClientMessage.installToolSuggestion(
+    String toolUseId, {
+    String? sessionId,
+  }) {
+    return ClientMessage._(<String, dynamic>{
+      'type': 'install_tool_suggestion',
+      'toolUseId': toolUseId,
       'sessionId': ?sessionId,
     });
   }
@@ -3865,6 +4192,7 @@ class ClientMessage {
     String? sandboxMode,
     String? model,
     String? modelReasoningEffort,
+    String? serviceTier,
     bool? networkAccessEnabled,
     String? webSearchMode,
     List<String>? additionalWritableRoots,
@@ -3890,6 +4218,7 @@ class ClientMessage {
       'sandboxMode': ?sandboxMode,
       'model': ?model,
       'modelReasoningEffort': ?modelReasoningEffort,
+      'serviceTier': ?serviceTier,
       'networkAccessEnabled': ?networkAccessEnabled,
       'webSearchMode': ?webSearchMode,
       if (additionalWritableRoots != null && additionalWritableRoots.isNotEmpty)

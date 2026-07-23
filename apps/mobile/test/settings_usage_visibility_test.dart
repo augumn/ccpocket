@@ -935,7 +935,45 @@ void main() {
       );
       expect(find.text(l.settingsNewSessionTabs), findsOneWidget);
       expect(find.text(l.autoRenameCodexSessions), findsOneWidget);
+      expect(find.text(l.showExtendedCodexEfforts), findsOneWidget);
       expect(find.text(l.autoRenameClaudeSessions), findsOneWidget);
+
+      await settingsCubit.close();
+      await machineManagerCubit.close();
+      bridge.dispose();
+    });
+
+    testWidgets('toggles extended Codex Efforts from agent settings', (
+      tester,
+    ) async {
+      SharedPreferences.setMockInitialValues({});
+      final prefs = await SharedPreferences.getInstance();
+      final settingsCubit = _SeededSettingsCubit(prefs, activeMachineId: null);
+      final manager = MachineManagerService(prefs, _FakeSecureStorage());
+      final machineManagerCubit = _createMachineManagerCubit(manager);
+      final bridge = _FakeBridgeService(connected: false);
+
+      await tester.pumpWidget(
+        await _buildScreen(
+          bridge: bridge,
+          settingsCubit: settingsCubit,
+          machineManagerCubit: machineManagerCubit,
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      final toggle = find.byKey(
+        const ValueKey('show_extended_codex_efforts_toggle'),
+      );
+      await tester.scrollUntilVisible(toggle, 180);
+      await tester.pumpAndSettle();
+
+      expect(settingsCubit.state.showExtendedCodexEfforts, isFalse);
+      await tester.tap(toggle);
+      await tester.pumpAndSettle();
+
+      expect(settingsCubit.state.showExtendedCodexEfforts, isTrue);
+      expect(prefs.getBool('settings_show_extended_codex_efforts'), isTrue);
 
       await settingsCubit.close();
       await machineManagerCubit.close();
@@ -975,6 +1013,7 @@ void main() {
         findsOneWidget,
       );
       expect(find.text(l.autoRenameCodexSessions), findsOneWidget);
+      expect(find.text(l.showExtendedCodexEfforts), findsOneWidget);
       expect(find.text(l.settingsNewSessionTabs), findsNothing);
       expect(find.text(l.autoRenameClaudeSessions), findsNothing);
 
@@ -983,7 +1022,9 @@ void main() {
       bridge.dispose();
     });
 
-    testWidgets('shows usage section when connected', (tester) async {
+    testWidgets('shows weekly-only Codex usage without a five-hour row', (
+      tester,
+    ) async {
       SharedPreferences.setMockInitialValues({});
       final prefs = await SharedPreferences.getInstance();
       final settingsCubit = _SeededSettingsCubit(
@@ -999,10 +1040,6 @@ void main() {
           providers: [
             UsageInfo(
               provider: 'codex',
-              fiveHour: UsageWindow(
-                utilization: 0.08,
-                resetsAt: '2026-04-12T10:19:42Z',
-              ),
               sevenDay: UsageWindow(
                 utilization: 0.09,
                 resetsAt: '2026-04-17T00:19:19Z',
@@ -1033,6 +1070,8 @@ void main() {
 
       expect(find.text(l.settingsUsageSectionTitle), findsOneWidget);
       expect(find.byKey(const ValueKey('codex_usage_card')), findsOneWidget);
+      expect(find.text(l.usageSevenDay), findsOneWidget);
+      expect(find.text(l.usageFiveHour), findsNothing);
 
       await settingsCubit.close();
       await machineManagerCubit.close();

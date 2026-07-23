@@ -69,6 +69,25 @@ export type CodexPermissionsMode =
 
 export type Provider = "claude" | "codex";
 
+export type CodexGoalStatus =
+  | "active"
+  | "paused"
+  | "blocked"
+  | "usageLimited"
+  | "budgetLimited"
+  | "complete";
+
+export interface CodexGoal {
+  threadId: string;
+  objective: string;
+  status: CodexGoalStatus;
+  tokenBudget: number | null;
+  tokensUsed: number;
+  timeUsedSeconds: number;
+  createdAt: number;
+  updatedAt: number;
+}
+
 export interface QueuedInputItem {
   itemId: string;
   text: string;
@@ -108,6 +127,7 @@ export type ClientMessage =
       persistSession?: boolean;
       profile?: string;
       modelReasoningEffort?: string;
+      serviceTier?: string;
       networkAccessEnabled?: boolean;
       webSearchMode?: string;
       additionalWritableRoots?: string[];
@@ -164,6 +184,19 @@ export type ClientMessage =
       modelReasoningEffort?: string;
       sessionId?: string;
     }
+  | {
+      type: "set_codex_speed";
+      serviceTier: string;
+      sessionId?: string;
+    }
+  | { type: "get_goal"; sessionId: string }
+  | {
+      type: "set_goal";
+      sessionId: string;
+      objective?: string;
+      status?: CodexGoalStatus;
+    }
+  | { type: "clear_goal"; sessionId: string }
   | { type: "set_sandbox_mode"; sandboxMode: string; sessionId?: string }
   | {
       type: "approve";
@@ -174,6 +207,7 @@ export type ClientMessage =
   | { type: "approve_always"; id: string; sessionId?: string }
   | { type: "reject"; id: string; message?: string; sessionId?: string }
   | { type: "answer"; toolUseId: string; result: string; sessionId?: string }
+  | { type: "install_tool_suggestion"; toolUseId: string; sessionId?: string }
   | { type: "list_sessions" }
   | { type: "stop_session"; sessionId: string }
   | {
@@ -217,6 +251,7 @@ export type ClientMessage =
       persistSession?: boolean;
       profile?: string;
       modelReasoningEffort?: string;
+      serviceTier?: string;
       networkAccessEnabled?: boolean;
       webSearchMode?: string;
       additionalWritableRoots?: string[];
@@ -450,6 +485,7 @@ export type ServerMessage =
       permissionMode?: PermissionMode;
       sandboxMode?: string;
       modelReasoningEffort?: string;
+      serviceTier?: string;
       networkAccessEnabled?: boolean;
       webSearchMode?: string;
       additionalWritableRoots?: string[];
@@ -483,6 +519,12 @@ export type ServerMessage =
       toolCalls?: number;
       fileEdits?: number;
     }
+  | {
+      type: "guardian_approval";
+      risk: "medium" | "high";
+      reason: string;
+      authorization?: string;
+    }
   | { type: "error"; message: string; errorCode?: string }
   | { type: "status"; status: ProcessStatus }
   | { type: "history"; messages: ServerMessage[] }
@@ -510,6 +552,11 @@ export type ServerMessage =
       items: QueuedInputItem[];
     }
   | {
+      type: "goal_state";
+      sessionId?: string;
+      goal: CodexGoal | null;
+    }
+  | {
       type: "permission_request";
       toolUseId: string;
       toolName: string;
@@ -531,7 +578,12 @@ export type ServerMessage =
       mimeType?: string;
       sizeBytes?: number;
     }
-  | { type: "file_list"; files: string[] }
+  | {
+      type: "file_list";
+      files: string[];
+      totalFiles?: number;
+      truncated?: boolean;
+    }
   | { type: "project_history"; projects: string[] }
   | {
       type: "diff_result";
@@ -881,9 +933,14 @@ export function parseClientMessage(data: string): ClientMessage | null {
           return null;
         if (
           msg.modelReasoningEffort !== undefined &&
-          !["none", "minimal", "low", "medium", "high", "xhigh"].includes(
-            String(msg.modelReasoningEffort),
-          )
+          (typeof msg.modelReasoningEffort !== "string" ||
+            msg.modelReasoningEffort.trim().length === 0)
+        )
+          return null;
+        if (
+          msg.serviceTier !== undefined &&
+          (typeof msg.serviceTier !== "string" ||
+            msg.serviceTier.trim().length === 0)
         )
           return null;
         if (
@@ -1089,14 +1146,54 @@ export function parseClientMessage(data: string): ClientMessage | null {
           return null;
         if (
           msg.modelReasoningEffort !== undefined &&
-          !["none", "minimal", "low", "medium", "high", "xhigh"].includes(
-            String(msg.modelReasoningEffort),
-          )
+          (typeof msg.modelReasoningEffort !== "string" ||
+            msg.modelReasoningEffort.trim().length === 0)
         )
           return null;
         if (msg.sessionId !== undefined && typeof msg.sessionId !== "string")
           return null;
         break;
+      case "set_codex_speed":
+        if (
+          typeof msg.serviceTier !== "string" ||
+          msg.serviceTier.trim().length === 0
+        )
+          return null;
+        if (msg.sessionId !== undefined && typeof msg.sessionId !== "string")
+          return null;
+        break;
+      case "get_goal":
+      case "clear_goal":
+        if (typeof msg.sessionId !== "string") return null;
+        break;
+      case "set_goal": {
+        if (typeof msg.sessionId !== "string") return null;
+        const hasObjective = msg.objective !== undefined;
+        const hasStatus = msg.status !== undefined;
+        if (!hasObjective && !hasStatus) return null;
+        if (
+          hasObjective &&
+          (typeof msg.objective !== "string" ||
+            msg.objective.trim().length === 0 ||
+            msg.objective.length > 4000)
+        ) {
+          return null;
+        }
+        if (
+          hasStatus &&
+          ![
+            "active",
+            "paused",
+            "blocked",
+            "usageLimited",
+            "budgetLimited",
+            "complete",
+          ].includes(String(msg.status))
+        ) {
+          return null;
+        }
+        break;
+      }
       case "set_sandbox_mode":
         if (typeof msg.sandboxMode !== "string") return null;
         break;
@@ -1112,6 +1209,9 @@ export function parseClientMessage(data: string): ClientMessage | null {
       case "answer":
         if (typeof msg.toolUseId !== "string" || typeof msg.result !== "string")
           return null;
+        break;
+      case "install_tool_suggestion":
+        if (typeof msg.toolUseId !== "string") return null;
         break;
       case "list_sessions":
         break;
@@ -1192,9 +1292,14 @@ export function parseClientMessage(data: string): ClientMessage | null {
           return null;
         if (
           msg.modelReasoningEffort !== undefined &&
-          !["none", "minimal", "low", "medium", "high", "xhigh"].includes(
-            String(msg.modelReasoningEffort),
-          )
+          (typeof msg.modelReasoningEffort !== "string" ||
+            msg.modelReasoningEffort.trim().length === 0)
+        )
+          return null;
+        if (
+          msg.serviceTier !== undefined &&
+          (typeof msg.serviceTier !== "string" ||
+            msg.serviceTier.trim().length === 0)
         )
           return null;
         if (

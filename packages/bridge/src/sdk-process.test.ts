@@ -3,6 +3,8 @@ import {
   parseRule,
   matchesSessionRule,
   buildSessionRule,
+  buildAskUserAnswers,
+  resolvePermissionMode,
   ACCEPT_EDITS_AUTO_APPROVE,
   extractTokenUsage,
   buildThinkingOptions,
@@ -737,5 +739,383 @@ describe("SdkProcess.approveAlways", () => {
     );
     expect(modeMsg).toBeUndefined();
     expect(proc.permissionMode).toBe("acceptEdits");
+  });
+});
+
+describe("SdkProcess input dispatch", () => {
+  it("queues and requests interrupt while a turn is running", () => {
+    const proc = new SdkProcess();
+    const resolve = vi.fn();
+    const internal = proc as any;
+    internal._status = "running";
+    internal.userMessageResolve = resolve;
+
+    expect(proc.dispatchInput("follow up")).toEqual({
+      queued: true,
+      shouldInterrupt: true,
+    });
+    expect(resolve).not.toHaveBeenCalled();
+    expect(proc.hasInputQueue).toBe(true);
+  });
+
+  it("queues without interrupting while approval is pending", () => {
+    const proc = new SdkProcess();
+    const resolve = vi.fn();
+    const internal = proc as any;
+    internal._status = "waiting_approval";
+    internal.userMessageResolve = resolve;
+
+    expect(proc.dispatchInput("after approval")).toEqual({
+      queued: true,
+      shouldInterrupt: false,
+    });
+    expect(resolve).not.toHaveBeenCalled();
+  });
+
+  it.each(["starting", "idle"])(
+    "delivers directly through the ready resolver while %s",
+    (status) => {
+      const proc = new SdkProcess();
+      const resolve = vi.fn();
+      const internal = proc as any;
+      internal._status = status;
+      internal.userMessageResolve = resolve;
+
+      expect(proc.dispatchInput("first input")).toEqual({
+        queued: false,
+        shouldInterrupt: false,
+      });
+      expect(resolve).toHaveBeenCalledTimes(1);
+      expect(proc.hasInputQueue).toBe(false);
+    },
+  );
+
+  it("applies the running policy to image input", () => {
+    const proc = new SdkProcess();
+    const resolve = vi.fn();
+    const internal = proc as any;
+    internal._status = "running";
+    internal.userMessageResolve = resolve;
+
+    expect(
+      proc.dispatchInputWithImages("inspect", [
+        { base64: "aW1hZ2U=", mimeType: "image/png" },
+      ]),
+    ).toEqual({ queued: true, shouldInterrupt: true });
+    expect(resolve).not.toHaveBeenCalled();
+  });
+});
+
+describe("buildAskUserAnswers", () => {
+  const multiInput = {
+    questions: [
+      { question: "Which database?" },
+      { question: "Which ORM?" },
+    ],
+  };
+  const singleInput = { questions: [{ question: "Which database?" }] };
+
+  it("maps a bare answer for a single question", () => {
+    expect(buildAskUserAnswers(singleInput, "SQLite")).toEqual({
+      "Which database?": "SQLite",
+    });
+  });
+
+  it("maps multi-question JSON answers by question text", () => {
+    const result = JSON.stringify({
+      questions: multiInput.questions,
+      answers: {
+        "Which database?": "SQLite",
+        "Which ORM?": "Drizzle, Prisma",
+      },
+    });
+    expect(buildAskUserAnswers(multiInput, result)).toEqual({
+      "Which database?": "SQLite",
+      "Which ORM?": "Drizzle, Prisma",
+    });
+  });
+
+  it("joins string arrays for multi-select and ignores invalid values", () => {
+    const result = JSON.stringify({
+      questions: multiInput.questions,
+      answers: {
+        "Which database?": ["SQLite", "Postgres"],
+        injected: "value",
+        "Which ORM?": { nested: true },
+      },
+    });
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    expect(buildAskUserAnswers(multiInput, result)).toEqual({
+      "Which database?": "SQLite, Postgres",
+    });
+    warn.mockRestore();
+  });
+
+  it("preserves existing answers and overwrites matching new answers", () => {
+    const result = JSON.stringify({
+      questions: multiInput.questions,
+      answers: { "Which ORM?": "Drizzle" },
+    });
+    expect(buildAskUserAnswers({
+      ...multiInput,
+      answers: { "Which database?": "SQLite", injected: "value" },
+    }, result)).toEqual({
+      "Which database?": "SQLite",
+      "Which ORM?": "Drizzle",
+    });
+  });
+
+  it("does not map non-envelope input onto the first of multiple questions", () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    expect(buildAskUserAnswers(multiInput, "SQLite")).toEqual({});
+    expect(buildAskUserAnswers(multiInput, "{bad json")).toEqual({});
+    warn.mockRestore();
+  });
+
+  it("preserves JSON-shaped custom text for a single question", () => {
+    const result = JSON.stringify({ custom: true });
+    expect(buildAskUserAnswers(singleInput, result)).toEqual({
+      "Which database?": result,
+    });
+  });
+
+  it("does not mistake a mismatched envelope-shaped custom answer for app data", () => {
+    const result = JSON.stringify({
+      questions: [],
+      answers: { other: "value" },
+    });
+    expect(buildAskUserAnswers(singleInput, result)).toEqual({
+      "Which database?": result,
+    });
+  });
+
+  it("creates safe own properties for special question text", () => {
+    const answers = buildAskUserAnswers(
+      { questions: [{ question: "__proto__" }] },
+      "safe",
+    );
+    expect(Object.hasOwn(answers, "__proto__")).toBe(true);
+    expect(answers.__proto__).toBe("safe");
+  });
+
+  it("collapses duplicate question text deterministically", () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const duplicateInput = {
+      questions: [{ question: "Same" }, { question: "Same" }],
+    };
+    const result = JSON.stringify({
+      questions: duplicateInput.questions,
+      answers: { Same: "answer" },
+    });
+    expect(buildAskUserAnswers(duplicateInput, result)).toEqual({
+      Same: "answer",
+    });
+    expect(buildAskUserAnswers(duplicateInput, "answer")).toEqual({});
+    warn.mockRestore();
+  });
+
+  it("returns an empty map when the pending input has no question text", () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    expect(buildAskUserAnswers({ questions: [] }, "SQLite")).toEqual({});
+    warn.mockRestore();
+  });
+});
+
+describe("SdkProcess.answer", () => {
+  it("resolves AskUserQuestion with question-keyed SDK answers", () => {
+    const proc = new SdkProcess();
+    const resolve = vi.fn();
+    const internal = proc as any;
+    internal._status = "waiting_approval";
+    internal.pendingPermissions.set("ask-1", {
+      resolve,
+      toolName: "AskUserQuestion",
+      input: { questions: [{ question: "Which database?" }] },
+    });
+
+    proc.answer("ask-1", "SQLite");
+
+    expect(resolve).toHaveBeenCalledWith({
+      behavior: "allow",
+      updatedInput: {
+        questions: [{ question: "Which database?" }],
+        answers: { "Which database?": "SQLite" },
+      },
+    });
+    expect(resolve.mock.calls[0][0].updatedInput.answers).not.toHaveProperty(
+      "result",
+    );
+    expect(proc.status).toBe("running");
+  });
+
+  it("resolves multi-question envelopes with every mapped answer", () => {
+    const proc = new SdkProcess();
+    const resolve = vi.fn();
+    const questions = [
+      { question: "Which database?" },
+      { question: "Which ORM?" },
+    ];
+    (proc as any).pendingPermissions.set("ask-multi", {
+      resolve,
+      toolName: "AskUserQuestion",
+      input: { questions },
+    });
+
+    proc.answer("ask-multi", JSON.stringify({
+      questions,
+      answers: {
+        "Which database?": "SQLite",
+        "Which ORM?": "Drizzle",
+      },
+    }));
+
+    expect(resolve.mock.calls[0][0].updatedInput.answers).toEqual({
+      "Which database?": "SQLite",
+      "Which ORM?": "Drizzle",
+    });
+  });
+});
+
+describe("SdkProcess.setPermissionMode", () => {
+  it("keeps an idle mode unless the next start explicitly overrides it", () => {
+    expect(resolvePermissionMode("acceptEdits", undefined)).toBe(
+      "acceptEdits",
+    );
+    expect(resolvePermissionMode("acceptEdits", "bypassPermissions")).toBe(
+      "bypassPermissions",
+    );
+    expect(resolvePermissionMode(undefined, undefined)).toBeUndefined();
+  });
+
+  it("retains an idle mode when start omits permissionMode", async () => {
+    const proc = new SdkProcess();
+    await proc.setPermissionMode("acceptEdits");
+
+    proc.start("/tmp");
+    expect(proc.permissionMode).toBe("acceptEdits");
+    proc.stop();
+  });
+
+  it("lets an explicit start mode override the retained idle mode", async () => {
+    const proc = new SdkProcess();
+    await proc.setPermissionMode("acceptEdits");
+
+    proc.start("/tmp", { permissionMode: "bypassPermissions" });
+    expect(proc.permissionMode).toBe("bypassPermissions");
+    proc.stop();
+  });
+
+  it("records and emits a permission mode change while idle", async () => {
+    const proc = new SdkProcess();
+    const messages: ServerMessage[] = [];
+    (proc as any)._sessionId = "claude-session";
+    proc.on("message", (message) => messages.push(message));
+
+    await proc.setPermissionMode("bypassPermissions");
+
+    expect(proc.permissionMode).toBe("bypassPermissions");
+    expect(messages).toContainEqual(expect.objectContaining({
+      type: "system",
+      subtype: "set_permission_mode",
+      permissionMode: "bypassPermissions",
+      sessionId: "claude-session",
+    }));
+  });
+
+  it("applies a permission mode change to a live query before updating state", async () => {
+    const proc = new SdkProcess();
+    const setPermissionMode = vi.fn(async () => {});
+    (proc as any).queryInstance = { setPermissionMode };
+
+    await proc.setPermissionMode("acceptEdits");
+
+    expect(setPermissionMode).toHaveBeenCalledWith("acceptEdits");
+    expect(proc.permissionMode).toBe("acceptEdits");
+  });
+
+  it("does not update state when a live query rejects the change", async () => {
+    const proc = new SdkProcess();
+    (proc as any)._permissionMode = "default";
+    (proc as any).queryInstance = {
+      setPermissionMode: vi.fn(async () => {
+        throw new Error("unsupported");
+      }),
+    };
+
+    await expect(proc.setPermissionMode("auto")).rejects.toThrow("unsupported");
+    expect(proc.permissionMode).toBe("default");
+  });
+
+  it("ignores an old live update that finishes after a new start", async () => {
+    const proc = new SdkProcess();
+    let finishUpdate!: () => void;
+    const setPermissionMode = vi.fn(
+      () => new Promise<void>((resolve) => {
+        finishUpdate = resolve;
+      }),
+    );
+    (proc as any).queryInstance = {
+      setPermissionMode,
+      close: vi.fn(),
+    };
+    const messages: ServerMessage[] = [];
+    proc.on("message", (message) => messages.push(message));
+
+    const oldUpdate = proc.setPermissionMode("bypassPermissions");
+    await Promise.resolve();
+    proc.start("/tmp", { permissionMode: "default" });
+    finishUpdate();
+    await oldUpdate;
+
+    expect(proc.permissionMode).toBe("default");
+    expect(messages).not.toContainEqual(expect.objectContaining({
+      type: "system",
+      subtype: "set_permission_mode",
+      permissionMode: "bypassPermissions",
+    }));
+    proc.stop();
+  });
+
+  it("commits an earlier success when the next queued change fails", async () => {
+    const proc = new SdkProcess();
+    let finishFirst!: () => void;
+    const firstUpdate = new Promise<void>((resolve) => {
+      finishFirst = resolve;
+    });
+    const setPermissionMode = vi.fn()
+      .mockImplementationOnce(() => firstUpdate)
+      .mockRejectedValueOnce(new Error("unsupported"));
+    (proc as any)._permissionMode = "default";
+    (proc as any).queryInstance = { setPermissionMode };
+
+    const earlier = proc.setPermissionMode("bypassPermissions");
+    const later = proc.setPermissionMode("default");
+    await Promise.resolve();
+    finishFirst();
+
+    await earlier;
+    await expect(later).rejects.toThrow("unsupported");
+    expect(setPermissionMode.mock.calls).toEqual([
+      ["bypassPermissions"],
+      ["default"],
+    ]);
+    expect(proc.permissionMode).toBe("bypassPermissions");
+  });
+
+  it("does not let an unresolved old update block the new generation", async () => {
+    const proc = new SdkProcess();
+    const neverFinishes = new Promise<void>(() => {});
+    (proc as any).queryInstance = {
+      setPermissionMode: vi.fn(() => neverFinishes),
+      close: vi.fn(),
+    };
+
+    void proc.setPermissionMode("bypassPermissions");
+    await Promise.resolve();
+    proc.start("/tmp", { permissionMode: "acceptEdits" });
+    proc.stop();
+
+    await expect(proc.setPermissionMode("default")).resolves.toBeUndefined();
+    expect(proc.permissionMode).toBe("default");
   });
 });

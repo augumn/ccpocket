@@ -7,7 +7,6 @@ import 'package:ccpocket/features/chat_session/state/streaming_state_cubit.dart'
 import 'package:ccpocket/models/messages.dart';
 import 'package:ccpocket/services/bridge_service.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 
 /// Minimal mock BridgeService for testing the cubit.
 class MockBridgeService extends BridgeService {
@@ -126,7 +125,6 @@ void main() {
   late StreamingStateCubit streamingCubit;
 
   setUp(() {
-    SharedPreferences.setMockInitialValues({});
     mockBridge = MockBridgeService();
     streamingCubit = StreamingStateCubit();
   });
@@ -203,39 +201,6 @@ void main() {
       await Future.microtask(() {});
 
       expect(cubit.state.projectPath, '/Users/me/Workspace/ccpocket');
-    });
-
-    test('restores persisted codex model settings for session', () async {
-      SharedPreferences.setMockInitialValues({
-        'claude_session_settings_codex-session': jsonEncode({
-          'codexModel': 'gpt-5.4',
-          'codexModelReasoningEffort': 'medium',
-          'codexSandboxMode': 'workspace-write',
-        }),
-      });
-
-      final cubit = createCubit('codex-session', provider: Provider.codex);
-      addTearDown(cubit.close);
-      await Future<void>.delayed(Duration.zero);
-
-      expect(cubit.state.codexModel, 'gpt-5.4');
-      expect(cubit.state.codexModelReasoningEffort, ReasoningEffort.medium);
-      expect(cubit.state.sandboxMode, SandboxMode.on);
-    });
-
-    test('setCodexModel persists per-session codex settings', () async {
-      final cubit = createCubit('codex-session', provider: Provider.codex);
-      addTearDown(cubit.close);
-
-      cubit.setCodexModel('gpt-5.4', reasoningEffort: ReasoningEffort.medium);
-      await Future<void>.delayed(Duration.zero);
-
-      final prefs = await SharedPreferences.getInstance();
-      final raw = prefs.getString('claude_session_settings_codex-session');
-      expect(raw, isNotNull);
-      final decoded = jsonDecode(raw!) as Map<String, dynamic>;
-      expect(decoded['codexModel'], 'gpt-5.4');
-      expect(decoded['codexModelReasoningEffort'], 'medium');
     });
 
     test('history message restores project path metadata', () async {
@@ -400,6 +365,132 @@ void main() {
       expect(payload['clientMessageId'], entry.clientMessageId);
       expect(payload.containsKey('baseSeq'), isFalse);
     });
+
+    test('Codex /goal command sets goal without creating a chat turn', () {
+      final cubit = createCubit('s1', provider: Provider.codex);
+      addTearDown(cubit.close);
+
+      cubit.sendMessage('/goal Goal機能をCC Pocketに追加する');
+
+      expect(cubit.state.entries, isEmpty);
+      expect(mockBridge.sentMessages, hasLength(1));
+      expect(
+        jsonDecode(mockBridge.sentMessages.single.toJson()),
+        <String, dynamic>{
+          'type': 'set_goal',
+          'sessionId': 's1',
+          'objective': 'Goal機能をCC Pocketに追加する',
+        },
+      );
+    });
+
+    test('Codex /goal subcommands use goal RPCs instead of objectives', () {
+      final cubit = createCubit('s1', provider: Provider.codex);
+      addTearDown(cubit.close);
+
+      cubit.sendMessage('/goal pause');
+      cubit.sendMessage('/goal resume');
+      cubit.sendMessage('/goal clear');
+
+      expect(cubit.state.entries, isEmpty);
+      expect(
+        mockBridge.sentMessages
+            .map((message) => jsonDecode(message.toJson()))
+            .toList(),
+        [
+          {'type': 'set_goal', 'sessionId': 's1', 'status': 'paused'},
+          {'type': 'set_goal', 'sessionId': 's1', 'status': 'active'},
+          {'type': 'clear_goal', 'sessionId': 's1'},
+        ],
+      );
+    });
+
+    test('Codex requests persisted goal after app-server init', () async {
+      final cubit = createCubit('s1', provider: Provider.codex);
+      addTearDown(cubit.close);
+
+      mockBridge.emitMessage(
+        const SystemMessage(subtype: 'init', sessionId: 'thread-1'),
+        sessionId: 's1',
+      );
+      await Future.microtask(() {});
+
+      expect(jsonDecode(mockBridge.sentMessages.single.toJson()), {
+        'type': 'get_goal',
+        'sessionId': 's1',
+      });
+    });
+
+    test(
+      'Codex goal state supports refresh, pause, resume, and clear',
+      () async {
+        final cubit = createCubit('s1', provider: Provider.codex);
+        addTearDown(cubit.close);
+
+        cubit.sendMessage('/goal');
+        expect(jsonDecode(mockBridge.sentMessages.single.toJson()), {
+          'type': 'get_goal',
+          'sessionId': 's1',
+        });
+
+        const goal = CodexGoal(
+          threadId: 'thread-1',
+          objective: 'Persisted goal',
+          status: CodexThreadGoalStatus.active,
+          tokenBudget: null,
+          tokensUsed: 10,
+          timeUsedSeconds: 5,
+          createdAt: 1,
+          updatedAt: 2,
+        );
+        mockBridge.emitMessage(
+          const GoalStateMessage(sessionId: 's1', goal: goal),
+          sessionId: 's1',
+        );
+        await Future.microtask(() {});
+        expect(cubit.state.goal, goal);
+
+        mockBridge.sentMessages.clear();
+        cubit.toggleGoalPaused();
+        expect(jsonDecode(mockBridge.sentMessages.single.toJson()), {
+          'type': 'set_goal',
+          'sessionId': 's1',
+          'status': 'paused',
+        });
+
+        mockBridge.emitMessage(
+          const GoalStateMessage(
+            sessionId: 's1',
+            goal: CodexGoal(
+              threadId: 'thread-1',
+              objective: 'Persisted goal',
+              status: CodexThreadGoalStatus.paused,
+              tokenBudget: null,
+              tokensUsed: 10,
+              timeUsedSeconds: 5,
+              createdAt: 1,
+              updatedAt: 3,
+            ),
+          ),
+          sessionId: 's1',
+        );
+        await Future.microtask(() {});
+        mockBridge.sentMessages.clear();
+        cubit.toggleGoalPaused();
+        expect(jsonDecode(mockBridge.sentMessages.single.toJson()), {
+          'type': 'set_goal',
+          'sessionId': 's1',
+          'status': 'active',
+        });
+
+        mockBridge.sentMessages.clear();
+        cubit.clearGoal();
+        expect(jsonDecode(mockBridge.sentMessages.single.toJson()), {
+          'type': 'clear_goal',
+          'sessionId': 's1',
+        });
+      },
+    );
 
     test('sendMessage while disconnected queues entry with baseSeq', () async {
       mockBridge.connected = false;
@@ -735,142 +826,350 @@ void main() {
     );
 
     test(
-      'history replace preserves local user input missing from a lagging snapshot',
+      'history replace keeps completed live assistant missing from snapshot',
       () async {
         final cubit = createCubit('s1', provider: Provider.codex);
         addTearDown(cubit.close);
+        const result = ResultMessage(subtype: 'success', sessionId: 'thread-1');
+        final assistant = AssistantServerMessage(
+          message: AssistantMessage(
+            id: 'assistant-1',
+            role: 'assistant',
+            content: const [TextContent(text: 'Completed live response')],
+            model: 'codex',
+          ),
+        );
+
         mockBridge.emitMessage(
-          const StatusMessage(status: ProcessStatus.idle),
+          const StreamDeltaMessage(text: 'Completed live response'),
           sessionId: 's1',
         );
-        await Future.microtask(() {});
+        mockBridge.emitMessage(assistant, sessionId: 's1');
+        mockBridge.emitMessage(result, sessionId: 's1');
+        await pumpEventQueue();
 
-        cubit.sendMessage('Lagging snapshot input');
         mockBridge.emitMessage(
-          AssistantServerMessage(
-            message: AssistantMessage(
-              id: 'a1',
-              role: 'assistant',
-              content: [const TextContent(text: 'live answer')],
-              model: 'codex',
-            ),
+          const HistoryMessage(messages: [result]),
+          sessionId: 's1',
+        );
+        await pumpEventQueue();
+
+        final assistants = cubit.state.entries
+            .whereType<ServerChatEntry>()
+            .map((entry) => entry.message)
+            .whereType<AssistantServerMessage>()
+            .toList();
+        expect(assistants, hasLength(1));
+        expect(assistants.single.message.content, const [
+          TextContent(text: 'Completed live response'),
+        ]);
+        expect(streamingCubit.state.isStreaming, isFalse);
+      },
+    );
+
+    test(
+      'history replace keeps richer live content for the same assistant id',
+      () async {
+        final cubit = createCubit('s1', provider: Provider.codex);
+        addTearDown(cubit.close);
+        final completeAssistant = AssistantServerMessage(
+          message: AssistantMessage(
+            id: 'assistant-1',
+            role: 'assistant',
+            content: const [TextContent(text: 'Complete response')],
+            model: 'codex',
+          ),
+        );
+        final incompleteAssistant = AssistantServerMessage(
+          message: AssistantMessage(
+            id: 'assistant-1',
+            role: 'assistant',
+            content: const [TextContent(text: '')],
+            model: 'codex',
+          ),
+        );
+
+        mockBridge.emitMessage(completeAssistant, sessionId: 's1');
+        await pumpEventQueue();
+        mockBridge.emitMessage(
+          HistoryMessage(messages: [incompleteAssistant]),
+          sessionId: 's1',
+        );
+        await pumpEventQueue();
+
+        final assistant = cubit.state.entries
+            .whereType<ServerChatEntry>()
+            .map((entry) => entry.message)
+            .whereType<AssistantServerMessage>()
+            .single;
+        expect(assistant.message.content, const [
+          TextContent(text: 'Complete response'),
+        ]);
+      },
+    );
+
+    test(
+      'history replace deduplicates matching assistants with different ids',
+      () async {
+        final cubit = createCubit('s1', provider: Provider.codex);
+        addTearDown(cubit.close);
+        final liveAssistant = AssistantServerMessage(
+          message: AssistantMessage(
+            id: 'live-assistant-id',
+            role: 'assistant',
+            content: const [TextContent(text: 'Completed response')],
+            model: 'codex',
+          ),
+        );
+        final historyAssistant = AssistantServerMessage(
+          message: AssistantMessage(
+            id: 'history-assistant-id',
+            role: 'assistant',
+            content: const [TextContent(text: 'Completed response')],
+            model: 'codex',
+          ),
+        );
+
+        mockBridge.emitMessage(liveAssistant, sessionId: 's1');
+        await pumpEventQueue();
+        mockBridge.emitMessage(
+          HistoryMessage(messages: [historyAssistant]),
+          sessionId: 's1',
+        );
+        await pumpEventQueue();
+
+        final assistants = cubit.state.entries
+            .whereType<ServerChatEntry>()
+            .map((entry) => entry.message)
+            .whereType<AssistantServerMessage>()
+            .toList();
+        expect(assistants, hasLength(1));
+        expect(assistants.single.message.id, 'history-assistant-id');
+      },
+    );
+
+    test(
+      'history delta deduplicates current-turn messages with different ids',
+      () async {
+        final cubit = createCubit('s1', provider: Provider.codex);
+        addTearDown(cubit.close);
+        final liveAssistant = AssistantServerMessage(
+          message: AssistantMessage(
+            id: 'live-assistant-id',
+            role: 'assistant',
+            content: const [TextContent(text: 'Completed response')],
+            model: 'codex',
+          ),
+        );
+        final historyAssistant = AssistantServerMessage(
+          messageUuid: 'history-item-id',
+          message: AssistantMessage(
+            id: 'history-assistant-id',
+            role: 'assistant',
+            content: const [TextContent(text: 'Completed response')],
+            model: 'codex',
+          ),
+        );
+        const liveResult = ResultMessage(
+          subtype: 'success',
+          result: 'Completed response',
+          sessionId: 'live-thread-id',
+        );
+        const historyResult = ResultMessage(
+          subtype: 'success',
+          result: 'Completed response',
+          sessionId: 'canonical-thread-id',
+        );
+
+        mockBridge.emitMessage(liveAssistant, sessionId: 's1');
+        mockBridge.emitMessage(liveResult, sessionId: 's1');
+        await pumpEventQueue();
+        mockBridge.emitMessage(historyAssistant, sessionId: 's1');
+        mockBridge.emitMessage(historyResult, sessionId: 's1');
+        await pumpEventQueue();
+
+        final serverMessages = cubit.state.entries
+            .whereType<ServerChatEntry>()
+            .map((entry) => entry.message)
+            .toList();
+        expect(
+          serverMessages.whereType<AssistantServerMessage>(),
+          hasLength(1),
+        );
+        expect(serverMessages.whereType<ResultMessage>(), hasLength(1));
+      },
+    );
+
+    test('deduplicates repeated guardian approvals in the same turn', () async {
+      final cubit = createCubit('s1', provider: Provider.codex);
+      addTearDown(cubit.close);
+      const approval = GuardianApprovalMessage(
+        risk: GuardianApprovalRisk.medium,
+        reason: 'Launching the app writes files outside the workspace.',
+        authorization: 'medium',
+      );
+
+      mockBridge.emitMessage(approval, sessionId: 's1');
+      mockBridge.emitMessage(approval, sessionId: 's1');
+      await pumpEventQueue();
+
+      final approvals = cubit.state.entries
+          .whereType<ServerChatEntry>()
+          .map((entry) => entry.message)
+          .whereType<GuardianApprovalMessage>();
+      expect(approvals, hasLength(1));
+    });
+
+    test(
+      'same-turn live assistants with matching text remain distinct',
+      () async {
+        final cubit = createCubit('s1', provider: Provider.codex);
+        addTearDown(cubit.close);
+        AssistantServerMessage assistant(String id) => AssistantServerMessage(
+          message: AssistantMessage(
+            id: id,
+            role: 'assistant',
+            content: const [TextContent(text: 'Same response')],
+            model: 'codex',
+          ),
+        );
+
+        mockBridge.emitMessage(assistant('assistant-1'), sessionId: 's1');
+        mockBridge.emitMessage(assistant('assistant-2'), sessionId: 's1');
+        await pumpEventQueue();
+
+        final assistants = cubit.state.entries
+            .whereType<ServerChatEntry>()
+            .map((entry) => entry.message)
+            .whereType<AssistantServerMessage>();
+        expect(assistants, hasLength(2));
+      },
+    );
+
+    test(
+      'stale history keeps same-text assistant from the current turn',
+      () async {
+        final cubit = createCubit('s1', provider: Provider.codex);
+        addTearDown(cubit.close);
+        AssistantServerMessage assistant(String id) => AssistantServerMessage(
+          message: AssistantMessage(
+            id: id,
+            role: 'assistant',
+            content: const [TextContent(text: 'OK')],
+            model: 'codex',
+          ),
+        );
+        const firstUser = UserInputMessage(
+          text: 'Same prompt',
+          userMessageUuid: 'user-turn-1',
+        );
+        const secondUser = UserInputMessage(
+          text: 'Same prompt',
+          userMessageUuid: 'user-turn-2',
+        );
+        final initialHistory = HistoryMessage(
+          messages: [firstUser, assistant('assistant-1'), secondUser],
+        );
+        final staleHistory = HistoryMessage(
+          messages: [firstUser, assistant('assistant-1')],
+        );
+
+        mockBridge.emitMessage(initialHistory, sessionId: 's1');
+        await pumpEventQueue();
+        mockBridge.emitMessage(assistant('assistant-2'), sessionId: 's1');
+        await pumpEventQueue();
+        mockBridge.emitMessage(staleHistory, sessionId: 's1');
+        await pumpEventQueue();
+
+        final assistants = cubit.state.entries
+            .whereType<ServerChatEntry>()
+            .map((entry) => entry.message)
+            .whereType<AssistantServerMessage>()
+            .toList();
+        expect(assistants, hasLength(2));
+        expect(assistants.map((message) => message.message.id), [
+          'assistant-1',
+          'assistant-2',
+        ]);
+      },
+    );
+
+    test(
+      'history UUID matches a local client-id user at the turn boundary',
+      () async {
+        final cubit = createCubit('s1', provider: Provider.claude);
+        addTearDown(cubit.close);
+
+        cubit.sendMessage('Same prompt');
+        await pumpEventQueue();
+        expect(cubit.state.entries.whereType<UserChatEntry>(), hasLength(1));
+
+        mockBridge.emitMessage(
+          const HistoryMessage(
+            messages: [
+              UserInputMessage(
+                text: 'Same prompt',
+                userMessageUuid: 'server-user-uuid',
+              ),
+            ],
           ),
           sessionId: 's1',
         );
-        await Future.microtask(() {});
+        await pumpEventQueue();
 
+        final users = cubit.state.entries.whereType<UserChatEntry>().toList();
+        expect(users, hasLength(1));
+        expect(users.single.text, 'Same prompt');
+      },
+    );
+
+    test(
+      'identical assistant text in a later turn is not deduplicated',
+      () async {
+        final cubit = createCubit('s1', provider: Provider.codex);
+        addTearDown(cubit.close);
+        AssistantServerMessage assistant(String id) => AssistantServerMessage(
+          message: AssistantMessage(
+            id: id,
+            role: 'assistant',
+            content: const [TextContent(text: 'Same response')],
+            model: 'codex',
+          ),
+        );
+
+        mockBridge.emitMessage(assistant('assistant-1'), sessionId: 's1');
+        mockBridge.emitMessage(
+          const ResultMessage(subtype: 'success'),
+          sessionId: 's1',
+        );
+        await pumpEventQueue();
         mockBridge.emitMessage(
           HistoryMessage(
             messages: [
-              AssistantServerMessage(
-                message: AssistantMessage(
-                  id: 'a1',
-                  role: 'assistant',
-                  content: [const TextContent(text: 'live answer')],
-                  model: 'codex',
-                ),
-              ),
+              assistant('assistant-1'),
               const ResultMessage(subtype: 'success'),
             ],
           ),
           sessionId: 's1',
         );
-        await Future.microtask(() {});
-
-        expect(cubit.state.entries, hasLength(3));
-        expect(cubit.state.entries[0], isA<UserChatEntry>());
-        expect(
-          (cubit.state.entries[0] as UserChatEntry).text,
-          'Lagging snapshot input',
-        );
-        expect(cubit.state.entries[1], isA<ServerChatEntry>());
-        expect(
-          (cubit.state.entries[1] as ServerChatEntry).message,
-          isA<AssistantServerMessage>(),
-        );
-        expect(cubit.state.entries[2], isA<ServerChatEntry>());
-        expect(
-          (cubit.state.entries[2] as ServerChatEntry).message,
-          isA<ResultMessage>(),
-        );
-      },
-    );
-
-    test(
-      'history replace preserves live assistant and result when lagging history only has older user turn',
-      () async {
-        final cubit = createCubit('s1', provider: Provider.codex);
-        addTearDown(cubit.close);
+        await pumpEventQueue();
         mockBridge.emitMessage(
-          const StatusMessage(status: ProcessStatus.idle),
-          sessionId: 's1',
-        );
-        await Future.microtask(() {});
-
-        cubit.sendMessage('keep my live timeline');
-        final payload =
-            jsonDecode(mockBridge.sentMessages.single.toJson())
-                as Map<String, dynamic>;
-        final clientMessageId = payload['clientMessageId'] as String;
-
-        mockBridge.emitMessage(
-          UserInputMessage(
-            text: 'keep my live timeline',
-            clientMessageId: clientMessageId,
-            userMessageUuid: 'codex:user-turn:keep-live',
-            timestamp: '2026-04-28T12:00:00.000Z',
+          const UserInputMessage(
+            text: 'Ask again',
+            userMessageUuid: 'user-turn-2',
           ),
           sessionId: 's1',
         );
-        mockBridge.emitMessage(
-          AssistantServerMessage(
-            message: AssistantMessage(
-              id: 'assistant-live',
-              role: 'assistant',
-              content: [const TextContent(text: 'live answer survives')],
-              model: 'codex',
-            ),
-          ),
-          sessionId: 's1',
-        );
-        mockBridge.emitMessage(
-          const ResultMessage(
-            subtype: 'success',
-            result: 'live answer survives',
-          ),
-          sessionId: 's1',
-        );
-        await Future<void>.delayed(const Duration(milliseconds: 10));
+        await pumpEventQueue();
+        expect(cubit.state.entries.whereType<UserChatEntry>(), hasLength(1));
+        mockBridge.emitMessage(assistant('assistant-2'), sessionId: 's1');
+        await pumpEventQueue();
 
-        mockBridge.emitMessage(
-          HistoryMessage(
-            messages: [
-              UserInputMessage(
-                text: 'keep my live timeline',
-                clientMessageId: clientMessageId,
-                userMessageUuid: 'codex:user-turn:keep-live',
-                timestamp: '2026-04-28T12:00:00.000Z',
-              ),
-            ],
-          ),
-          sessionId: 's1',
-        );
-        await Future<void>.delayed(const Duration(milliseconds: 10));
-
-        final entries = cubit.state.entries;
-        expect(entries.whereType<UserChatEntry>(), hasLength(1));
-        expect(
-          entries
-              .whereType<ServerChatEntry>()
-              .where((entry) => entry.message is AssistantServerMessage),
-          hasLength(1),
-        );
-        expect(
-          entries
-              .whereType<ServerChatEntry>()
-              .where((entry) => entry.message is ResultMessage),
-          hasLength(1),
-        );
+        final assistants = cubit.state.entries
+            .whereType<ServerChatEntry>()
+            .map((entry) => entry.message)
+            .whereType<AssistantServerMessage>();
+        expect(assistants, hasLength(2));
       },
     );
 
@@ -1167,6 +1466,230 @@ void main() {
       expect(mockBridge.sentMessages, hasLength(1));
     });
 
+    test(
+      'tool suggestion install keeps approval visible while pending',
+      () async {
+        final cubit = createCubit('s1');
+        addTearDown(cubit.close);
+        await Future.microtask(() {});
+
+        const permission = PermissionRequestMessage(
+          toolUseId: 'approval-0',
+          toolName: 'ToolSuggestion',
+          input: {'toolName': 'GitHub', 'installState': 'idle'},
+        );
+        mockBridge.emitMessage(permission, sessionId: 's1');
+        await Future.microtask(() {});
+
+        cubit.installToolSuggestion('approval-0');
+
+        expect(cubit.state.approval, isA<ApprovalPermission>());
+        expect(mockBridge.sentMessages, hasLength(1));
+        expect(jsonDecode(mockBridge.sentMessages.single.toJson()), {
+          'type': 'install_tool_suggestion',
+          'toolUseId': 'approval-0',
+          'sessionId': 's1',
+        });
+      },
+    );
+
+    test('server resolution clears a completed tool suggestion', () async {
+      final cubit = createCubit('s1');
+      addTearDown(cubit.close);
+      await Future.microtask(() {});
+
+      mockBridge.emitMessage(
+        const PermissionRequestMessage(
+          toolUseId: 'approval-0',
+          toolName: 'ToolSuggestion',
+          input: {'toolName': 'GitHub', 'installState': 'installing'},
+        ),
+        sessionId: 's1',
+      );
+      await Future.microtask(() {});
+      mockBridge.emitMessage(
+        const PermissionResolvedMessage(toolUseId: 'approval-0'),
+        sessionId: 's1',
+      );
+      await Future.microtask(() {});
+
+      expect(cubit.state.approval, isA<ApprovalNone>());
+    });
+
+    test('approved permission is not restored by stale history', () async {
+      final cubit = createCubit('s1');
+      addTearDown(cubit.close);
+      await Future.microtask(() {});
+      const permission = PermissionRequestMessage(
+        toolUseId: 'tool-1',
+        toolName: 'bash',
+        input: {'command': 'ls'},
+      );
+
+      mockBridge.emitMessage(permission, sessionId: 's1');
+      await Future.microtask(() {});
+      cubit.approve('tool-1');
+      mockBridge.emitMessage(
+        const HistoryMessage(
+          messages: [
+            permission,
+            StatusMessage(status: ProcessStatus.waitingApproval),
+          ],
+        ),
+        sessionId: 's1',
+      );
+      await Future.microtask(() {});
+
+      expect(cubit.state.approval, isA<ApprovalNone>());
+    });
+
+    test(
+      'tool result does not allow stale approval history to replay',
+      () async {
+        final cubit = createCubit('s1');
+        addTearDown(cubit.close);
+        await Future.microtask(() {});
+        const permission = PermissionRequestMessage(
+          toolUseId: 'tool-1',
+          toolName: 'bash',
+          input: {'command': 'ls'},
+        );
+
+        mockBridge.emitMessage(permission, sessionId: 's1');
+        await Future.microtask(() {});
+        cubit.reject('tool-1');
+        mockBridge.emitMessage(
+          const ToolResultMessage(toolUseId: 'tool-1', content: 'rejected'),
+          sessionId: 's1',
+        );
+        mockBridge.emitMessage(
+          const HistoryMessage(
+            messages: [
+              permission,
+              StatusMessage(status: ProcessStatus.waitingApproval),
+            ],
+          ),
+          sessionId: 's1',
+        );
+        await Future.microtask(() {});
+
+        expect(cubit.state.approval, isA<ApprovalNone>());
+      },
+    );
+
+    test('answered question is not restored by stale history', () async {
+      final cubit = createCubit('s1');
+      addTearDown(cubit.close);
+      await Future.microtask(() {});
+      final ask = AssistantServerMessage(
+        message: AssistantMessage(
+          id: 'ask-message',
+          role: 'assistant',
+          content: [
+            const ToolUseContent(
+              id: 'ask-1',
+              name: 'AskUserQuestion',
+              input: {
+                'questions': [
+                  {'question': 'Which option?'},
+                ],
+              },
+            ),
+          ],
+          model: 'claude',
+        ),
+      );
+
+      mockBridge.emitMessage(ask, sessionId: 's1');
+      await Future.microtask(() {});
+      cubit.answer('ask-1', 'A');
+      mockBridge.emitMessage(
+        HistoryMessage(
+          messages: [
+            ask,
+            const StatusMessage(status: ProcessStatus.waitingApproval),
+          ],
+        ),
+        sessionId: 's1',
+      );
+      await Future.microtask(() {});
+
+      expect(cubit.state.approval, isA<ApprovalNone>());
+    });
+
+    test(
+      'stale answered permission does not hide a later pending one',
+      () async {
+        final cubit = createCubit('s1');
+        addTearDown(cubit.close);
+        await Future.microtask(() {});
+        const answered = PermissionRequestMessage(
+          toolUseId: 'tool-answered',
+          toolName: 'bash',
+          input: {'command': 'first'},
+        );
+        const pending = PermissionRequestMessage(
+          toolUseId: 'tool-pending',
+          toolName: 'bash',
+          input: {'command': 'second'},
+        );
+
+        mockBridge.emitMessage(answered, sessionId: 's1');
+        await Future.microtask(() {});
+        cubit.approve('tool-answered');
+        mockBridge.emitMessage(
+          const HistoryMessage(
+            messages: [
+              answered,
+              pending,
+              StatusMessage(status: ProcessStatus.waitingApproval),
+            ],
+          ),
+          sessionId: 's1',
+        );
+        await Future.microtask(() {});
+
+        expect(cubit.state.approval, isA<ApprovalPermission>());
+        expect(
+          (cubit.state.approval as ApprovalPermission).toolUseId,
+          'tool-pending',
+        );
+      },
+    );
+
+    test(
+      'answered permission remains suppressed after cubit recreation',
+      () async {
+        final firstCubit = createCubit('s1');
+        await Future.microtask(() {});
+        const permission = PermissionRequestMessage(
+          toolUseId: 'tool-answered',
+          toolName: 'bash',
+          input: {'command': 'ls'},
+        );
+        mockBridge.emitMessage(permission, sessionId: 's1');
+        await Future.microtask(() {});
+        firstCubit.approve('tool-answered');
+        await firstCubit.close();
+
+        final recreatedCubit = createCubit('s1');
+        addTearDown(recreatedCubit.close);
+        await Future.microtask(() {});
+        mockBridge.emitMessage(
+          const HistoryMessage(
+            messages: [
+              permission,
+              StatusMessage(status: ProcessStatus.waitingApproval),
+            ],
+          ),
+          sessionId: 's1',
+        );
+        await Future.microtask(() {});
+
+        expect(recreatedCubit.state.approval, isA<ApprovalNone>());
+      },
+    );
+
     test('approving ExitPlanMode also clears plan mode state', () async {
       final cubit = createCubit('s1', provider: Provider.codex);
       addTearDown(cubit.close);
@@ -1307,6 +1830,20 @@ void main() {
       expect(cubit.state.codexModel, isNull);
       expect(cubit.state.codexModelReasoningEffort, isNull);
       expect(mockBridge.sentMessages, isEmpty);
+    });
+
+    test('setCodexSpeed updates state and sends bridge message', () async {
+      final cubit = createCubit('s1', provider: Provider.codex);
+      addTearDown(cubit.close);
+
+      cubit.setCodexSpeed(CodexSpeed.fast);
+
+      expect(cubit.state.codexSpeed, CodexSpeed.fast);
+      expect(jsonDecode(mockBridge.sentMessages.single.toJson()), {
+        'type': 'set_codex_speed',
+        'serviceTier': 'fast',
+        'sessionId': 's1',
+      });
     });
 
     test('permission mode rolls back on mode-change error', () async {

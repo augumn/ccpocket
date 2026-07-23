@@ -16,10 +16,26 @@
   },
   "rename": "이름 변경",
   "renameSession": "세션 이름 변경",
+  "pin": "세션 고정",
+  "unpin": "세션 고정 해제",
+  "pinProject": "프로젝트 고정",
+  "unpinProject": "프로젝트 고정 해제",
   "sessionNameHint": "세션 이름",
   "clearName": "이름 지우기",
   "connect": "연결",
+  "toolSuggestionTitle": "Codex에 {toolName}을(를) 추가할까요?",
+  "toolSuggestionInstall": "{toolName} 설치",
+  "toolSuggestionInstalling": "설치 중…",
+  "toolSuggestionNotNow": "나중에",
+  "toolSuggestionAuthDescription": "필요한 앱을 연결한 후 완료되면 확인해 주세요.",
+  "toolSuggestionConnect": "{appName} 연결",
+  "toolSuggestionComplete": "연결을 완료했습니다",
+  "toolSuggestionFailed": "설치하지 못했습니다",
+  "toolSuggestionOpenFailed": "연결 페이지를 열 수 없습니다.",
   "copy": "복사",
+  "markdownLinkOpenFailed": "링크를 열 수 없습니다.",
+  "markdownLinkUnsupported": "지원하지 않는 링크 형식입니다.",
+  "markdownFileUnavailable": "여기서는 이 파일을 미리 볼 수 없습니다.",
   "copied": "복사됨",
   "copiedToClipboard": "클립보드에 복사됨",
   "lineCopied": "줄이 복사됨",
@@ -301,6 +317,9 @@
   "reasoningEffortMediumDesc": "속도와 품질의 균형",
   "reasoningEffortHighDesc": "더 철저한 분석",
   "reasoningEffortXhighDesc": "가장 철저하지만 가장 느림",
+  "reasoningEffortMaxDesc": "가장 어려운 문제를 위한 최대 추론",
+  "reasoningEffortUltraDesc": "최대 추론 및 자동 작업 위임",
+  "reasoningEffortModelSpecificDesc": "모델별 추론 수준",
   "changePermissionModeTitle": "권한 모드 변경",
   "changePermissionModeBody": "{mode}(으)로 전환하면 세션이 재시작됩니다. 대화는 유지됩니다.",
   "@changePermissionModeBody": {
@@ -335,6 +354,12 @@
   "codexAutoReview": "자동 리뷰",
   "codexAutoReviewDescription": "Codex가 승인 요청을 자동으로 검토",
   "codexAutoReviewUnavailableDescription": "승인이 비활성화되어 있으면 사용할 수 없음",
+  "guardianApprovalTitle": "자동 리뷰 승인",
+  "guardianApprovalMediumRisk": "중간 위험",
+  "guardianApprovalHighRisk": "높은 위험",
+  "guardianApprovalDetails": "세부 정보",
+  "guardianApprovalHideDetails": "세부 정보 숨기기",
+  "guardianApprovalAuthorization": "승인 수준: {authorization}",
   "enablePlanModeTitle": "Plan Mode 활성화",
   "disablePlanModeTitle": "Plan Mode 비활성화",
   "enablePlanModeBody": "Plan Mode를 활성화하면 세션이 재시작됩니다. 대화는 유지됩니다.",
@@ -685,6 +710,8 @@
   "showBridgeNameInSessionListSubtitle": "여러 Bridge가 등록되어 있을 때 세션 목록에 연결된 Bridge 이름을 표시합니다.",
   "autoRenameCodexSessions": "자동 Rename (Codex)",
   "autoRenameCodexSessionsSubtitle": "첫 에이전트 응답 후 Codex 세션 이름을 자동으로 지정합니다",
+  "showExtendedCodexEfforts": "Effort 슬라이더에 Max / Ultra 표시",
+  "showExtendedCodexEffortsSubtitle": "선택한 Codex 모델이 지원하는 경우 슬라이더에 Max와 Ultra를 추가합니다",
   "autoRenameClaudeSessions": "자동 Rename (Claude)",
   "autoRenameClaudeSessionsSubtitle": "첫 에이전트 응답 후 Claude 세션 이름을 자동으로 지정합니다. API Key 결제 사용 시 추가 종량 요금이 발생합니다.",
   "newSessionTabCodex": "Codex",
@@ -826,6 +853,8 @@
   "rateOnStoreAndroid": "Google Play에서 평가",
   "supporterTitle": "Supporter",
   "supporterMonthlyTitle": "월간 Supporter",
+  "supporterMonthlyPlusTitle": "월간 Supporter Plus",
+  "supporterSnackTitle": "간식 후원",
   "supporterCoffeeTitle": "음료 한 잔 후원",
   "supporterLunchTitle": "점심 후원",
   "supporterStatusActive": "CC Pocket을 후원해 주셔서 감사합니다.",
@@ -846,10 +875,12 @@
   },
   "supporterMonthlyDescription": "앱을 계속 개선하기 위한 정기 후원입니다.",
   "supporterMonthlyPerkLabel": "대체 앱 아이콘 혜택 포함",
+  "supporterSnackDescription": "간식 하나를 사주고 싶은 마음이라면 큰 힘이 됩니다.",
   "supporterCoffeeDescription": "음료 한 잔을 사주고 싶은 마음이라면 큰 힘이 됩니다.",
   "supporterLunchDescription": "점심 한 끼를 사주고 싶은 마음이라면 큰 힘이 됩니다.",
   "supporterBuyButton": "후원하기",
   "supporterActiveButton": "활성",
+  "supporterSubscribedButton": "구독 중",
   "supporterRestoreButton": "복원",
   "supporterRetryButton": "재시도",
   "supporterProductsUnavailable": "현재 사용할 수 있는 후원 옵션이 없습니다.",
@@ -874,6 +905,14 @@
   },
   "supporterSummaryOneTimeCount": "일회성 ×{count}",
   "@supporterSummaryOneTimeCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "supporterSummarySnackCount": "간식 ×{count}",
+  "@supporterSummarySnackCount": {
     "placeholders": {
       "count": {
         "type": "int"
@@ -957,5 +996,6 @@
   "googleSearchSelectionAction": "Google 검색",
   "approvalQuestionNotificationTitle": "질문이 있습니다 - ccpocket",
   "approvalRequiredNotificationTitle": "승인 대기 중 - ccpocket",
-  "exitPlanModeNotificationBody": "작성된 계획을 확인해야 합니다"
+  "exitPlanModeNotificationBody": "작성된 계획을 확인해야 합니다",
+  "renderErrorFallback": "이 콘텐츠를 표시할 수 없습니다."
 }

@@ -38,6 +38,18 @@ class AppLocalizationsKo extends AppLocalizations {
   String get renameSession => '세션 이름 변경';
 
   @override
+  String get pin => '세션 고정';
+
+  @override
+  String get unpin => '세션 고정 해제';
+
+  @override
+  String get pinProject => '프로젝트 고정';
+
+  @override
+  String get unpinProject => '프로젝트 고정 해제';
+
+  @override
   String get sessionNameHint => '세션 이름';
 
   @override
@@ -47,7 +59,49 @@ class AppLocalizationsKo extends AppLocalizations {
   String get connect => '연결';
 
   @override
+  String toolSuggestionTitle(Object toolName) {
+    return 'Codex에 $toolName을(를) 추가할까요?';
+  }
+
+  @override
+  String toolSuggestionInstall(Object toolName) {
+    return '$toolName 설치';
+  }
+
+  @override
+  String get toolSuggestionInstalling => '설치 중…';
+
+  @override
+  String get toolSuggestionNotNow => '나중에';
+
+  @override
+  String get toolSuggestionAuthDescription => '필요한 앱을 연결한 후 완료되면 확인해 주세요.';
+
+  @override
+  String toolSuggestionConnect(Object appName) {
+    return '$appName 연결';
+  }
+
+  @override
+  String get toolSuggestionComplete => '연결을 완료했습니다';
+
+  @override
+  String get toolSuggestionFailed => '설치하지 못했습니다';
+
+  @override
+  String get toolSuggestionOpenFailed => '연결 페이지를 열 수 없습니다.';
+
+  @override
   String get copy => '복사';
+
+  @override
+  String get markdownLinkOpenFailed => '링크를 열 수 없습니다.';
+
+  @override
+  String get markdownLinkUnsupported => '지원하지 않는 링크 형식입니다.';
+
+  @override
+  String get markdownFileUnavailable => '여기서는 이 파일을 미리 볼 수 없습니다.';
 
   @override
   String get copied => '복사됨';
@@ -853,6 +907,15 @@ class AppLocalizationsKo extends AppLocalizations {
   String get reasoningEffortXhighDesc => '가장 철저하지만 가장 느림';
 
   @override
+  String get reasoningEffortMaxDesc => '가장 어려운 문제를 위한 최대 추론';
+
+  @override
+  String get reasoningEffortUltraDesc => '최대 추론 및 자동 작업 위임';
+
+  @override
+  String get reasoningEffortModelSpecificDesc => '모델별 추론 수준';
+
+  @override
   String get changePermissionModeTitle => '권한 모드 변경';
 
   @override
@@ -898,6 +961,26 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get codexAutoReviewUnavailableDescription => '승인이 비활성화되어 있으면 사용할 수 없음';
+
+  @override
+  String get guardianApprovalTitle => '자동 리뷰 승인';
+
+  @override
+  String get guardianApprovalMediumRisk => '중간 위험';
+
+  @override
+  String get guardianApprovalHighRisk => '높은 위험';
+
+  @override
+  String get guardianApprovalDetails => '세부 정보';
+
+  @override
+  String get guardianApprovalHideDetails => '세부 정보 숨기기';
+
+  @override
+  String guardianApprovalAuthorization(String authorization) {
+    return '승인 수준: $authorization';
+  }
 
   @override
   String get enablePlanModeTitle => 'Plan Mode 활성화';
@@ -1833,6 +1916,13 @@ class AppLocalizationsKo extends AppLocalizations {
       '첫 에이전트 응답 후 Codex 세션 이름을 자동으로 지정합니다';
 
   @override
+  String get showExtendedCodexEfforts => 'Effort 슬라이더에 Max / Ultra 표시';
+
+  @override
+  String get showExtendedCodexEffortsSubtitle =>
+      '선택한 Codex 모델이 지원하는 경우 슬라이더에 Max와 Ultra를 추가합니다';
+
+  @override
   String get autoRenameClaudeSessions => '자동 Rename (Claude)';
 
   @override
@@ -2119,6 +2209,12 @@ class AppLocalizationsKo extends AppLocalizations {
   String get supporterMonthlyTitle => '월간 Supporter';
 
   @override
+  String get supporterMonthlyPlusTitle => '월간 Supporter Plus';
+
+  @override
+  String get supporterSnackTitle => '간식 후원';
+
+  @override
   String get supporterCoffeeTitle => '음료 한 잔 후원';
 
   @override
@@ -2162,6 +2258,9 @@ class AppLocalizationsKo extends AppLocalizations {
   String get supporterMonthlyPerkLabel => '대체 앱 아이콘 혜택 포함';
 
   @override
+  String get supporterSnackDescription => '간식 하나를 사주고 싶은 마음이라면 큰 힘이 됩니다.';
+
+  @override
   String get supporterCoffeeDescription => '음료 한 잔을 사주고 싶은 마음이라면 큰 힘이 됩니다.';
 
   @override
@@ -2172,6 +2271,9 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get supporterActiveButton => '활성';
+
+  @override
+  String get supporterSubscribedButton => '구독 중';
 
   @override
   String get supporterRestoreButton => '복원';
@@ -2205,6 +2307,11 @@ class AppLocalizationsKo extends AppLocalizations {
   @override
   String supporterSummaryOneTimeCount(int count) {
     return '일회성 ×$count';
+  }
+
+  @override
+  String supporterSummarySnackCount(int count) {
+    return '간식 ×$count';
   }
 
   @override
@@ -2360,4 +2467,7 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get exitPlanModeNotificationBody => '작성된 계획을 확인해야 합니다';
+
+  @override
+  String get renderErrorFallback => '이 콘텐츠를 표시할 수 없습니다.';
 }

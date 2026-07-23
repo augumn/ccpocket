@@ -3,6 +3,115 @@ import 'package:ccpocket/models/messages.dart';
 import 'dart:convert';
 
 void main() {
+  test('serializes tool suggestion installation action', () {
+    expect(
+      jsonDecode(
+        ClientMessage.installToolSuggestion(
+          'approval-0',
+          sessionId: 'session-1',
+        ).toJson(),
+      ),
+      {
+        'type': 'install_tool_suggestion',
+        'toolUseId': 'approval-0',
+        'sessionId': 'session-1',
+      },
+    );
+  });
+
+  test('parses structured tool suggestion state', () {
+    final message =
+        ServerMessage.fromJson({
+              'type': 'permission_request',
+              'toolUseId': 'approval-0',
+              'toolName': 'ToolSuggestion',
+              'input': {
+                'toolName': 'GitHub',
+                'toolType': 'plugin',
+                'suggestReason': 'Inspect forks on GitHub.',
+                'installState': 'needs_auth',
+                'appsNeedingAuth': [
+                  {
+                    'id': 'github-app',
+                    'name': 'GitHub',
+                    'installUrl': 'https://example.com/connect',
+                  },
+                ],
+              },
+            })
+            as PermissionRequestMessage;
+
+    expect(message.isToolSuggestion, isTrue);
+    expect(message.usesAskUserUi, isFalse);
+    expect(message.suggestedToolName, 'GitHub');
+    expect(message.toolSuggestionInstallState, 'needs_auth');
+    expect(message.appsNeedingAuthentication.single.name, 'GitHub');
+    expect(
+      message.appsNeedingAuthentication.single.installUrl,
+      'https://example.com/connect',
+    );
+  });
+
+  test('parses Codex goal state and serializes goal actions', () {
+    final message =
+        ServerMessage.fromJson({
+              'type': 'goal_state',
+              'sessionId': 's1',
+              'goal': {
+                'threadId': 'thread-1',
+                'objective': 'Ship Goal support',
+                'status': 'usageLimited',
+                'tokenBudget': 80000,
+                'tokensUsed': 12400,
+                'timeUsedSeconds': 1080,
+                'createdAt': 1,
+                'updatedAt': 2,
+              },
+            })
+            as GoalStateMessage;
+
+    expect(message.sessionId, 's1');
+    expect(message.goal?.objective, 'Ship Goal support');
+    expect(message.goal?.status, CodexThreadGoalStatus.usageLimited);
+    expect(message.goal?.tokenBudget, 80000);
+    expect(
+      jsonDecode(
+        ClientMessage.setGoal(
+          sessionId: 's1',
+          status: CodexThreadGoalStatus.paused,
+        ).toJson(),
+      ),
+      {'type': 'set_goal', 'sessionId': 's1', 'status': 'paused'},
+    );
+    expect(jsonDecode(ClientMessage.clearGoal('s1').toJson()), {
+      'type': 'clear_goal',
+      'sessionId': 's1',
+    });
+  });
+
+  test('parses structured Guardian approval notices', () {
+    final message =
+        ServerMessage.fromJson({
+              'type': 'guardian_approval',
+              'risk': 'high',
+              'reason': 'The command changes files outside the workspace.',
+              'authorization': 'high',
+            })
+            as GuardianApprovalMessage;
+
+    expect(message.risk, GuardianApprovalRisk.high);
+    expect(message.reason, 'The command changes files outside the workspace.');
+    expect(message.authorization, 'high');
+  });
+
+  test('ReasoningEffort preserves model-advertised future values', () {
+    final effort = reasoningEffortByValue('future-tier');
+
+    expect(effort?.value, 'future-tier');
+    expect(effort?.label, 'Future Tier');
+    expect(reasoningEffortByValue('  '), isNull);
+  });
+
   group('pathBasename', () {
     test('handles POSIX and Windows path separators', () {
       expect(pathBasename('/Users/me/project-a'), 'project-a');
@@ -10,6 +119,119 @@ void main() {
       expect(pathBasename(r'C:\Users\me\project-b\'), 'project-b');
       expect(pathBasename('project-c'), 'project-c');
       expect(pathBasename(''), '');
+    });
+  });
+
+  group('Codex permissions mode', () {
+    test('derives only complete known presets', () {
+      expect(
+        codexPermissionsModeFromSettings(
+          approvalPolicy: 'on-request',
+          sandboxMode: 'workspace-write',
+        ),
+        CodexPermissionsMode.defaultPermissions,
+      );
+      expect(
+        codexPermissionsModeFromSettings(
+          approvalPolicy: 'on-request',
+          approvalsReviewer: 'auto_review',
+          sandboxMode: 'workspace-write',
+        ),
+        CodexPermissionsMode.autoReview,
+      );
+      expect(
+        codexPermissionsModeFromSettings(
+          approvalPolicy: 'never',
+          sandboxMode: 'danger-full-access',
+        ),
+        CodexPermissionsMode.fullAccess,
+      );
+    });
+
+    test('classifies read-only, mismatched, and unknown tuples as custom', () {
+      expect(
+        codexPermissionsModeFromSettings(
+          approvalPolicy: 'on-request',
+          sandboxMode: 'read-only',
+        ),
+        CodexPermissionsMode.custom,
+      );
+      expect(
+        codexPermissionsModeFromSettings(
+          approvalPolicy: 'never',
+          sandboxMode: 'workspace-write',
+        ),
+        CodexPermissionsMode.custom,
+      );
+      expect(
+        codexPermissionsModeFromSettings(
+          codexPermissionsMode: 'future-mode',
+          approvalPolicy: 'never',
+          sandboxMode: 'danger-full-access',
+        ),
+        CodexPermissionsMode.custom,
+      );
+    });
+
+    test(
+      'session parsers derive complete settings but not partial metadata',
+      () {
+        final complete = SessionInfo.fromJson({
+          'id': 'complete',
+          'provider': 'codex',
+          'projectPath': '/tmp/project',
+          'status': 'idle',
+          'createdAt': '',
+          'lastActivityAt': '',
+          'codexSettings': {
+            'approvalPolicy': 'on-request',
+            'sandboxMode': 'read-only',
+          },
+        });
+        final partial = SessionInfo.fromJson({
+          'id': 'partial',
+          'provider': 'codex',
+          'projectPath': '/tmp/project',
+          'status': 'idle',
+          'createdAt': '',
+          'lastActivityAt': '',
+          'codexSettings': {'approvalPolicy': 'on-request'},
+        });
+
+        expect(complete.codexPermissionsMode, 'custom');
+        expect(partial.codexPermissionsMode, isNull);
+      },
+    );
+
+    test('RecentSession follows the same complete and partial rules', () {
+      Map<String, dynamic> recentJson(
+        String id,
+        Map<String, dynamic> codexSettings,
+      ) => {
+        'sessionId': id,
+        'provider': 'codex',
+        'firstPrompt': 'resume',
+        'created': '2026-02-13T00:00:00Z',
+        'modified': '2026-02-13T00:00:00Z',
+        'gitBranch': 'main',
+        'projectPath': '/tmp/project',
+        'isSidechain': false,
+        'codexSettings': codexSettings,
+      };
+
+      final complete = RecentSession.fromJson(
+        recentJson('complete', {
+          'approvalPolicy': 'on-request',
+          'approvalsReviewer': 'auto_review',
+          'sandboxMode': 'workspace-write',
+        }),
+      );
+      final partial = RecentSession.fromJson(
+        recentJson('partial', {'approvalsReviewer': 'auto_review'}),
+      );
+
+      expect(complete.codexPermissionsMode, 'autoReview');
+      expect(partial.codexPermissionsMode, isNull);
     });
   });
 
@@ -130,6 +352,8 @@ void main() {
       expect(json['protocolVersion'], 1);
       expect(json['supportedServerMessages'], [
         'conversation_queue',
+        'goal_state',
+        'guardian_approval',
         'history_delta',
         'history_snapshot',
         'git_status_result',
@@ -288,6 +512,7 @@ void main() {
         'codexSettings': {
           'profile': 'ccpocket',
           'modelReasoningEffort': 'medium',
+          'serviceTier': 'fast',
           'networkAccessEnabled': false,
           'webSearchMode': 'cached',
           'additionalWritableRoots': ['/tmp/shared'],
@@ -296,6 +521,7 @@ void main() {
 
       expect(session.codexProfile, 'ccpocket');
       expect(session.codexModelReasoningEffort, 'medium');
+      expect(session.codexServiceTier, 'fast');
       expect(session.codexNetworkAccessEnabled, false);
       expect(session.codexWebSearchMode, 'cached');
       expect(session.codexAdditionalWritableRoots, ['/tmp/shared']);
@@ -313,7 +539,10 @@ void main() {
         },
         'codexModels': ['gpt-5.5'],
         'codexModelReasoningEfforts': {
-          'gpt-5.5': ['low', 'medium', 'high', 'xhigh'],
+          'gpt-5.5': ['low', 'medium', 'high', 'xhigh', 'max', 'ultra'],
+        },
+        'codexModelServiceTiers': {
+          'gpt-5.5': ['fast'],
         },
         'codexProfiles': ['ccpocket', 'research'],
         'defaultCodexProfile': 'ccpocket',
@@ -336,7 +565,10 @@ void main() {
         'medium',
         'high',
         'xhigh',
+        'max',
+        'ultra',
       ]);
+      expect(sessionList.codexModelServiceTiers['gpt-5.5'], ['fast']);
       expect(sessionList.codexProfiles, ['ccpocket', 'research']);
       expect(sessionList.defaultCodexProfile, 'ccpocket');
     });

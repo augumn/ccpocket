@@ -38,6 +38,18 @@ class AppLocalizationsJa extends AppLocalizations {
   String get renameSession => 'セッション名を変更';
 
   @override
+  String get pin => 'セッションをピン留め';
+
+  @override
+  String get unpin => 'セッションのピン留めを解除';
+
+  @override
+  String get pinProject => 'プロジェクトをピン留め';
+
+  @override
+  String get unpinProject => 'プロジェクトのピン留めを解除';
+
+  @override
   String get sessionNameHint => 'セッション名';
 
   @override
@@ -47,7 +59,49 @@ class AppLocalizationsJa extends AppLocalizations {
   String get connect => '接続';
 
   @override
+  String toolSuggestionTitle(Object toolName) {
+    return 'Codex に $toolName を追加しますか？';
+  }
+
+  @override
+  String toolSuggestionInstall(Object toolName) {
+    return '$toolName をインストール';
+  }
+
+  @override
+  String get toolSuggestionInstalling => 'インストール中…';
+
+  @override
+  String get toolSuggestionNotNow => '今回はしない';
+
+  @override
+  String get toolSuggestionAuthDescription => '必要なアプリを接続し、完了したら確認してください。';
+
+  @override
+  String toolSuggestionConnect(Object appName) {
+    return '$appName を接続';
+  }
+
+  @override
+  String get toolSuggestionComplete => '接続が完了しました';
+
+  @override
+  String get toolSuggestionFailed => 'インストールに失敗しました';
+
+  @override
+  String get toolSuggestionOpenFailed => '接続ページを開けませんでした。';
+
+  @override
   String get copy => 'コピー';
+
+  @override
+  String get markdownLinkOpenFailed => 'リンクを開けませんでした。';
+
+  @override
+  String get markdownLinkUnsupported => 'この種類のリンクには対応していません。';
+
+  @override
+  String get markdownFileUnavailable => 'このファイルはここではプレビューできません。';
 
   @override
   String get copied => 'コピーしました';
@@ -854,6 +908,15 @@ class AppLocalizationsJa extends AppLocalizations {
   String get reasoningEffortXhighDesc => '最も丁寧、最も遅い';
 
   @override
+  String get reasoningEffortMaxDesc => '最も難しい問題向けの最大推論';
+
+  @override
+  String get reasoningEffortUltraDesc => '最大推論と自動タスク委譲';
+
+  @override
+  String get reasoningEffortModelSpecificDesc => 'モデル固有の推論レベル';
+
+  @override
   String get changePermissionModeTitle => 'Permission Mode を変更';
 
   @override
@@ -900,6 +963,26 @@ class AppLocalizationsJa extends AppLocalizations {
   @override
   String get codexAutoReviewUnavailableDescription =>
       'Never Ask では承認リクエストが発生しないため利用できません';
+
+  @override
+  String get guardianApprovalTitle => '自動レビューで承認';
+
+  @override
+  String get guardianApprovalMediumRisk => '中リスク';
+
+  @override
+  String get guardianApprovalHighRisk => '高リスク';
+
+  @override
+  String get guardianApprovalDetails => '詳細';
+
+  @override
+  String get guardianApprovalHideDetails => '詳細を閉じる';
+
+  @override
+  String guardianApprovalAuthorization(String authorization) {
+    return '承認レベル: $authorization';
+  }
 
   @override
   String get enablePlanModeTitle => 'Plan Mode を有効化';
@@ -1820,6 +1903,13 @@ class AppLocalizationsJa extends AppLocalizations {
       '最初のエージェント応答後に Codex セッションへ自動で名前を付ける';
 
   @override
+  String get showExtendedCodexEfforts => 'Effortスライダーに Max / Ultra を表示';
+
+  @override
+  String get showExtendedCodexEffortsSubtitle =>
+      '選択した Codex モデルが対応している場合、スライダーに Max と Ultra を追加します';
+
+  @override
   String get autoRenameClaudeSessions => '自動Rename (Claude)';
 
   @override
@@ -2106,6 +2196,12 @@ class AppLocalizationsJa extends AppLocalizations {
   String get supporterMonthlyTitle => '月額サポーター';
 
   @override
+  String get supporterMonthlyPlusTitle => '月額サポーター Plus';
+
+  @override
+  String get supporterSnackTitle => 'おやつで応援';
+
+  @override
   String get supporterCoffeeTitle => 'ドリンクで応援';
 
   @override
@@ -2148,6 +2244,9 @@ class AppLocalizationsJa extends AppLocalizations {
   String get supporterMonthlyPerkLabel => 'アプリアイコン変更特典付き';
 
   @override
+  String get supporterSnackDescription => 'おやつを1つおごる';
+
+  @override
   String get supporterCoffeeDescription => 'ドリンクを1杯おごる';
 
   @override
@@ -2158,6 +2257,9 @@ class AppLocalizationsJa extends AppLocalizations {
 
   @override
   String get supporterActiveButton => '応援中';
+
+  @override
+  String get supporterSubscribedButton => '購読中';
 
   @override
   String get supporterRestoreButton => '購入を復元';
@@ -2191,6 +2293,11 @@ class AppLocalizationsJa extends AppLocalizations {
   @override
   String supporterSummaryOneTimeCount(int count) {
     return '単発 ×$count';
+  }
+
+  @override
+  String supporterSummarySnackCount(int count) {
+    return 'おやつ ×$count';
   }
 
   @override
@@ -2336,4 +2443,7 @@ class AppLocalizationsJa extends AppLocalizations {
 
   @override
   String get exitPlanModeNotificationBody => '作成したプランの確認が必要です';
+
+  @override
+  String get renderErrorFallback => 'このコンテンツを表示できませんでした';
 }

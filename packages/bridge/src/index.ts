@@ -6,7 +6,7 @@ import { BridgeWebSocketServer } from "./websocket.js";
 import { ImageStore } from "./image-store.js";
 import { GalleryStore } from "./gallery-store.js";
 import { printStartupInfo } from "./startup-info.js";
-import { MdnsAdvertiser } from "./mdns.js";
+import { MdnsAdvertiser, shouldAdvertiseMdns } from "./mdns.js";
 import { ProjectHistory } from "./project-history.js";
 import { getVersionInfo } from "./version.js";
 import { fetchAllUsage } from "./usage.js";
@@ -19,20 +19,29 @@ import {
   promptHistoryStoreFileForPort,
   PromptHistoryStore,
 } from "./prompt-history-store.js";
-import { resolvePlatformPath } from "./path-utils.js";
+import { parseAllowedDirectories } from "./path-utils.js";
+import { parseBridgePort } from "./bridge-port.js";
+import { listenForStartup } from "./server-listen.js";
+
+function startupErrorMessage(err: unknown): string {
+  return err instanceof Error ? err.message : String(err);
+}
 
 export async function startServer() {
-  const PORT = parseInt(process.env.BRIDGE_PORT ?? "8765", 10);
+  const PORT = parseBridgePort();
   const HOST = process.env.BRIDGE_HOST ?? "0.0.0.0";
   const API_KEY = process.env.BRIDGE_API_KEY;
+  const MDNS_ENABLED = shouldAdvertiseMdns(
+    process.platform,
+    !!process.env.BRIDGE_DISABLE_MDNS,
+  );
 
-  // Parse allowed project directories (default: $HOME)
-  const ALLOWED_DIRS: string[] = process.env.BRIDGE_ALLOWED_DIRS
-    ? process.env.BRIDGE_ALLOWED_DIRS
-      .split(",")
-      .map((d) => resolvePlatformPath(d.trim()))
-      .filter(Boolean)
-    : [homedir()];
+  // Unrestricted access requires the exact value "*".
+  const ALLOWED_DIRS = parseAllowedDirectories(
+    process.env.BRIDGE_ALLOWED_DIRS,
+    process.platform,
+    [homedir()],
+  );
 
   console.log("[bridge] Starting ccpocket bridge server...");
 
@@ -40,11 +49,19 @@ export async function startServer() {
     console.log("[bridge] API key authentication enabled");
   }
 
-  if (process.env.BRIDGE_DISABLE_MDNS) {
-    console.log("[bridge] mDNS advertisement disabled");
+  if (!MDNS_ENABLED) {
+    console.log(
+      process.platform === "darwin"
+        ? "[bridge] mDNS advertisement disabled on macOS"
+        : "[bridge] mDNS advertisement disabled",
+    );
   }
 
-  console.log(`[bridge] Allowed dirs: ${ALLOWED_DIRS.join(", ")}`);
+  console.log(
+    `[bridge] Allowed dirs: ${
+      ALLOWED_DIRS.length > 0 ? ALLOWED_DIRS.join(", ") : "(unrestricted)"
+    }`,
+  );
 
   // Initialize Firebase Anonymous Auth for push notifications
   let firebaseAuth: FirebaseAuthClient | undefined;
@@ -70,8 +87,7 @@ export async function startServer() {
       process.env.BRIDGE_PROMPT_HISTORY_FILE,
     ),
   );
-  const MDNS_DISABLED = !!process.env.BRIDGE_DISABLE_MDNS;
-  const mdns = MDNS_DISABLED ? undefined : new MdnsAdvertiser();
+  const mdns = MDNS_ENABLED ? new MdnsAdvertiser() : undefined;
 
   // Initialize stores (async)
   galleryStore.init().then(() => {
@@ -209,12 +225,6 @@ export async function startServer() {
     promptHistoryStore,
   });
 
-  httpServer.listen(PORT, HOST, () => {
-    console.log(`[bridge] Ready. Listening on http://${HOST}:${PORT} (HTTP + WebSocket)`);
-    mdns?.start(PORT, API_KEY);
-    printStartupInfo(PORT, HOST, API_KEY);
-  });
-
   function shutdown() {
     console.log("\n[bridge] Shutting down gracefully...");
     mdns?.stop();
@@ -222,6 +232,20 @@ export async function startServer() {
     httpServer.close();
     process.exit(0);
   }
+
+  try {
+    await listenForStartup(httpServer, PORT, HOST);
+  } catch (err) {
+    wsServer.close();
+    httpServer.close();
+    throw err;
+  }
+
+  console.log(
+    `[bridge] Ready. Listening on http://${HOST}:${PORT} (HTTP + WebSocket)`,
+  );
+  mdns?.start(PORT, API_KEY);
+  printStartupInfo(PORT, HOST, API_KEY);
 
   process.on("SIGINT", shutdown);
   process.on("SIGTERM", shutdown);
@@ -235,7 +259,7 @@ const isDirectExecution =
 if (isDirectExecution) {
   setupProxy();
   startServer().catch((err) => {
-    console.error("[bridge] Failed to start:", err);
+    console.error(`[bridge] Failed to start: ${startupErrorMessage(err)}`);
     process.exit(1);
   });
 }

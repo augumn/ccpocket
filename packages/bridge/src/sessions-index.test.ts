@@ -1,5 +1,12 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from "node:fs";
+import {
+  mkdtempSync,
+  mkdirSync,
+  writeFileSync,
+  rmSync,
+  statSync,
+  utimesSync,
+} from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import {
@@ -13,6 +20,7 @@ import {
   extractMessageImages,
   codexThreadToSessionHistory,
 } from "./sessions-index.js";
+import { buildAutoRenamePrompt } from "./auto-rename.js";
 
 describe("pathToSlug", () => {
   it("converts a path to Claude directory slug", () => {
@@ -361,7 +369,7 @@ describe("scanJsonlDir", () => {
           content: [
             {
               type: "text",
-              text: "Write a concise name for this coding-agent session.\n\nTranscript:\nUSER:\nreal task",
+              text: buildAutoRenamePrompt({ userText: "real task" }),
             },
           ],
         },
@@ -817,7 +825,7 @@ describe("codex sessions integration", () => {
     expect(result.sessions.some((s) => s.sessionId === threadId)).toBe(false);
   });
 
-  it("excludes codex auto-rename helper sessions from rollout scans", async () => {
+  it("excludes Codex auto-rename helpers without hiding prefix-matching user sessions", async () => {
     const userThreadId = "019c56c0-d4d8-7b22-9e3c-200664d68023";
     const renameThreadId = "019c56c0-d4d8-7b22-9e3c-200664d68024";
     const codexDir = join(tempHome, ".codex", "sessions", "2026", "02", "13");
@@ -839,7 +847,11 @@ describe("codex sessions integration", () => {
         JSON.stringify({
           timestamp: "2026-02-13T12:03:02.000Z",
           type: "event_msg",
-          payload: { type: "user_message", message: "normal mini session" },
+          payload: {
+            type: "user_message",
+            message:
+              "Write a concise name for this coding-agent session.\n\nPlease implement a similar user-facing prompt.",
+          },
         }),
       ].join("\n"),
     );
@@ -854,15 +866,14 @@ describe("codex sessions integration", () => {
         JSON.stringify({
           timestamp: "2026-02-13T12:04:01.000Z",
           type: "turn_context",
-          payload: { model: "gpt-5.4-mini" },
+          payload: { model: "gpt-oss:20b-cloud" },
         }),
         JSON.stringify({
           timestamp: "2026-02-13T12:04:02.000Z",
           type: "event_msg",
           payload: {
             type: "user_message",
-            message:
-              "Write a concise name for this coding-agent session.\n\nTranscript:\nUSER:\nreal task",
+            message: buildAutoRenamePrompt({ userText: "real task" }),
           },
         }),
       ].join("\n"),
@@ -1022,6 +1033,81 @@ describe("codex sessions integration", () => {
     expect(result.sessions[0].codexSettings?.modelReasoningEffort).toBe(
       "xhigh",
     );
+  });
+
+  it("uses the latest turn_context when restoring Codex speed", async () => {
+    const threadId = "019c56c0-d4d8-7b22-9e3c-200664d68013";
+    const codexDir = join(tempHome, ".codex", "sessions", "2026", "02", "13");
+    mkdirSync(codexDir, { recursive: true });
+
+    writeFileSync(
+      join(codexDir, `rollout-2026-02-13T12-00-00-${threadId}.jsonl`),
+      [
+        JSON.stringify({
+          timestamp: "2026-02-13T12:00:00.000Z",
+          type: "session_meta",
+          payload: { id: threadId, cwd: "/tmp/project-a" },
+        }),
+        JSON.stringify({
+          timestamp: "2026-02-13T12:00:00.500Z",
+          type: "turn_context",
+          payload: { model: "gpt-5.6-sol", service_tier: "fast" },
+        }),
+        JSON.stringify({
+          timestamp: "2026-02-13T12:00:01.000Z",
+          type: "turn_context",
+          payload: { model: "gpt-5.6-sol" },
+        }),
+        JSON.stringify({
+          timestamp: "2026-02-13T12:00:02.000Z",
+          type: "event_msg",
+          payload: { type: "user_message", message: "standard again" },
+        }),
+      ].join("\n"),
+    );
+
+    const result = await getAllRecentSessions({
+      provider: "codex",
+      limit: 200,
+    });
+
+    expect(result.sessions).toHaveLength(1);
+    expect(result.sessions[0].codexSettings?.serviceTier).toBe("standard");
+  });
+
+  it("preserves non-UI Codex service tiers from turn_context", async () => {
+    const threadId = "019c56c0-d4d8-7b22-9e3c-200664d68014";
+    const codexDir = join(tempHome, ".codex", "sessions", "2026", "02", "13");
+    mkdirSync(codexDir, { recursive: true });
+
+    writeFileSync(
+      join(codexDir, `rollout-2026-02-13T12-00-00-${threadId}.jsonl`),
+      [
+        JSON.stringify({
+          timestamp: "2026-02-13T12:00:00.000Z",
+          type: "session_meta",
+          payload: { id: threadId, cwd: "/tmp/project-a" },
+        }),
+        JSON.stringify({
+          timestamp: "2026-02-13T12:00:00.500Z",
+          type: "turn_context",
+          payload: { model: "gpt-5.6-sol", service_tier: "flex" },
+        }),
+        JSON.stringify({
+          timestamp: "2026-02-13T12:00:01.000Z",
+          type: "event_msg",
+          payload: { type: "user_message", message: "keep flex" },
+        }),
+      ].join("\n"),
+    );
+
+    const result = await getAllRecentSessions({
+      provider: "codex",
+      limit: 200,
+    });
+
+    expect(result.sessions).toHaveLength(1);
+    expect(result.sessions[0].codexSettings?.serviceTier).toBe("flex");
   });
 
   it("includes codex sessions when early turn context is large", async () => {
@@ -1947,6 +2033,108 @@ describe("codex sessions integration", () => {
     expect(history).toHaveLength(1);
     expect(history[0].content[0].text).toBe("correct session");
   });
+
+  it("indexes Claude user images by uuid", async () => {
+    const sessionId = "claude-image-index";
+    const claudeDir = join(tempHome, ".claude", "projects", "-tmp-project-a");
+    mkdirSync(claudeDir, { recursive: true });
+    writeFileSync(
+      join(claudeDir, `${sessionId}.jsonl`),
+      [
+        JSON.stringify({
+          type: "user",
+          uuid: "uuid-text",
+          message: { role: "user", content: "text only" },
+        }),
+        JSON.stringify({
+          type: "user",
+          uuid: "uuid-image",
+          message: {
+            role: "user",
+            content: [
+              { type: "text", text: "look" },
+              {
+                type: "image",
+                source: {
+                  type: "base64",
+                  media_type: "image/png",
+                  data: "aW1hZ2U=",
+                },
+              },
+            ],
+          },
+        }),
+        JSON.stringify({
+          type: "user",
+          uuid: "uuid-malformed-image",
+          message: {
+            role: "user",
+            content: [
+              {
+                type: "image",
+                source: {
+                  type: "base64",
+                  media_type: "image/png",
+                  data: { unexpected: true },
+                },
+              },
+            ],
+          },
+        }),
+      ].join("\n"),
+    );
+
+    await expect(extractMessageImages(sessionId, "uuid-image")).resolves.toEqual([
+      { base64: "aW1hZ2U=", mimeType: "image/png" },
+    ]);
+    await expect(extractMessageImages(sessionId, "uuid-text")).resolves.toEqual(
+      [],
+    );
+    await expect(
+      extractMessageImages(sessionId, "uuid-malformed-image"),
+    ).resolves.toEqual([]);
+  });
+
+  it("reuses a fresh Claude image index and invalidates it on file changes", async () => {
+    const sessionId = "claude-image-cache-reuse";
+    const claudeDir = join(tempHome, ".claude", "projects", "-tmp-project-a");
+    mkdirSync(claudeDir, { recursive: true });
+    const jsonlPath = join(claudeDir, `${sessionId}.jsonl`);
+    const entry = (data: string) =>
+      JSON.stringify({
+        type: "user",
+        uuid: "uuid-image",
+        message: {
+          role: "user",
+          content: [
+            {
+              type: "image",
+              source: { type: "base64", media_type: "image/png", data },
+            },
+          ],
+        },
+      });
+    const fixedTime = new Date(1_700_000_000_000);
+    writeFileSync(jsonlPath, entry("AAAA"));
+    utimesSync(jsonlPath, fixedTime, fixedTime);
+
+    await expect(extractMessageImages(sessionId, "uuid-image")).resolves.toEqual([
+      { base64: "AAAA", mimeType: "image/png" },
+    ]);
+
+    const originalStat = statSync(jsonlPath);
+    writeFileSync(jsonlPath, entry("BBBB"));
+    utimesSync(jsonlPath, fixedTime, fixedTime);
+    expect(statSync(jsonlPath).mtimeMs).toBe(originalStat.mtimeMs);
+    await expect(extractMessageImages(sessionId, "uuid-image")).resolves.toEqual([
+      { base64: "AAAA", mimeType: "image/png" },
+    ]);
+
+    writeFileSync(jsonlPath, entry("CCCCCC"));
+    await expect(extractMessageImages(sessionId, "uuid-image")).resolves.toEqual([
+      { base64: "CCCCCC", mimeType: "image/png" },
+    ]);
+  });
 });
 
 describe("claude namedOnly optimization", () => {
@@ -2034,8 +2222,7 @@ describe("claude namedOnly optimization", () => {
             sessionId: "auto-rename-helper",
             fullPath: join(projectDir, "auto-rename-helper.jsonl"),
             fileMtime: Date.now(),
-            firstPrompt:
-              "Write a concise name for this coding-agent session.\n\nTranscript:\nUSER:\nreal task",
+            firstPrompt: buildAutoRenamePrompt({ userText: "real task" }),
             messageCount: 2,
             created: "2026-02-13T11:30:00.000Z",
             modified: "2026-02-13T11:30:01.000Z",

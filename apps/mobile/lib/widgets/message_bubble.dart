@@ -7,6 +7,7 @@ import '../theme/app_theme.dart';
 import '../features/file_peek/file_path_syntax.dart';
 import 'bubbles/assistant_bubble.dart';
 import 'bubbles/error_bubble.dart';
+import 'bubbles/guardian_approval_notice.dart';
 import 'bubbles/permission_request_bubble.dart';
 import 'bubbles/result_chip.dart';
 import 'bubbles/status_chip.dart';
@@ -86,7 +87,10 @@ class ChatEntryWidget extends StatelessWidget {
             imageBytesList: user.imageBytesList,
             imageCount: user.imageCount,
           ),
-          StreamingChatEntry(:final text) => StreamingBubble(text: text),
+          StreamingChatEntry(:final text) => StreamingBubble(
+            text: text,
+            onFileTap: onFileTap,
+          ),
         },
         // Image attachment tap button — placed below the bubble to avoid
         // gesture conflicts with the bubble's GestureDetector.
@@ -188,7 +192,8 @@ class ServerMessageWidget extends StatelessWidget {
                 httpBaseUrl: httpBaseUrl,
                 collapseNotifier: collapseToolResults,
               ),
-      final ResultMessage msg => ResultChip(message: msg),
+      final ResultMessage msg => ResultChip(message: msg, onFileTap: onFileTap),
+      final GuardianApprovalMessage msg => GuardianApprovalNotice(message: msg),
       final ErrorMessage msg => ErrorBubble(message: msg),
       final StatusMessage msg => StatusChip(message: msg),
       HistoryMessage() => const SizedBox.shrink(),
@@ -197,7 +202,8 @@ class ServerMessageWidget extends StatelessWidget {
       final PermissionRequestMessage msg =>
         msg.toolName == 'ExitPlanMode' ||
                 msg.toolName == 'AskUserQuestion' ||
-                msg.toolName == 'McpElicitation'
+                msg.toolName == 'McpElicitation' ||
+                msg.toolName == 'ToolSuggestion'
             ? const SizedBox.shrink()
             : PermissionRequestBubble(message: msg, isCodex: isCodex),
       PermissionResolvedMessage() => const SizedBox.shrink(),
@@ -225,6 +231,7 @@ class ServerMessageWidget extends StatelessWidget {
       InputAckMessage() => const SizedBox.shrink(),
       InputRejectedMessage() => const SizedBox.shrink(),
       ConversationQueueMessage() => const SizedBox.shrink(),
+      GoalStateMessage() => const SizedBox.shrink(),
       UsageResultMessage() => const SizedBox.shrink(),
       RecordingListMessage() => const SizedBox.shrink(),
       RecordingContentMessage() => const SizedBox.shrink(),

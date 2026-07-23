@@ -8,6 +8,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../l10n/app_localizations.dart';
+import '../../utils/network_endpoint.dart';
 import '../../utils/platform_helper.dart';
 
 import '../../models/messages.dart';
@@ -163,6 +164,7 @@ class CodexRecentResumeSettings {
   final String? sandboxMode;
   final String? model;
   final String? modelReasoningEffort;
+  final String? serviceTier;
   final bool? networkAccessEnabled;
   final String? webSearchMode;
   final List<String>? additionalWritableRoots;
@@ -176,6 +178,7 @@ class CodexRecentResumeSettings {
     this.sandboxMode,
     this.model,
     this.modelReasoningEffort,
+    this.serviceTier,
     this.networkAccessEnabled,
     this.webSearchMode,
     this.additionalWritableRoots,
@@ -185,26 +188,20 @@ class CodexRecentResumeSettings {
 CodexRecentResumeSettings factualCodexResumeSettings(
   RecentSession session,
   List<String> availableCodexModels,
-  Map<String, dynamic>? sessionSettings,
 ) {
   final useCodexProfile = session.codexProfile?.isNotEmpty ?? false;
-  final approvalPolicy =
-      sessionSettings?['codexApprovalPolicy'] as String? ??
-      session.codexApprovalPolicy;
+  final approvalPolicy = session.codexApprovalPolicy;
   final permissionsMode = codexPermissionsModeFromRaw(
-    sessionSettings?['codexPermissionsMode'] as String? ??
-        session.codexPermissionsMode,
+    session.codexPermissionsMode,
   );
   final useCustomPermissions =
       permissionsMode == CodexPermissionsMode.custom || useCodexProfile;
   final model =
       normalizeCodexModelForAvailableList(
-        sessionSettings?['codexModel'] as String? ?? session.codexModel,
+        session.codexModel,
         availableCodexModels,
       ) ??
-      sanitizeCodexModelName(
-        sessionSettings?['codexModel'] as String? ?? session.codexModel,
-      );
+      sanitizeCodexModelName(session.codexModel);
   final permissionMode = useCodexProfile || approvalPolicy == null
       ? null
       : (approvalPolicy == CodexApprovalPolicy.never.value
@@ -225,31 +222,21 @@ CodexRecentResumeSettings factualCodexResumeSettings(
     approvalPolicy: useCustomPermissions ? null : approvalPolicy,
     approvalsReviewer: useCustomPermissions
         ? null
-        : (sessionSettings?['codexApprovalsReviewer'] as String? ??
-              session.codexApprovalsReviewer),
+        : session.codexApprovalsReviewer,
     codexPermissionsMode: useCodexProfile ? null : permissionsMode?.value,
-    sandboxMode: useCustomPermissions
-        ? null
-        : (sessionSettings?['codexSandboxMode'] as String? ??
-              session.codexSandboxMode),
+    sandboxMode: useCustomPermissions ? null : session.codexSandboxMode,
     model: useCodexProfile ? null : model,
     modelReasoningEffort: useCodexProfile
         ? null
-        : (sessionSettings?['codexModelReasoningEffort'] as String? ??
-              session.codexModelReasoningEffort),
+        : session.codexModelReasoningEffort,
+    serviceTier: session.codexServiceTier,
     networkAccessEnabled: useCustomPermissions
         ? null
-        : (sessionSettings?['codexNetworkAccessEnabled'] as bool? ??
-              session.codexNetworkAccessEnabled),
-    webSearchMode: useCodexProfile
-        ? null
-        : (sessionSettings?['codexWebSearchMode'] as String? ??
-              session.codexWebSearchMode),
+        : session.codexNetworkAccessEnabled,
+    webSearchMode: useCodexProfile ? null : session.codexWebSearchMode,
     additionalWritableRoots: useCustomPermissions
         ? null
-        : ((sessionSettings?['codexAdditionalWritableRoots'] as List?)
-                  ?.cast<String>() ??
-              session.codexAdditionalWritableRoots),
+        : session.codexAdditionalWritableRoots,
   );
 }
 
@@ -762,7 +749,7 @@ class _SessionListScreenState extends State<SessionListScreen>
         context.read<SessionListCubit>().state.sessions;
     final history = context.read<ProjectHistoryCubit>().state;
     final bridge = context.read<BridgeService>();
-    final visibleTabs = context.read<SettingsCubit>().state.newSessionTabs;
+    final settings = context.read<SettingsCubit>().state;
     return showNewSessionSheet(
       context: context,
       recentProjects: recentProjects(sessions),
@@ -770,7 +757,8 @@ class _SessionListScreenState extends State<SessionListScreen>
       bridge: bridge,
       initialParams: initialParams,
       lockProvider: lockProvider,
-      visibleTabs: visibleTabs,
+      visibleTabs: settings.newSessionTabs,
+      showExtendedCodexEfforts: settings.showExtendedCodexEfforts,
     );
   }
 
@@ -845,6 +833,9 @@ class _SessionListScreenState extends State<SessionListScreen>
             result.provider == Provider.codex && useCodexProfile
             ? null
             : result.modelReasoningEffort?.value,
+        serviceTier: result.provider == Provider.codex
+            ? result.codexSpeed.value
+            : null,
         networkAccessEnabled:
             result.provider == Provider.codex && useCodexCustomPermissions
             ? null
@@ -1131,8 +1122,10 @@ class _SessionListScreenState extends State<SessionListScreen>
     final hasExistingWorktree =
         existingWorktreePath != null && existingWorktreePath.isNotEmpty;
 
-    // Load per-session settings (saved from previous runs).
-    final sessionSettings = await loadClaudeSessionSettings(session.sessionId);
+    // Load per-session Claude settings (saved from previous runs).
+    final sessionSettings = provider == Provider.claude
+        ? await loadClaudeSessionSettings(session.sessionId)
+        : null;
     final codexApprovalPolicy =
         codexApprovalPolicyFromRaw(session.codexApprovalPolicy) ??
         codexApprovalPolicyFromLegacyExecutionMode(
@@ -1177,28 +1170,21 @@ class _SessionListScreenState extends State<SessionListScreen>
       existingWorktreePath: hasExistingWorktree ? existingWorktreePath : null,
       model:
           normalizeCodexModelForAvailableList(
-            sessionSettings?['codexModel'] as String? ?? session.codexModel,
+            session.codexModel,
             codexModels,
           ) ??
-          (sessionSettings?['codexModel'] as String? ?? session.codexModel),
+          session.codexModel,
       sandboxMode: provider == Provider.codex
           ? sandboxModeFromRaw(session.codexSandboxMode)
           : sandboxModeFromRaw(sessionSettings?['sandboxMode'] as String?),
       modelReasoningEffort: reasoningEffortFromRaw(
-        sessionSettings?['codexModelReasoningEffort'] as String? ??
-            session.codexModelReasoningEffort,
+        session.codexModelReasoningEffort,
       ),
-      networkAccessEnabled:
-          sessionSettings?['codexNetworkAccessEnabled'] as bool? ??
-          session.codexNetworkAccessEnabled,
-      webSearchMode: webSearchModeFromRaw(
-        sessionSettings?['codexWebSearchMode'] as String? ??
-            session.codexWebSearchMode,
-      ),
+      codexSpeed: codexSpeedFromRaw(session.codexServiceTier),
+      networkAccessEnabled: session.codexNetworkAccessEnabled,
+      webSearchMode: webSearchModeFromRaw(session.codexWebSearchMode),
       additionalWritableRoots: provider == Provider.codex
-          ? ((sessionSettings?['codexAdditionalWritableRoots'] as List?)
-                    ?.cast<String>() ??
-                session.codexAdditionalWritableRoots)
+          ? session.codexAdditionalWritableRoots
           : const [],
       claudeModel: sessionSettings?['claudeModel'] as String?,
       claudeEffort: claudeEffortFromRaw(
@@ -1215,11 +1201,6 @@ class _SessionListScreenState extends State<SessionListScreen>
     Offset? position,
   ]) async {
     final l = AppLocalizations.of(context);
-    final sessionListCubit = context.read<SessionListCubit>();
-    final bridgeService = context.read<BridgeService>();
-    final isPinned = sessionListCubit.state.pinnedSessionIds.contains(
-      session.id,
-    );
     final action = await showAdaptiveActionMenu<String>(
       context: context,
       position: position,
@@ -1228,11 +1209,6 @@ class _SessionListScreenState extends State<SessionListScreen>
           value: 'rename',
           icon: Icons.label_outline,
           label: l.rename,
-        ),
-        AdaptiveActionMenuItem(
-          value: 'pin',
-          icon: isPinned ? Icons.push_pin : Icons.push_pin_outlined,
-          label: isPinned ? l.unfavorite : l.favorite,
         ),
         AdaptiveActionMenuItem(
           value: 'stop',
@@ -1250,7 +1226,7 @@ class _SessionListScreenState extends State<SessionListScreen>
         currentName: session.name,
       );
       if (newName == null || !mounted) return;
-      bridgeService.renameSession(
+      context.read<BridgeService>().renameSession(
         sessionId: session.id,
         name: newName.isEmpty ? null : newName,
       );
@@ -1258,13 +1234,8 @@ class _SessionListScreenState extends State<SessionListScreen>
       return;
     }
 
-    if (action == 'pin') {
-      await sessionListCubit.togglePinnedSession(session.id);
-      return;
-    }
-
     if (action == 'stop') {
-      bridgeService.stopSession(session.id);
+      context.read<BridgeService>().stopSession(session.id);
     }
   }
 
@@ -1273,12 +1244,6 @@ class _SessionListScreenState extends State<SessionListScreen>
     Offset? position,
   ]) async {
     final l = AppLocalizations.of(context);
-    final sessionListCubit = context.read<SessionListCubit>();
-    final bridgeService = context.read<BridgeService>();
-    final messenger = ScaffoldMessenger.of(context);
-    final isPinned = sessionListCubit.state.pinnedSessionIds.contains(
-      session.sessionId,
-    );
     final action = await showAdaptiveActionMenu<String>(
       context: context,
       position: position,
@@ -1287,11 +1252,6 @@ class _SessionListScreenState extends State<SessionListScreen>
           value: 'rename',
           icon: Icons.label_outline,
           label: l.rename,
-        ),
-        AdaptiveActionMenuItem(
-          value: 'pin',
-          icon: isPinned ? Icons.push_pin : Icons.push_pin_outlined,
-          label: isPinned ? l.unfavorite : l.favorite,
         ),
         AdaptiveActionMenuItem(
           value: 'start_same',
@@ -1327,8 +1287,11 @@ class _SessionListScreenState extends State<SessionListScreen>
       if (newName == null || !mounted) return;
       final effectiveName = newName.isEmpty ? null : newName;
       // Optimistically update the local state for instant UI feedback
-      sessionListCubit.updateSessionName(session.sessionId, effectiveName);
-      bridgeService.renameSession(
+      context.read<SessionListCubit>().updateSessionName(
+        session.sessionId,
+        effectiveName,
+      );
+      context.read<BridgeService>().renameSession(
         sessionId: session.sessionId,
         name: effectiveName,
         provider: session.provider,
@@ -1336,12 +1299,7 @@ class _SessionListScreenState extends State<SessionListScreen>
         projectPath: session.projectPath,
       );
       // Also refresh from server to confirm persistence
-      bridgeService.requestRecentSessions();
-      return;
-    }
-
-    if (action == 'pin') {
-      await sessionListCubit.togglePinnedSession(session.sessionId);
+      context.read<BridgeService>().requestRecentSessions();
       return;
     }
 
@@ -1357,7 +1315,9 @@ class _SessionListScreenState extends State<SessionListScreen>
     if (action == 'copy_resume_command') {
       await Clipboard.setData(ClipboardData(text: buildResumeCommand(session)));
       if (!mounted) return;
-      messenger.showSnackBar(SnackBar(content: Text(l.resumeCommandCopied)));
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(l.resumeCommandCopied)));
       return;
     }
 
@@ -1467,10 +1427,8 @@ class _SessionListScreenState extends State<SessionListScreen>
 
   void _resumeSession(RecentSession session) async {
     final bridge = context.read<BridgeService>();
-    final messenger = ScaffoldMessenger.of(context);
-    final bridgeService = context.read<BridgeService>();
     if (_isResumePending(bridge, session)) {
-      messenger.showSnackBar(
+      ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(AppLocalizations.of(context).resumeAlreadyQueued),
         ),
@@ -1488,8 +1446,8 @@ class _SessionListScreenState extends State<SessionListScreen>
     // For Claude sessions, prefer per-session settings over global defaults.
     Map<String, dynamic>? sessionSettings;
     NewSessionParams? claudeDefaults;
-    sessionSettings = await loadClaudeSessionSettings(session.sessionId);
     if (!isCodex) {
+      sessionSettings = await loadClaudeSessionSettings(session.sessionId);
       final defaults = await _loadSessionStartDefaults(
         provider: Provider.claude,
       );
@@ -1522,8 +1480,7 @@ class _SessionListScreenState extends State<SessionListScreen>
     final codexResumeSettings = isCodex
         ? factualCodexResumeSettings(
             session,
-            bridgeService.codexModels,
-            sessionSettings,
+            context.read<BridgeService>().codexModels,
           )
         : null;
 
@@ -1566,6 +1523,7 @@ class _SessionListScreenState extends State<SessionListScreen>
       modelReasoningEffort: isCodex
           ? codexResumeSettings?.modelReasoningEffort
           : null,
+      serviceTier: isCodex ? codexResumeSettings?.serviceTier : null,
       networkAccessEnabled: isCodex
           ? codexResumeSettings?.networkAccessEnabled
           : null,
@@ -1575,7 +1533,7 @@ class _SessionListScreenState extends State<SessionListScreen>
           : null,
     );
     if (!bridge.isConnected) {
-      messenger.showSnackBar(
+      ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(AppLocalizations.of(context).resumeQueuedForReconnect),
         ),
@@ -1620,9 +1578,8 @@ class _SessionListScreenState extends State<SessionListScreen>
     NewSessionParams edited,
   ) {
     final bridge = context.read<BridgeService>();
-    final messenger = ScaffoldMessenger.of(context);
     if (_isResumePending(bridge, session)) {
-      messenger.showSnackBar(
+      ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(AppLocalizations.of(context).resumeAlreadyQueued),
         ),
@@ -1686,6 +1643,7 @@ class _SessionListScreenState extends State<SessionListScreen>
       modelReasoningEffort: isCodex && useCodexProfile
           ? null
           : (isCodex ? edited.modelReasoningEffort?.value : null),
+      serviceTier: isCodex ? edited.codexSpeed.value : null,
       networkAccessEnabled: isCodex && useCodexCustomPermissions
           ? null
           : (isCodex ? edited.networkAccessEnabled : null),
@@ -1697,7 +1655,7 @@ class _SessionListScreenState extends State<SessionListScreen>
           : null,
     );
     if (!bridge.isConnected) {
-      messenger.showSnackBar(
+      ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(AppLocalizations.of(context).resumeQueuedForReconnect),
         ),
@@ -1769,7 +1727,10 @@ class _SessionListScreenState extends State<SessionListScreen>
     final port = uri.hasPort ? uri.port : 8765;
     for (final item in machines) {
       final machine = item.machine;
-      if (machine.host == uri.host && machine.port == port) return machine;
+      if (endpointIdentityKey(machine.host, machine.port) ==
+          endpointIdentityKey(uri.host, port)) {
+        return machine;
+      }
     }
     return null;
   }
@@ -1778,7 +1739,7 @@ class _SessionListScreenState extends State<SessionListScreen>
     final uri = _bridgeUri(url);
     if (uri == null || uri.host.isEmpty) return null;
     final port = uri.hasPort ? uri.port : 8765;
-    return '${uri.host}:$port';
+    return formatHostPort(uri.host, port);
   }
 
   Uri? _bridgeUri(String? url) {
@@ -2039,7 +2000,8 @@ class _SessionListScreenState extends State<SessionListScreen>
               loadingProjectPaths: slState.loadingProjectPaths,
               exhaustedProjectPaths: slState.exhaustedProjectPaths,
               projectSessionDisplayLimits: slState.projectSessionDisplayLimits,
-              pinnedSessionIds: slState.pinnedSessionIds,
+              pinnedSessionKeys: slState.pinnedSessionKeys,
+              pinnedProjectPaths: slState.pinnedProjectPaths,
               searchQuery: slState.searchQuery,
               isLoadingMore: slState.isLoadingMore,
               isInitialLoading: slState.isInitialLoading,
@@ -2076,6 +2038,7 @@ class _SessionListScreenState extends State<SessionListScreen>
               onApprovePermission:
                   (sessionId, toolUseId, {bool clearContext = false}) {
                     final bridge = context.read<BridgeService>();
+                    bridge.markToolUseResponded(sessionId, toolUseId);
                     bridge.send(
                       ClientMessage.approve(
                         toolUseId,
@@ -2087,6 +2050,7 @@ class _SessionListScreenState extends State<SessionListScreen>
                   },
               onApproveAlways: (sessionId, toolUseId) {
                 final bridge = context.read<BridgeService>();
+                bridge.markToolUseResponded(sessionId, toolUseId);
                 bridge.send(
                   ClientMessage.approveAlways(toolUseId, sessionId: sessionId),
                 );
@@ -2094,6 +2058,7 @@ class _SessionListScreenState extends State<SessionListScreen>
               },
               onRejectPermission: (sessionId, toolUseId, {message}) {
                 final bridge = context.read<BridgeService>();
+                bridge.markToolUseResponded(sessionId, toolUseId);
                 bridge.send(
                   ClientMessage.reject(
                     toolUseId,
@@ -2105,18 +2070,22 @@ class _SessionListScreenState extends State<SessionListScreen>
               },
               onAnswerQuestion: (sessionId, toolUseId, result) {
                 final bridge = context.read<BridgeService>();
+                bridge.markToolUseResponded(sessionId, toolUseId);
                 bridge.send(
                   ClientMessage.answer(toolUseId, result, sessionId: sessionId),
                 );
                 bridge.clearSessionPermission(sessionId);
               },
               onResumeSession: _resumeSession,
-              onLongPressRecentSession: _showRecentSessionActions,
-              onTogglePinnedSession: (sessionId) => context
+              onToggleRecentSessionPinned: (session) => context
                   .read<SessionListCubit>()
-                  .togglePinnedSession(sessionId),
+                  .toggleRecentSessionPinned(session),
+              onLongPressRecentSession: _showRecentSessionActions,
               onArchiveSession: _archiveSession,
               onLongPressRunningSession: _showRunningSessionActions,
+              onToggleRunningSessionPinned: (session) => context
+                  .read<SessionListCubit>()
+                  .toggleRunningSessionPinned(session),
               onSelectProject: (path) =>
                   context.read<SessionListCubit>().selectProject(path),
               onLoadMore: () => context.read<SessionListCubit>().loadMore(),
@@ -2124,6 +2093,8 @@ class _SessionListScreenState extends State<SessionListScreen>
                   context.read<SessionListCubit>().loadMoreProject(path),
               onToggleProjectCollapsed: (path) =>
                   context.read<SessionListCubit>().toggleProjectCollapsed(path),
+              onToggleProjectPinned: (path) =>
+                  context.read<SessionListCubit>().toggleProjectPinned(path),
               providerFilter: effectiveProviderFilter,
               namedOnly: slState.namedOnly,
               onToggleProvider: () => context

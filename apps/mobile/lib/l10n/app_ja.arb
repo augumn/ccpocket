@@ -11,10 +11,26 @@
   "removeProjectConfirm": "「{name}」を最近のプロジェクトから削除しますか？",
   "rename": "名前を変更",
   "renameSession": "セッション名を変更",
+  "pin": "セッションをピン留め",
+  "unpin": "セッションのピン留めを解除",
+  "pinProject": "プロジェクトをピン留め",
+  "unpinProject": "プロジェクトのピン留めを解除",
   "sessionNameHint": "セッション名",
   "clearName": "名前をクリア",
   "connect": "接続",
+  "toolSuggestionTitle": "Codex に {toolName} を追加しますか？",
+  "toolSuggestionInstall": "{toolName} をインストール",
+  "toolSuggestionInstalling": "インストール中…",
+  "toolSuggestionNotNow": "今回はしない",
+  "toolSuggestionAuthDescription": "必要なアプリを接続し、完了したら確認してください。",
+  "toolSuggestionConnect": "{appName} を接続",
+  "toolSuggestionComplete": "接続が完了しました",
+  "toolSuggestionFailed": "インストールに失敗しました",
+  "toolSuggestionOpenFailed": "接続ページを開けませんでした。",
   "copy": "コピー",
+  "markdownLinkOpenFailed": "リンクを開けませんでした。",
+  "markdownLinkUnsupported": "この種類のリンクには対応していません。",
+  "markdownFileUnavailable": "このファイルはここではプレビューできません。",
   "copied": "コピーしました",
   "copiedToClipboard": "クリップボードにコピーしました",
   "lineCopied": "行をコピーしました",
@@ -335,6 +351,9 @@
   "reasoningEffortMediumDesc": "速度と品質のバランス",
   "reasoningEffortHighDesc": "より丁寧な分析",
   "reasoningEffortXhighDesc": "最も丁寧、最も遅い",
+  "reasoningEffortMaxDesc": "最も難しい問題向けの最大推論",
+  "reasoningEffortUltraDesc": "最大推論と自動タスク委譲",
+  "reasoningEffortModelSpecificDesc": "モデル固有の推論レベル",
 
   "changePermissionModeTitle": "Permission Mode を変更",
   "changePermissionModeBody": "{mode} に切り替えるとセッションが再起動します。会話は保持されます。",
@@ -370,6 +389,17 @@
   "codexAutoReview": "自動レビュー",
   "codexAutoReviewDescription": "承認リクエストを Codex が自動レビューします",
   "codexAutoReviewUnavailableDescription": "Never Ask では承認リクエストが発生しないため利用できません",
+  "guardianApprovalTitle": "自動レビューで承認",
+  "guardianApprovalMediumRisk": "中リスク",
+  "guardianApprovalHighRisk": "高リスク",
+  "guardianApprovalDetails": "詳細",
+  "guardianApprovalHideDetails": "詳細を閉じる",
+  "guardianApprovalAuthorization": "承認レベル: {authorization}",
+  "@guardianApprovalAuthorization": {
+    "placeholders": {
+      "authorization": {"type": "String"}
+    }
+  },
   "enablePlanModeTitle": "Plan Mode を有効化",
   "disablePlanModeTitle": "Plan Mode を無効化",
   "enablePlanModeBody": "Plan Mode を有効化するとセッションが再起動します。会話は保持されます。",
@@ -772,6 +802,8 @@
   "showBridgeNameInSessionListSubtitle": "複数のBridgeが登録されているとき、接続中のBridge名をセッション一覧に表示します。",
   "autoRenameCodexSessions": "自動Rename (Codex)",
   "autoRenameCodexSessionsSubtitle": "最初のエージェント応答後に Codex セッションへ自動で名前を付ける",
+  "showExtendedCodexEfforts": "Effortスライダーに Max / Ultra を表示",
+  "showExtendedCodexEffortsSubtitle": "選択した Codex モデルが対応している場合、スライダーに Max と Ultra を追加します",
   "autoRenameClaudeSessions": "自動Rename (Claude)",
   "autoRenameClaudeSessionsSubtitle": "最初のエージェント応答後に Claude セッションへ自動で名前を付ける。API Key 利用時は追加の従量課金が発生します。",
   "newSessionTabCodex": "Codex",
@@ -907,6 +939,8 @@
   "rateOnStoreAndroid": "Google Play で評価する",
   "supporterTitle": "Supporter",
   "supporterMonthlyTitle": "月額サポーター",
+  "supporterMonthlyPlusTitle": "月額サポーター Plus",
+  "supporterSnackTitle": "おやつで応援",
   "supporterCoffeeTitle": "ドリンクで応援",
   "supporterLunchTitle": "ランチで応援",
   "supporterStatusActive": "CC Pocket を応援してくれてありがとうございます。",
@@ -925,10 +959,12 @@
   },
   "supporterMonthlyDescription": "継続的な開発を後押し",
   "supporterMonthlyPerkLabel": "アプリアイコン変更特典付き",
+  "supporterSnackDescription": "おやつを1つおごる",
   "supporterCoffeeDescription": "ドリンクを1杯おごる",
   "supporterLunchDescription": "ランチを1食おごる",
   "supporterBuyButton": "応援する",
   "supporterActiveButton": "応援中",
+  "supporterSubscribedButton": "購読中",
   "supporterRestoreButton": "購入を復元",
   "supporterRetryButton": "再試行",
   "supporterProductsUnavailable": "現在利用できる応援プランがありません。",
@@ -949,6 +985,12 @@
   },
   "supporterSummaryOneTimeCount": "単発 ×{count}",
   "@supporterSummaryOneTimeCount": {
+    "placeholders": {
+      "count": { "type": "int" }
+    }
+  },
+  "supporterSummarySnackCount": "おやつ ×{count}",
+  "@supporterSummarySnackCount": {
     "placeholders": {
       "count": { "type": "int" }
     }
@@ -1020,5 +1062,6 @@
   "googleSearchSelectionAction": "Google で検索",
   "approvalQuestionNotificationTitle": "質問があります - ccpocket",
   "approvalRequiredNotificationTitle": "承認待ち - ccpocket",
-  "exitPlanModeNotificationBody": "作成したプランの確認が必要です"
+  "exitPlanModeNotificationBody": "作成したプランの確認が必要です",
+  "renderErrorFallback": "このコンテンツを表示できませんでした"
 }

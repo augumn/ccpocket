@@ -91,6 +91,25 @@ void main() {
     });
   });
 
+  group('GuardianApprovalMessage handling', () {
+    test('adds the dedicated notice without warning side effects', () {
+      const message = GuardianApprovalMessage(
+        risk: GuardianApprovalRisk.medium,
+        reason: 'Writes build files outside the workspace.',
+        authorization: 'medium',
+      );
+
+      final update = handler.handle(message, isBackground: false);
+
+      expect(update.entriesToAdd, hasLength(1));
+      expect(
+        (update.entriesToAdd.single as ServerChatEntry).message,
+        same(message),
+      );
+      expect(update.sideEffects, isEmpty);
+    });
+  });
+
   group('ThinkingDelta handling', () {
     test('accumulates thinking text', () {
       handler.handle(
@@ -174,7 +193,11 @@ void main() {
               const ToolUseContent(
                 id: 'tu-ask',
                 name: 'AskUserQuestion',
-                input: {'questions': []},
+                input: {
+                  'questions': [
+                    {'question': 'Which option?'},
+                  ],
+                },
               ),
             ],
             model: 'test',
@@ -184,6 +207,60 @@ void main() {
       );
       expect(update.askToolUseId, 'tu-ask');
       expect(update.sideEffects, contains(ChatSideEffect.mediumHaptic));
+    });
+
+    test('treats malformed AskUserQuestion as an ordinary tool use', () {
+      final update = handler.handle(
+        AssistantServerMessage(
+          message: AssistantMessage(
+            id: 'msg-bad-ask',
+            role: 'assistant',
+            content: [
+              const ToolUseContent(
+                id: 'tu-bad-ask',
+                name: 'AskUserQuestion',
+                input: {
+                  'questions': [
+                    {'question': 'Valid'},
+                    {'question': 123},
+                  ],
+                },
+              ),
+            ],
+            model: 'test',
+          ),
+        ),
+        isBackground: false,
+      );
+
+      expect(update.askToolUseId, isNull);
+      expect(update.askInput, isNull);
+      expect(update.pendingToolUseId, 'tu-bad-ask');
+      expect(update.pendingPermission?.canApprove, isFalse);
+      expect(update.pendingPermission?.canApproveForSession, isFalse);
+      expect(update.pendingPermission?.canDecline, isTrue);
+      expect(update.sideEffects, isNot(contains(ChatSideEffect.mediumHaptic)));
+    });
+
+    test('makes a malformed AskUserQuestion permission decline-only', () {
+      final update = handler.handle(
+        const PermissionRequestMessage(
+          toolUseId: 'tu-bad-ask',
+          toolName: 'AskUserQuestion',
+          input: {
+            'questions': [
+              {'question': 123},
+            ],
+          },
+        ),
+        isBackground: false,
+      );
+
+      expect(update.askToolUseId, isNull);
+      expect(update.pendingToolUseId, 'tu-bad-ask');
+      expect(update.pendingPermission?.canApprove, isFalse);
+      expect(update.pendingPermission?.canApproveForSession, isFalse);
+      expect(update.pendingPermission?.canDecline, isTrue);
     });
 
     test('detects EnterPlanMode', () {
@@ -463,6 +540,61 @@ void main() {
       expect(update.projectPath, '/repo');
     });
 
+    test('restores the latest Codex model, effort, and speed from history', () {
+      final update = handler.handle(
+        const HistoryMessage(
+          messages: [
+            SystemMessage(
+              subtype: 'init',
+              provider: 'codex',
+              model: 'gpt-5.6-sol',
+              modelReasoningEffort: 'high',
+              serviceTier: 'fast',
+            ),
+            SystemMessage(
+              subtype: 'set_codex_model',
+              provider: 'codex',
+              model: 'gpt-5.6-terra',
+              modelReasoningEffort: 'xhigh',
+            ),
+            SystemMessage(
+              subtype: 'set_codex_speed',
+              provider: 'codex',
+              serviceTier: 'standard',
+            ),
+          ],
+        ),
+        isBackground: false,
+      );
+
+      expect(update.codexModel, 'gpt-5.6-terra');
+      expect(update.codexModelReasoningEffort, ReasoningEffort.xhigh);
+      expect(update.codexSpeed, CodexSpeed.standard);
+    });
+
+    test('restores codex settings metadata without adding a chat entry', () {
+      final update = handler.handle(
+        const HistoryMessage(
+          messages: [
+            SystemMessage(
+              subtype: 'codex_settings',
+              provider: 'codex',
+              model: 'gpt-5.6-terra',
+              modelReasoningEffort: 'xhigh',
+              serviceTier: 'fast',
+            ),
+          ],
+        ),
+        isBackground: false,
+        isCodex: true,
+      );
+
+      expect(update.entriesToAdd, isEmpty);
+      expect(update.codexModel, 'gpt-5.6-terra');
+      expect(update.codexModelReasoningEffort, ReasoningEffort.xhigh);
+      expect(update.codexSpeed, CodexSpeed.fast);
+    });
+
     test('restores pending permission when status is waitingApproval', () {
       final update = handler.handle(
         const HistoryMessage(
@@ -588,7 +720,11 @@ void main() {
                   const ToolUseContent(
                     id: 'tu-ask',
                     name: 'AskUserQuestion',
-                    input: {'questions': []},
+                    input: {
+                      'questions': [
+                        {'question': 'Which option?'},
+                      ],
+                    },
                   ),
                 ],
                 model: 'test',
@@ -602,6 +738,107 @@ void main() {
       );
       expect(update.askToolUseId, isNull);
       expect(update.askInput, isNull);
+    });
+
+    test('restores malformed AskUserQuestion as decline-only', () {
+      final update = handler.handle(
+        HistoryMessage(
+          messages: [
+            AssistantServerMessage(
+              message: AssistantMessage(
+                id: 'msg-bad-ask',
+                role: 'assistant',
+                content: [
+                  const ToolUseContent(
+                    id: 'tu-bad-ask',
+                    name: 'AskUserQuestion',
+                    input: {
+                      'questions': [
+                        {'question': 'Pick one', 'options': 'not-a-list'},
+                      ],
+                    },
+                  ),
+                ],
+                model: 'test',
+              ),
+            ),
+            const StatusMessage(status: ProcessStatus.waitingApproval),
+          ],
+        ),
+        isBackground: false,
+      );
+
+      expect(update.askToolUseId, isNull);
+      expect(update.askInput, isNull);
+      expect(update.pendingToolUseId, 'tu-bad-ask');
+      expect(update.pendingPermission?.canApprove, isFalse);
+      expect(update.pendingPermission?.canApproveForSession, isFalse);
+      expect(update.pendingPermission?.canDecline, isTrue);
+    });
+
+    test('restores a pending permission after a malformed question', () {
+      final update = handler.handle(
+        HistoryMessage(
+          messages: [
+            AssistantServerMessage(
+              message: AssistantMessage(
+                id: 'msg-bad-ask',
+                role: 'assistant',
+                content: [
+                  const ToolUseContent(
+                    id: 'tu-bad-ask',
+                    name: 'AskUserQuestion',
+                    input: {
+                      'questions': [
+                        {'question': false},
+                      ],
+                    },
+                  ),
+                ],
+                model: 'test',
+              ),
+            ),
+            const PermissionResolvedMessage(toolUseId: 'tu-bad-ask'),
+            const PermissionRequestMessage(
+              toolUseId: 'tu-pending',
+              toolName: 'Bash',
+              input: {'command': 'pwd'},
+            ),
+            const StatusMessage(status: ProcessStatus.waitingApproval),
+          ],
+        ),
+        isBackground: false,
+      );
+
+      expect(update.askToolUseId, isNull);
+      expect(update.pendingToolUseId, 'tu-pending');
+      expect(update.pendingPermission?.toolName, 'Bash');
+    });
+
+    test('restores malformed AskUserQuestion permission as decline-only', () {
+      final update = handler.handle(
+        const HistoryMessage(
+          messages: [
+            PermissionRequestMessage(
+              toolUseId: 'tu-bad-ask',
+              toolName: 'AskUserQuestion',
+              input: {
+                'questions': [
+                  {'question': 'Q', 'multiSelect': 'no'},
+                ],
+              },
+            ),
+            StatusMessage(status: ProcessStatus.waitingApproval),
+          ],
+        ),
+        isBackground: false,
+      );
+
+      expect(update.askToolUseId, isNull);
+      expect(update.pendingToolUseId, 'tu-bad-ask');
+      expect(update.pendingPermission?.canApprove, isFalse);
+      expect(update.pendingPermission?.canApproveForSession, isFalse);
+      expect(update.pendingPermission?.canDecline, isTrue);
     });
 
     test('restores first pending permission when multiple are unresolved', () {
@@ -671,6 +908,62 @@ void main() {
       );
       expect(update.slashCommands, isNotNull);
       expect(update.slashCommands!.length, 3);
+    });
+
+    test(
+      'latest empty supported_commands clears cached history completions',
+      () {
+        final update = handler.handle(
+          const HistoryMessage(
+            messages: [
+              SystemMessage(
+                subtype: 'session_created',
+                provider: 'codex',
+                skills: ['removed-skill'],
+                skillMetadata: [
+                  CodexSkillMetadata(
+                    name: 'removed-skill',
+                    path: '/tmp/removed-skill/SKILL.md',
+                    description: 'Removed skill',
+                  ),
+                ],
+              ),
+              SystemMessage(subtype: 'supported_commands', provider: 'codex'),
+            ],
+          ),
+          isBackground: false,
+        );
+
+        expect(update.slashCommands, isEmpty);
+      },
+    );
+
+    test('restores plugin-only supported_commands from history', () {
+      final update = handler.handle(
+        const HistoryMessage(
+          messages: [
+            SystemMessage(
+              subtype: 'supported_commands',
+              provider: 'codex',
+              plugins: ['sample'],
+              pluginMetadata: [
+                CodexPluginMetadata(
+                  id: 'sample@test',
+                  name: 'sample',
+                  path: 'plugin://sample@test',
+                  marketplaceName: 'test',
+                ),
+              ],
+            ),
+          ],
+        ),
+        isBackground: false,
+      );
+
+      expect(
+        update.slashCommands?.map((command) => command.command),
+        contains('@sample'),
+      );
     });
 
     test('restores slash commands alongside pending state', () {
@@ -761,12 +1054,12 @@ void main() {
       expect(update.entriesToAdd, isEmpty);
     });
 
-    test('supported_commands with empty list does not set commands', () {
+    test('supported_commands with empty list clears commands', () {
       final update = handler.handle(
         const SystemMessage(subtype: 'supported_commands'),
         isBackground: false,
       );
-      expect(update.slashCommands, isNull);
+      expect(update.slashCommands, isEmpty);
       expect(update.entriesToAdd, isEmpty);
     });
   });
@@ -1517,6 +1810,21 @@ void main() {
       final message = entry.message as ErrorMessage;
       expect(message.errorCode, 'bridge_update_required');
       expect(message.message, contains('newer Bridge server'));
+    });
+
+    test('set_codex_speed shows bridge update hint', () {
+      final update = handler.handle(
+        const ErrorMessage(
+          message: 'set_codex_speed',
+          errorCode: 'unsupported_message',
+        ),
+        isBackground: false,
+      );
+
+      expect(update.entriesToAdd, hasLength(1));
+      final entry = update.entriesToAdd.single as ServerChatEntry;
+      final message = entry.message as ErrorMessage;
+      expect(message.errorCode, 'bridge_update_required');
     });
   });
 }

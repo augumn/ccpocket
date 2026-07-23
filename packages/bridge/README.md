@@ -38,15 +38,21 @@ ccpocket-bridge --version
 | `BRIDGE_PORT` | `8765` | WebSocket port |
 | `BRIDGE_HOST` | `0.0.0.0` | Bind address |
 | `BRIDGE_API_KEY` | (none) | API key authentication (enabled when set) |
-| `BRIDGE_ALLOWED_DIRS` | `$HOME` | Comma-separated list of project directories the Bridge may access |
+| `BRIDGE_ALLOWED_DIRS` | `$HOME` | Comma-separated list of project directories the Bridge may access; set exactly to `*` to allow any directory |
 | `BRIDGE_PUBLIC_WS_URL` | (none) | Public `ws://` / `wss://` URL used for startup deep link and QR code |
 | `BRIDGE_CODEX_APP_SERVER_MODE` | `private` | Experimental Codex app-server mode: `private`, `managed`, or `external` |
 | `BRIDGE_CODEX_SHARED_APP_SERVER_URL` | `ws://127.0.0.1:8767` in `managed` mode | Experimental shared Codex app-server URL for Codex CLI co-presence |
+| `BRIDGE_CODEX_ASSIST_MODEL` | `gpt-5.4-mini` | Codex model used for auto-rename and commit-message assist calls |
+| `BRIDGE_CODEX_ASSIST_REASONING_EFFORT` | `none` | Reasoning effort used for Codex assist calls |
 | `BRIDGE_DEMO_MODE` | (none) | Demo mode: hide Tailscale IPs and API key from QR code / logs |
 | `BRIDGE_RECORDING` | (none) | Enable session recording for debugging (enabled when set) |
-| `BRIDGE_DISABLE_MDNS` | (none) | Disable mDNS auto-discovery advertisement (enabled when set) |
+| `BRIDGE_DISABLE_MDNS` | (none) | Disable mDNS auto-discovery advertisement (macOS disables it automatically) |
 | `BRIDGE_PROMPT_HISTORY_FILE` | `$HOME/.ccpocket/prompt-history-v2.json` | Custom prompt history store path |
 | `BRIDGE_RECENT_SESSIONS_PROFILE` | (none) | Log recent-session index timing when set to `1` or `true` |
+| `BRIDGE_FILE_LIST_MAX_ENTRIES` | `5000` | Maximum file and directory entries returned to a client; non-positive or invalid values use the default |
+| `BRIDGE_FILE_LIST_MAX_BYTES` | `524288` | Maximum serialized path bytes returned in a client file list; non-positive or invalid values use the default |
+| `BRIDGE_DELTA_BATCH_MS` | `100` | Milliseconds to batch streaming deltas per connected client; set to `0` to disable batching |
+| `BRIDGE_DELTA_BATCH_MAX_CHARS` | `4096` | Maximum Unicode characters per batched streaming payload; non-positive or invalid values use the default |
 | `DIFF_IMAGE_AUTO_DISPLAY_KB` | `1024` (1 MB) | Auto-display diff images up to this size, in KB |
 | `DIFF_IMAGE_MAX_SIZE_MB` | `5` (5 MB) | Maximum diff image size available for on-demand loading, in MB |
 | `ANTHROPIC_API_KEY` | (none) | Claude Agent SDK API key used for Claude sessions |
@@ -79,6 +85,11 @@ ccpocket-bridge --public-ws-url wss://example.ngrok-free.app
 BRIDGE_DISABLE_MDNS=1 npx @ccpocket/bridge@latest
 # or via CLI flag
 ccpocket-bridge --no-mdns
+
+# Example: use an assist model provided by a custom Codex gateway
+BRIDGE_CODEX_ASSIST_MODEL=gpt-oss:20b-cloud \
+BRIDGE_CODEX_ASSIST_REASONING_EFFORT=none \
+npx @ccpocket/bridge@latest
 ```
 
 When `BRIDGE_PUBLIC_WS_URL` is set, the startup deep link and terminal QR code
@@ -107,12 +118,22 @@ that affect startup:
 - `BRIDGE_DISABLE_MDNS` / `--no-mdns`
 - `BRIDGE_CODEX_APP_SERVER_MODE` / `--codex-app-server-mode`
 - `BRIDGE_CODEX_SHARED_APP_SERVER_URL` / `--codex-shared-app-server-url`
+- `BRIDGE_CODEX_ASSIST_MODEL`
+- `BRIDGE_CODEX_ASSIST_REASONING_EFFORT`
 
 Example:
 
 ```bash
 BRIDGE_ALLOWED_DIRS="$HOME,/scratch/$USER" \
 BRIDGE_API_KEY=my-secret \
+npx @ccpocket/bridge@latest setup
+```
+
+Custom gateway users can persist assist overrides in the same way:
+
+```bash
+BRIDGE_CODEX_ASSIST_MODEL=gpt-oss:20b-cloud \
+BRIDGE_CODEX_ASSIST_REASONING_EFFORT=none \
 npx @ccpocket/bridge@latest setup
 ```
 

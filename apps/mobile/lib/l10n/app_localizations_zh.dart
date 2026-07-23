@@ -38,6 +38,18 @@ class AppLocalizationsZh extends AppLocalizations {
   String get renameSession => '重命名会话';
 
   @override
+  String get pin => '置顶会话';
+
+  @override
+  String get unpin => '取消置顶会话';
+
+  @override
+  String get pinProject => '置顶项目';
+
+  @override
+  String get unpinProject => '取消置顶项目';
+
+  @override
   String get sessionNameHint => '会话名称';
 
   @override
@@ -47,7 +59,49 @@ class AppLocalizationsZh extends AppLocalizations {
   String get connect => '连接';
 
   @override
+  String toolSuggestionTitle(Object toolName) {
+    return '将 $toolName 添加到 Codex？';
+  }
+
+  @override
+  String toolSuggestionInstall(Object toolName) {
+    return '安装 $toolName';
+  }
+
+  @override
+  String get toolSuggestionInstalling => '正在安装…';
+
+  @override
+  String get toolSuggestionNotNow => '暂不安装';
+
+  @override
+  String get toolSuggestionAuthDescription => '连接所需的应用，完成后请确认。';
+
+  @override
+  String toolSuggestionConnect(Object appName) {
+    return '连接 $appName';
+  }
+
+  @override
+  String get toolSuggestionComplete => '连接已完成';
+
+  @override
+  String get toolSuggestionFailed => '安装失败';
+
+  @override
+  String get toolSuggestionOpenFailed => '无法打开连接页面。';
+
+  @override
   String get copy => '复制';
+
+  @override
+  String get markdownLinkOpenFailed => '无法打开此链接。';
+
+  @override
+  String get markdownLinkUnsupported => '不支持此类型的链接。';
+
+  @override
+  String get markdownFileUnavailable => '无法在此处预览此文件。';
 
   @override
   String get copied => '已复制';
@@ -846,6 +900,15 @@ class AppLocalizationsZh extends AppLocalizations {
   String get reasoningEffortXhighDesc => '最深入，最慢';
 
   @override
+  String get reasoningEffortMaxDesc => '针对最难问题的最大推理深度';
+
+  @override
+  String get reasoningEffortUltraDesc => '最大推理并自动委派任务';
+
+  @override
+  String get reasoningEffortModelSpecificDesc => '模型特定的推理级别';
+
+  @override
   String get changePermissionModeTitle => '更改权限模式';
 
   @override
@@ -889,6 +952,26 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get codexAutoReviewUnavailableDescription => '关闭审批时不可用';
+
+  @override
+  String get guardianApprovalTitle => '自动审查已批准';
+
+  @override
+  String get guardianApprovalMediumRisk => '中等风险';
+
+  @override
+  String get guardianApprovalHighRisk => '高风险';
+
+  @override
+  String get guardianApprovalDetails => '详细信息';
+
+  @override
+  String get guardianApprovalHideDetails => '收起详细信息';
+
+  @override
+  String guardianApprovalAuthorization(String authorization) {
+    return '授权级别：$authorization';
+  }
 
   @override
   String get enablePlanModeTitle => '启用 Plan Mode';
@@ -1799,6 +1882,13 @@ class AppLocalizationsZh extends AppLocalizations {
   String get autoRenameCodexSessionsSubtitle => '在首次智能体回复后自动为 Codex 会话命名';
 
   @override
+  String get showExtendedCodexEfforts => '在 Effort 滑块中显示 Max / Ultra';
+
+  @override
+  String get showExtendedCodexEffortsSubtitle =>
+      '当所选 Codex 模型支持时，在滑块中添加 Max 和 Ultra';
+
+  @override
   String get autoRenameClaudeSessions => '自动 Rename (Claude)';
 
   @override
@@ -2084,6 +2174,12 @@ class AppLocalizationsZh extends AppLocalizations {
   String get supporterMonthlyTitle => '每月支持';
 
   @override
+  String get supporterMonthlyPlusTitle => '每月支持 Plus';
+
+  @override
+  String get supporterSnackTitle => '请吃份零食';
+
+  @override
   String get supporterCoffeeTitle => '请喝杯饮料';
 
   @override
@@ -2125,6 +2221,9 @@ class AppLocalizationsZh extends AppLocalizations {
   String get supporterMonthlyPerkLabel => '包含更换应用图标特典';
 
   @override
+  String get supporterSnackDescription => '如果你想请我吃份零食，我会很感谢这份支持。';
+
+  @override
   String get supporterCoffeeDescription => '如果你想请我喝一杯饮料，我会很感谢这份支持。';
 
   @override
@@ -2135,6 +2234,9 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get supporterActiveButton => '支持中';
+
+  @override
+  String get supporterSubscribedButton => '已订阅';
 
   @override
   String get supporterRestoreButton => '恢复购买';
@@ -2168,6 +2270,11 @@ class AppLocalizationsZh extends AppLocalizations {
   @override
   String supporterSummaryOneTimeCount(int count) {
     return '单次 ×$count';
+  }
+
+  @override
+  String supporterSummarySnackCount(int count) {
+    return '零食 ×$count';
   }
 
   @override
@@ -2310,4 +2417,7 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get exitPlanModeNotificationBody => '生成的计划需要你确认';
+
+  @override
+  String get renderErrorFallback => '无法显示此内容。';
 }

@@ -4,6 +4,146 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.108.1] - 2026-07-23
+
+### Changed
+- Upgrade the Flutter toolchain to Flutter 3.44.7 with Dart 3.12.2 and Shorebird 1.6.114.
+
+## [1.108.0] - 2026-07-21
+
+### Added
+- Show medium- and high-risk Codex Guardian auto-approvals as quiet, expandable activity notices with localized risk and authorization details.
+
+### Changed
+- Require Bridge 1.69.0 for structured Guardian approval notices and legacy-client compatibility.
+
+### Fixed
+- Strip text-position suffixes from file URI links before opening files in File Peek.
+
+## [1.107.2] - 2026-07-21
+
+### Changed
+- Require Bridge 1.68.1 for faster Codex skill completion loading and provider-specific completion caching.
+
+### Fixed
+- Refresh active slash, skill, app, plugin, and file completions as soon as new candidates arrive without requiring another keystroke.
+- Clear removed completion candidates when empty snapshots are received or restored from session history.
+
+## [1.107.1] - 2026-07-19
+
+### Changed
+- Require Bridge 1.67.4 for the latest Codex response history reconciliation behavior.
+
+### Fixed
+- Prevent Codex responses from disappearing or duplicating when a turn completes or session history refreshes.
+
+## [1.107.0] - 2026-07-18
+
+### Added
+- Add an opt-in setting to extend Codex Effort sliders with Max and Ultra while keeping Extra High as the default maximum.
+
+### Fixed
+- Normalize file URI paths across platforms before opening Markdown links in File Peek.
+
+## [1.106.2] - 2026-07-18
+
+### Changed
+- Require Bridge 1.67.3 for the latest Codex goal history replay behavior.
+
+### Fixed
+- Open Markdown file links in File Peek, and show a copyable error when a link cannot be opened or is unsupported.
+
+## [1.106.1] - 2026-07-16
+
+### Changed
+- Refresh app store screenshots.
+- Require Bridge 1.67.1 to suppress all approved Codex auto-review notifications consistently.
+
+### Fixed
+- Keep running-session pin actions aligned to the right edge when status details are shown.
+
+## [1.106.0] - 2026-07-16
+
+### Added
+- Add persistent pinning for sessions and projects, with pinned items prioritized in session lists.
+
+### Changed
+- Preserve the current reading position while new message content streams into an active session.
+- Reduce unnecessary background refresh work and handle hidden app lifecycle transitions consistently.
+- Require Bridge 1.67.0 for the latest session resource lifecycle and Codex history fixes.
+
+### Fixed
+- Restore the compact pin control layout on session cards and project headers.
+
+## [1.105.2] - 2026-07-16
+
+### Fixed
+- Prevent repeated Codex settings metadata chips from appearing when reopening a session.
+
+## [1.105.1] - 2026-07-16
+
+### Changed
+- Require Bridge 1.66.2 for the latest Codex app-server dialog, warning, review, and typed form handling.
+
+### Fixed
+- Handle Codex tool suggestion dialogs consistently in active chats and session cards, including installation and authentication flows.
+- Preserve typed Codex and MCP question responses, optional fields, multi-select values, and label/value mappings across chat and session-card answers.
+- Classify Codex usage windows by duration so weekly-only limits are displayed correctly.
+
+## [1.105.0] - 2026-07-16
+
+### Added
+- Add Codex Effort and Speed controls to active sessions and the new-session flow, including slider-based Effort selection and a Fast mode toggle.
+- Add compact and advanced Codex settings layouts with animated transitions and current Model, Effort, and Speed context.
+
+### Changed
+- Keep frequent Effort and Speed controls prominent while moving model selection into the advanced Codex settings flow.
+- Require Bridge 1.66.0 for live Codex Speed changes and settings synchronization.
+
+### Fixed
+- Correct Fast mode availability and refine the compact settings layout, advanced selector, and Effort presentation.
+- Remove Android-specific wording from iOS store descriptions.
+
+## [1.104.1] - 2026-07-14
+
+### Fixed
+- Increase the machine menu touch target to the platform minimum interactive size.
+- Refine supporter plan ordering, labels, and responsive text layout.
+
+## [1.104.0] - 2026-07-14
+
+### Added
+- Add persisted Codex Goals with `/goal` completion and compact controls to edit, pause, resume, and clear the active goal.
+
+### Changed
+- Require Bridge 1.65.0 for Codex Goal state synchronization.
+
+## [1.103.0] - 2026-07-12
+
+### Added
+- Add GPT-5.6 Max and Ultra reasoning options with localized descriptions.
+
+### Changed
+- Require Bridge 1.64.0 for the latest Codex app-server reasoning metadata.
+- Preserve model-advertised reasoning effort values so future levels remain selectable.
+
+## [1.102.0] - 2026-07-12
+
+### Added
+- Add lower-priced $2.99 monthly and one-time Snack Support options.
+
+## [1.101.4] - 2026-07-11
+
+### Changed
+- Require Bridge 1.63.6 for the latest streaming, connection metadata, permission, and input reliability improvements.
+
+### Fixed
+- Show a localized, accessible fallback when part of the interface fails to render in a release build without exposing error details.
+- Handle IPv6 Bridge endpoints consistently across connection and display flows.
+- Handle malformed AskUserQuestion payloads without breaking the active session UI.
+- Prevent answered approvals from reappearing after session state is restored.
+- Show Codex permission settings derived from the active runtime configuration.
+
 ## [1.101.3] - 2026-06-11
 
 ### Changed

@@ -40,8 +40,8 @@ class _AskUserQuestionWidgetState extends State<AskUserQuestionWidget> {
   int _currentPage = 0;
   bool _answered = false;
 
-  List<dynamic> get _questions =>
-      widget.input['questions'] as List<dynamic>? ?? const [];
+  List<Map<String, dynamic>> get _questions =>
+      requestUserInputQuestions(widget.input);
 
   bool get _isSingleQuestion => _questions.length <= 1;
 
@@ -49,7 +49,7 @@ class _AskUserQuestionWidgetState extends State<AskUserQuestionWidget> {
 
   bool get _singleQuestionIsMultiSelect {
     if (!_isSingleQuestion || _questions.isEmpty) return false;
-    final q = _questions.first as Map<String, dynamic>;
+    final q = _questions.first;
     return q['multiSelect'] as bool? ?? false;
   }
 
@@ -81,19 +81,21 @@ class _AskUserQuestionWidgetState extends State<AskUserQuestionWidget> {
 
   void _sendAllAnswers() {
     if (_answered) return;
-    final answers = <String, String>{};
+    final answers = <String, dynamic>{};
     for (var i = 0; i < _questions.length; i++) {
-      final q = _questions[i] as Map<String, dynamic>;
+      final q = _questions[i];
       final question = q['question'] as String? ?? '';
+      final answerKey = q['id'] as String? ?? question;
       final multiSelect = q['multiSelect'] as bool? ?? false;
       if (multiSelect) {
         final selected = _multiAnswers[i] ?? <String>{};
         final custom = _customControllers[i]?.text.trim() ?? '';
         final merged = <String>[...selected];
         if (custom.isNotEmpty) merged.add(custom);
-        answers[question] = merged.join(', ');
+        if (merged.isNotEmpty) answers[answerKey] = merged;
       } else {
-        answers[question] = _singleAnswers[i] ?? '';
+        final answer = _singleAnswers[i]?.trim() ?? '';
+        if (answer.isNotEmpty) answers[answerKey] = answer;
       }
     }
     _sendAnswer(jsonEncode({'questions': _questions, 'answers': answers}));
@@ -101,7 +103,9 @@ class _AskUserQuestionWidgetState extends State<AskUserQuestionWidget> {
 
   bool get _allQuestionsAnswered {
     for (var i = 0; i < _questions.length; i++) {
-      final q = _questions[i] as Map<String, dynamic>;
+      final q = _questions[i];
+      final required = q['required'] as bool? ?? true;
+      if (!required) continue;
       final multiSelect = q['multiSelect'] as bool? ?? false;
       if (multiSelect) {
         final selected = _multiAnswers[i] ?? <String>{};
@@ -124,7 +128,7 @@ class _AskUserQuestionWidgetState extends State<AskUserQuestionWidget> {
 
   void _onAnswerSingle(int questionIndex, String label) {
     HapticFeedback.selectionClick();
-    final q = _questions[questionIndex] as Map<String, dynamic>;
+    final q = _questions[questionIndex];
     final isMulti = q['multiSelect'] as bool? ?? false;
 
     setState(() {
@@ -190,7 +194,7 @@ class _AskUserQuestionWidgetState extends State<AskUserQuestionWidget> {
   }
 
   void _submitCustomText(int questionIndex) {
-    final q = _questions[questionIndex] as Map<String, dynamic>;
+    final q = _questions[questionIndex];
     final isMulti = q['multiSelect'] as bool? ?? false;
     final customText = _customControllers[questionIndex]?.text.trim() ?? '';
 
@@ -237,7 +241,7 @@ class _AskUserQuestionWidgetState extends State<AskUserQuestionWidget> {
 
   void _onCustomTextChanged(int questionIndex, String text) {
     setState(() {
-      final q = _questions[questionIndex] as Map<String, dynamic>;
+      final q = _questions[questionIndex];
       final isMulti = q['multiSelect'] as bool? ?? false;
       if (isMulti) {
         final selected = _multiAnswers[questionIndex] ?? <String>{};
@@ -427,7 +431,7 @@ class _AskUserQuestionWidgetState extends State<AskUserQuestionWidget> {
                       );
                     }
                     return _AskQuestionLayout(
-                      question: questions[index] as Map<String, dynamic>,
+                      question: questions[index],
                       questionIndex: index,
                       isMultiQuestion: true,
                       scrollable: widget.scrollable,
@@ -454,7 +458,7 @@ class _AskUserQuestionWidgetState extends State<AskUserQuestionWidget> {
                 child: SingleChildScrollView(
                   key: const ValueKey('ask_single_question_scroll_view'),
                   child: _AskQuestionLayout(
-                    question: questions.first as Map<String, dynamic>,
+                    question: questions.first,
                     questionIndex: 0,
                     isMultiQuestion: false,
                     scrollable: false,
@@ -595,17 +599,24 @@ class _AskQuestionLayout extends StatelessWidget {
                   description: opt['description'] as String? ?? '',
                   isSelected: isMulti
                       ? (multiAnswers[questionIndex] ?? {}).contains(
-                          opt['label'] as String? ?? '',
+                          opt['value'] as String? ??
+                              opt['label'] as String? ??
+                              '',
                         )
                       : singleAnswers[questionIndex] ==
-                            (opt['label'] as String? ?? ''),
+                            (opt['value'] as String? ??
+                                opt['label'] as String? ??
+                                ''),
                   isMulti: isMulti,
                   onTap: () {
-                    final label = opt['label'] as String? ?? '';
+                    final value =
+                        opt['value'] as String? ??
+                        opt['label'] as String? ??
+                        '';
                     if (isMulti) {
-                      onToggleMultiSelectLabel(questionIndex, label);
+                      onToggleMultiSelectLabel(questionIndex, value);
                     } else {
-                      onAnswerSingle(questionIndex, label);
+                      onAnswerSingle(questionIndex, value);
                     }
                   },
                 ),
@@ -865,7 +876,7 @@ class _AskTextInputRow extends StatelessWidget {
 }
 
 class _AskSummaryPage extends StatelessWidget {
-  final List<dynamic> questions;
+  final List<Map<String, dynamic>> questions;
   final bool scrollable;
   final Map<int, String> singleAnswers;
   final ValueChanged<int> onGoToPage;
@@ -897,7 +908,7 @@ class _AskSummaryPage extends StatelessWidget {
         for (var i = 0; i < questions.length; i++) ...[
           _AskSummaryRow(
             index: i,
-            question: questions[i] as Map<String, dynamic>,
+            question: questions[i],
             answer: singleAnswers[i],
             onEdit: () => onGoToPage(i),
           ),

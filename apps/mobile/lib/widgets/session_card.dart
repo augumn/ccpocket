@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:expandable_page_view/expandable_page_view.dart';
 import 'package:flutter/material.dart';
 
@@ -10,6 +12,7 @@ import 'adaptive_context_menu.dart';
 import 'codex_environment_summary.dart';
 import 'plan_detail_sheet.dart';
 import 'expandable_summary_text.dart';
+import 'pin_toggle_button.dart';
 import 'session_visual_status.dart';
 
 /// Shared layout constant for AskUserArea buttons.
@@ -29,6 +32,7 @@ class RunningSessionCard extends StatefulWidget {
   final bool isUnseen;
   final bool isSelected;
   final bool isPinned;
+  final VoidCallback? onTogglePinned;
 
   const RunningSessionCard({
     super.key,
@@ -44,6 +48,7 @@ class RunningSessionCard extends StatefulWidget {
     this.isUnseen = false,
     this.isSelected = false,
     this.isPinned = false,
+    this.onTogglePinned,
   });
 
   @override
@@ -114,6 +119,7 @@ class _RunningSessionCardState extends State<RunningSessionCard> {
     final isCodexSession = session.provider == Provider.codex.value;
     final isPlanApproval =
         hasPermission && permission.toolName == 'ExitPlanMode';
+    final isToolSuggestion = hasPermission && permission.isToolSuggestion;
     final hasQuestionPrompt = hasPermission && permission.usesAskUserUi;
     if (isPlanApproval) {
       _syncPlanApprovalState(permission);
@@ -168,54 +174,58 @@ class _RunningSessionCardState extends State<RunningSessionCard> {
               ),
               child: Row(
                 children: [
-                  _StatusDot(
-                    color: statusColor,
-                    animate: visualStatus.animate,
-                    glow: isReadyUnseen,
-                    inPlanMode:
-                        visualStatus.showPlanBadge && visualStatus.animate,
-                  ),
-                  const SizedBox(width: 6),
-                  Text(
-                    visualStatus.label,
-                    style: TextStyle(
-                      fontSize: 11,
-                      fontWeight: isReadyUnseen
-                          ? FontWeight.w800
-                          : FontWeight.w600,
-                      color: statusColor,
-                    ),
-                  ),
-                  if (visualStatus.detail != null) ...[
-                    const SizedBox(width: 6),
-                    Flexible(
-                      child: Text(
-                        visualStatus.detail!,
-                        style: TextStyle(
-                          fontSize: 11,
-                          color: statusColor.withValues(alpha: 0.82),
+                  Expanded(
+                    child: Row(
+                      children: [
+                        _StatusDot(
+                          color: statusColor,
+                          animate: visualStatus.animate,
+                          glow: isReadyUnseen,
+                          inPlanMode:
+                              visualStatus.showPlanBadge &&
+                              visualStatus.animate,
                         ),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                      ),
+                        const SizedBox(width: 6),
+                        Text(
+                          visualStatus.label,
+                          style: TextStyle(
+                            fontSize: 11,
+                            fontWeight: isReadyUnseen
+                                ? FontWeight.w800
+                                : FontWeight.w600,
+                            color: statusColor,
+                          ),
+                        ),
+                        if (visualStatus.detail != null) ...[
+                          const SizedBox(width: 6),
+                          Flexible(
+                            child: Text(
+                              visualStatus.detail!,
+                              style: TextStyle(
+                                fontSize: 11,
+                                color: statusColor.withValues(alpha: 0.82),
+                              ),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                        ],
+                      ],
                     ),
-                  ],
-                  if (queuedInput != null || widget.onStop != null) ...[
-                    const Spacer(),
-                    if (widget.isPinned) ...[
-                      Icon(
-                        Icons.push_pin,
-                        size: 14,
-                        color: statusColor.withValues(alpha: 0.9),
-                      ),
-                      const SizedBox(width: 6),
-                    ],
-                    if (queuedInput != null) ...[
-                      _QueuedInputBadge(item: queuedInput),
-                      if (widget.onStop != null) const SizedBox(width: 6),
-                    ],
+                  ),
+                  PinToggleButton(
+                    key: ValueKey('running_session_pin_${session.id}_button'),
+                    isPinned: widget.isPinned,
+                    onPressed: widget.onTogglePinned,
+                    pinTooltip: AppLocalizations.of(context).pin,
+                    unpinTooltip: AppLocalizations.of(context).unpin,
+                  ),
+                  if (queuedInput != null) ...[
+                    const SizedBox(width: 4),
+                    _QueuedInputBadge(item: queuedInput),
                   ],
                   if (widget.onStop != null) ...[
+                    const SizedBox(width: 6),
                     _RunningSessionStopButton(onPressed: widget.onStop!),
                   ],
                 ],
@@ -235,6 +245,12 @@ class _RunningSessionCardState extends State<RunningSessionCard> {
                             ),
                             onReject: () =>
                                 widget.onReject?.call(permission.toolUseId),
+                          )
+                        : isToolSuggestion
+                        ? _ToolSuggestionArea(
+                            permission: permission,
+                            statusColor: statusColor,
+                            onTap: widget.onTap,
                           )
                         : hasQuestionPrompt
                         ? _AskUserArea(
@@ -320,38 +336,8 @@ class _RunningSessionCardState extends State<RunningSessionCard> {
                       Expanded(
                         child: Row(
                           children: [
-                            Hero(
-                              tag: 'project_name_${session.id}',
-                              child: Material(
-                                color: Colors.transparent,
-                                child: Container(
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 6,
-                                    vertical: 2,
-                                  ),
-                                  decoration: BoxDecoration(
-                                    color: providerStyle.background,
-                                    borderRadius: BorderRadius.circular(6),
-                                    border: Border.all(
-                                      color: providerStyle.border,
-                                      width: 0.5,
-                                    ),
-                                  ),
-                                  child: Text(
-                                    projectName,
-                                    style: TextStyle(
-                                      fontWeight: FontWeight.w500,
-                                      fontSize: 12,
-                                      color: providerStyle.foreground,
-                                    ),
-                                    overflow: TextOverflow.ellipsis,
-                                  ),
-                                ),
-                              ),
-                            ),
                             if (session.name != null &&
                                 session.name!.isNotEmpty) ...[
-                              const SizedBox(width: 8),
                               Flexible(
                                 child: Container(
                                   padding: const EdgeInsets.symmetric(
@@ -384,7 +370,37 @@ class _RunningSessionCardState extends State<RunningSessionCard> {
                                   ),
                                 ),
                               ),
+                              const SizedBox(width: 8),
                             ],
+                            Hero(
+                              tag: 'project_name_${session.id}',
+                              child: Material(
+                                color: Colors.transparent,
+                                child: Container(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 6,
+                                    vertical: 2,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: providerStyle.background,
+                                    borderRadius: BorderRadius.circular(6),
+                                    border: Border.all(
+                                      color: providerStyle.border,
+                                      width: 0.5,
+                                    ),
+                                  ),
+                                  child: Text(
+                                    projectName,
+                                    style: TextStyle(
+                                      fontWeight: FontWeight.w500,
+                                      fontSize: 12,
+                                      color: providerStyle.foreground,
+                                    ),
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ),
+                              ),
+                            ),
                           ],
                         ),
                       ),
@@ -596,6 +612,61 @@ class _RunningSessionStopButton extends StatelessWidget {
       style: IconButton.styleFrom(
         foregroundColor: colorScheme.error,
         backgroundColor: colorScheme.errorContainer.withValues(alpha: 0.26),
+      ),
+    );
+  }
+}
+
+class _ToolSuggestionArea extends StatelessWidget {
+  final PermissionRequestMessage permission;
+  final Color statusColor;
+  final VoidCallback onTap;
+
+  const _ToolSuggestionArea({
+    required this.permission,
+    required this.statusColor,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    return Container(
+      key: const ValueKey('session_tool_suggestion_area'),
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      color: statusColor.withValues(alpha: 0.06),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(Icons.extension_outlined, size: 17, color: statusColor),
+              const SizedBox(width: 6),
+              Expanded(
+                child: Text(
+                  permission.suggestedToolName,
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w700,
+                    color: colorScheme.onSurface,
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 4),
+          Text(
+            permission.toolSuggestionReason,
+            style: TextStyle(fontSize: 12, color: colorScheme.onSurfaceVariant),
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+          ),
+          const SizedBox(height: 6),
+          _OpenButton(onTap: onTap),
+        ],
       ),
     );
   }
@@ -1196,6 +1267,8 @@ class _AskUserAreaState extends State<_AskUserArea> {
     if (!_isMultiQuestion) {
       // Single question → send immediately
       widget.onAnswer(label);
+    } else {
+      _goToPage(questionIndex + 1);
     }
   }
 
@@ -1204,7 +1277,16 @@ class _AskUserAreaState extends State<_AskUserArea> {
     if (selected == null || selected.isEmpty) return;
     final answer = selected.join(', ');
     if (!_isMultiQuestion) {
-      widget.onAnswer(answer);
+      final question = _questions[questionIndex] as Map<String, dynamic>;
+      final answerKey =
+          question['id'] as String? ??
+          question['question'] as String? ??
+          'question_$questionIndex';
+      widget.onAnswer(
+        jsonEncode({
+          'answers': {answerKey: selected.toList(growable: false)},
+        }),
+      );
     } else {
       setState(() {
         _singleAnswers[questionIndex] = answer;
@@ -1234,7 +1316,21 @@ class _AskUserAreaState extends State<_AskUserArea> {
     if (finalAnswer.isEmpty) return;
 
     if (!_isMultiQuestion) {
-      widget.onAnswer(finalAnswer);
+      if (isMulti) {
+        final answerKey =
+            q['id'] as String? ??
+            q['question'] as String? ??
+            'question_$questionIndex';
+        final answer = <String>[...(_multiAnswers[questionIndex] ?? {})];
+        if (customText.isNotEmpty) answer.add(customText);
+        widget.onAnswer(
+          jsonEncode({
+            'answers': {answerKey: answer},
+          }),
+        );
+      } else {
+        widget.onAnswer(finalAnswer);
+      }
       return;
     }
 
@@ -1245,26 +1341,40 @@ class _AskUserAreaState extends State<_AskUserArea> {
   }
 
   void _submitAll() {
-    final parts = <String>[];
+    final answers = <String, dynamic>{};
     for (var i = 0; i < _questions.length; i++) {
       final q = _questions[i] as Map<String, dynamic>;
       final isMulti = q['multiSelect'] as bool? ?? false;
-      final header = q['header'] as String? ?? 'Q${i + 1}';
+      final answerKey =
+          q['id'] as String? ?? q['question'] as String? ?? 'question_$i';
 
-      String answer = '';
       if (isMulti) {
         final selected = _multiAnswers[i] ?? {};
-        final subParts = [...selected];
+        final answer = <String>[...selected];
         final customText = _customControllers[i]?.text.trim() ?? '';
-        if (customText.isNotEmpty) subParts.add(customText);
-        answer = subParts.isNotEmpty ? subParts.join(', ') : '(skipped)';
+        if (customText.isNotEmpty) answer.add(customText);
+        if (answer.isNotEmpty) answers[answerKey] = answer;
       } else {
-        answer = _singleAnswers[i] ?? '(skipped)';
+        final answer = _singleAnswers[i]?.trim() ?? '';
+        if (answer.isNotEmpty) answers[answerKey] = answer;
       }
-
-      parts.add('$header: $answer');
     }
-    widget.onAnswer(parts.join('\n'));
+    widget.onAnswer(jsonEncode({'answers': answers}));
+  }
+
+  bool get _allRequiredAnswered {
+    for (var i = 0; i < _questions.length; i++) {
+      final question = _questions[i] as Map<String, dynamic>;
+      if (!(question['required'] as bool? ?? true)) continue;
+      if (question['multiSelect'] as bool? ?? false) {
+        final selected = _multiAnswers[i] ?? {};
+        final customText = _customControllers[i]?.text.trim() ?? '';
+        if (selected.isEmpty && customText.isEmpty) return false;
+      } else if ((_singleAnswers[i]?.trim() ?? '').isEmpty) {
+        return false;
+      }
+    }
+    return true;
   }
 
   void _resetAll() {
@@ -1389,6 +1499,7 @@ class _AskUserAreaState extends State<_AskUserArea> {
               onGoToPage: _goToPage,
               onResetAll: _resetAll,
               onSubmitAll: _submitAll,
+              canSubmitAll: _allRequiredAnswered,
             ),
           ] else if (options.isNotEmpty) ...[
             _QuestionLayout(
@@ -1496,9 +1607,10 @@ class _SingleSelectChips extends StatelessWidget {
               child: Builder(
                 builder: (context) {
                   final label = opt['label'] as String? ?? '';
-                  final isChosen = selectedLabel == label;
+                  final value = opt['value'] as String? ?? label;
+                  final isChosen = selectedLabel == value;
                   return OutlinedButton.icon(
-                    onPressed: () => onAnswerSingle(questionIndex, label),
+                    onPressed: () => onAnswerSingle(questionIndex, value),
                     icon: isChosen
                         ? Icon(Icons.check_circle, size: 16, color: statusColor)
                         : const SizedBox.shrink(),
@@ -1559,9 +1671,10 @@ class _MultiSelectChips extends StatelessWidget {
               child: Builder(
                 builder: (context) {
                   final label = opt['label'] as String? ?? '';
-                  final isSelected = selected.contains(label);
+                  final value = opt['value'] as String? ?? label;
+                  final isSelected = selected.contains(value);
                   return OutlinedButton.icon(
-                    onPressed: () => onToggleLabel(questionIndex, label),
+                    onPressed: () => onToggleLabel(questionIndex, value),
                     icon: Icon(
                       isSelected
                           ? Icons.check_box
@@ -1876,6 +1989,7 @@ class _QuestionPageView extends StatelessWidget {
   final ValueChanged<int> onGoToPage;
   final VoidCallback onResetAll;
   final VoidCallback onSubmitAll;
+  final bool canSubmitAll;
 
   const _QuestionPageView({
     required this.questions,
@@ -1898,6 +2012,7 @@ class _QuestionPageView extends StatelessWidget {
     required this.onGoToPage,
     required this.onResetAll,
     required this.onSubmitAll,
+    required this.canSubmitAll,
   });
 
   @override
@@ -1965,7 +2080,7 @@ class _QuestionPageView extends StatelessWidget {
                 customControllers: getOrCreateController,
                 onGoToPage: onGoToPage,
                 onResetAll: onResetAll,
-                onSubmitAll: onSubmitAll,
+                onSubmitAll: canSubmitAll ? onSubmitAll : null,
               );
             }
             return _QuestionLayout(
@@ -2001,7 +2116,7 @@ class _SummaryPage extends StatelessWidget {
   final TextEditingController Function(int) customControllers;
   final ValueChanged<int> onGoToPage;
   final VoidCallback onResetAll;
-  final VoidCallback onSubmitAll;
+  final VoidCallback? onSubmitAll;
 
   const _SummaryPage({
     required this.questions,
@@ -2069,6 +2184,7 @@ class _SummaryPage extends StatelessWidget {
                 child: SizedBox(
                   height: 36,
                   child: FilledButton(
+                    key: const ValueKey('ask_submit_summary_button'),
                     onPressed: onSubmitAll,
                     style: FilledButton.styleFrom(
                       padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -2442,6 +2558,7 @@ class RecentSessionCard extends StatelessWidget {
   final bool isProcessing;
   final bool isSelected;
   final bool isPinned;
+  final VoidCallback? onTogglePinned;
 
   const RecentSessionCard({
     super.key,
@@ -2455,6 +2572,7 @@ class RecentSessionCard extends StatelessWidget {
     this.isProcessing = false,
     this.isSelected = false,
     this.isPinned = false,
+    this.onTogglePinned,
   });
 
   @override
@@ -2502,13 +2620,35 @@ class RecentSessionCard extends StatelessWidget {
                       Expanded(
                         child: Row(
                           children: [
-                            if (isPinned) ...[
-                              Icon(
-                                Icons.push_pin,
-                                size: 14,
-                                color: colorScheme.primary,
+                            if (session.name != null &&
+                                session.name!.isNotEmpty) ...[
+                              Flexible(
+                                child: Container(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 6,
+                                    vertical: 2,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: colorScheme.surfaceContainer,
+                                    borderRadius: BorderRadius.circular(6),
+                                    border: Border.all(
+                                      color: colorScheme.outlineVariant,
+                                      width: 0.5,
+                                    ),
+                                  ),
+                                  child: Text(
+                                    session.name!,
+                                    style: TextStyle(
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.w500,
+                                      color: colorScheme.onSurfaceVariant,
+                                    ),
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ),
                               ),
-                              const SizedBox(width: 6),
+                              const SizedBox(width: 8),
                             ],
                             if (!hideProjectBadge) ...[
                               Flexible(
@@ -2538,38 +2678,18 @@ class RecentSessionCard extends StatelessWidget {
                                 ),
                               ),
                             ],
-                            if (session.name != null &&
-                                session.name!.isNotEmpty) ...[
-                              if (!hideProjectBadge) const SizedBox(width: 8),
-                              Flexible(
-                                child: Container(
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 6,
-                                    vertical: 2,
-                                  ),
-                                  decoration: BoxDecoration(
-                                    color: colorScheme.surfaceContainer,
-                                    borderRadius: BorderRadius.circular(6),
-                                    border: Border.all(
-                                      color: colorScheme.outlineVariant,
-                                      width: 0.5,
-                                    ),
-                                  ),
-                                  child: Text(
-                                    session.name!,
-                                    style: TextStyle(
-                                      fontSize: 12,
-                                      fontWeight: FontWeight.w500,
-                                      color: colorScheme.onSurfaceVariant,
-                                    ),
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                  ),
-                                ),
-                              ),
-                            ],
                           ],
                         ),
+                      ),
+                      const SizedBox(width: 8),
+                      PinToggleButton(
+                        key: ValueKey(
+                          'recent_session_pin_${session.sessionId}_button',
+                        ),
+                        isPinned: isPinned,
+                        onPressed: onTogglePinned,
+                        pinTooltip: AppLocalizations.of(context).pin,
+                        unpinTooltip: AppLocalizations.of(context).unpin,
                       ),
                     ],
                   ),

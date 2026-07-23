@@ -11,6 +11,7 @@ import '../core/logger.dart';
 import '../models/messages.dart';
 import '../models/offline_pending_action.dart';
 import '../utils/codex_plan_update.dart';
+import '../utils/network_endpoint.dart';
 import 'bridge_service_base.dart';
 import 'session_runtime_store.dart';
 
@@ -32,6 +33,8 @@ class BridgeService implements BridgeServiceBase {
       StreamController<List<RecentSession>>.broadcast();
   final _galleryController = StreamController<List<GalleryImage>>.broadcast();
   final _fileListController = StreamController<List<String>>.broadcast();
+  final _fileListMessageController =
+      StreamController<FileListMessage>.broadcast();
   final _projectHistoryController = StreamController<List<String>>.broadcast();
   final _diffResultController = StreamController<DiffResultMessage>.broadcast();
   final _diffImageResultController =
@@ -105,6 +108,7 @@ class BridgeService implements BridgeServiceBase {
   Map<String, List<String>> _claudeModelEfforts = {};
   List<String> _codexModels = [];
   Map<String, List<String>> _codexModelReasoningEfforts = {};
+  Map<String, List<String>> _codexModelServiceTiers = {};
   List<String> _codexProfiles = [];
   String? _defaultCodexProfile;
   String? _bridgeVersion;
@@ -118,6 +122,7 @@ class BridgeService implements BridgeServiceBase {
   final Set<String> _visibleInFlightPendingKeys = {};
   final Map<String, _DeliveryPendingInputState> _deliveryPendingInputs = {};
   final Map<String, Timer> _deliveryPendingVisibilityTimers = {};
+  final Map<String, Set<String>> _respondedToolUseIds = {};
   List<OfflinePendingAction> _offlinePendingActions = const [];
 
   // Diff image cache: survives screen navigation, cleared on session stop.
@@ -156,6 +161,8 @@ class BridgeService implements BridgeServiceBase {
       _projectHistoryController.stream;
   @override
   Stream<List<String>> get fileList => _fileListController.stream;
+  Stream<FileListMessage> get fileListMessages =>
+      _fileListMessageController.stream;
   Stream<FileContentMessage> get fileContent => _fileContentController.stream;
   Stream<DiffResultMessage> get diffResults => _diffResultController.stream;
   Stream<DiffImageResultMessage> get diffImageResults =>
@@ -231,6 +238,8 @@ class BridgeService implements BridgeServiceBase {
   List<String> get codexModels => _codexModels;
   Map<String, List<String>> get codexModelReasoningEfforts =>
       _codexModelReasoningEfforts;
+  Map<String, List<String>> get codexModelServiceTiers =>
+      _codexModelServiceTiers;
   List<String> get codexProfiles => _codexProfiles;
   String? get defaultCodexProfile => _defaultCodexProfile;
   String? get bridgeVersion => _bridgeVersion;
@@ -308,8 +317,11 @@ class BridgeService implements BridgeServiceBase {
     final uri = Uri.tryParse(url);
     if (uri == null) return null;
     final scheme = uri.scheme == 'wss' ? 'https' : 'http';
-    final port = uri.hasPort ? ':${uri.port}' : '';
-    return '$scheme://${uri.host}$port';
+    return formatUriOrigin(
+      scheme: scheme,
+      host: uri.host,
+      port: uri.hasPort ? uri.port : null,
+    );
   }
 
   static const _prefKeyUrl = 'bridge_url';
@@ -389,6 +401,7 @@ class BridgeService implements BridgeServiceBase {
                 :final claudeModelEfforts,
                 :final codexModels,
                 :final codexModelReasoningEfforts,
+                :final codexModelServiceTiers,
                 :final codexProfiles,
                 :final defaultCodexProfile,
                 :final bridgeVersion,
@@ -403,6 +416,7 @@ class BridgeService implements BridgeServiceBase {
                 _claudeModelEfforts = claudeModelEfforts;
                 _codexModels = codexModels;
                 _codexModelReasoningEfforts = codexModelReasoningEfforts;
+                _codexModelServiceTiers = codexModelServiceTiers;
                 _codexProfiles = codexProfiles;
                 _defaultCodexProfile = defaultCodexProfile;
                 _bridgeVersion = bridgeVersion;
@@ -443,6 +457,7 @@ class BridgeService implements BridgeServiceBase {
                 _fileContentController.add(msg);
               case FileListMessage(:final files):
                 _fileListController.add(files);
+                _fileListMessageController.add(msg);
               case ProjectHistoryMessage(:final projects):
                 _projectHistory = projects;
                 _projectHistoryController.add(projects);
@@ -644,10 +659,10 @@ class BridgeService implements BridgeServiceBase {
 
   String _bridgeTargetKey(Uri uri) {
     final scheme = uri.scheme.toLowerCase();
-    final host = uri.host.toLowerCase();
+    final host = canonicalHostIdentity(uri.host);
     final port = uri.hasPort ? uri.port : (scheme == 'wss' ? 443 : 80);
     final path = uri.path.isEmpty ? '/' : uri.path;
-    return '$scheme://$host:$port$path';
+    return '${formatUriOrigin(scheme: scheme, host: host, port: port)}$path';
   }
 
   void _clearBridgeScopedState({required bool clearOfflineQueue}) {
@@ -664,12 +679,14 @@ class BridgeService implements BridgeServiceBase {
     _claudeModelEfforts = const {};
     _codexModels = const [];
     _codexModelReasoningEfforts = const {};
+    _codexModelServiceTiers = const {};
     _codexProfiles = const [];
     _defaultCodexProfile = null;
     _bridgeVersion = null;
     _promptHistoryBridgeId = null;
     _lastUsageResult = null;
     _pendingHistoryDeltaSinceSeq.clear();
+    _respondedToolUseIds.clear();
     _deliveryPendingInputs.clear();
     for (final timer in _deliveryPendingVisibilityTimers.values) {
       timer.cancel();
@@ -683,6 +700,7 @@ class BridgeService implements BridgeServiceBase {
     _galleryController.add(_galleryImages);
     _projectHistoryController.add(_projectHistory);
     _fileListController.add(const []);
+    _fileListMessageController.add(const FileListMessage(files: []));
 
     if (clearOfflineQueue) {
       _clearOfflinePendingState();
@@ -1512,6 +1530,7 @@ class BridgeService implements BridgeServiceBase {
     String? sandboxMode,
     String? model,
     String? modelReasoningEffort,
+    String? serviceTier,
     bool? networkAccessEnabled,
     String? webSearchMode,
     List<String>? additionalWritableRoots,
@@ -1537,6 +1556,7 @@ class BridgeService implements BridgeServiceBase {
         sandboxMode: sandboxMode,
         model: model,
         modelReasoningEffort: modelReasoningEffort,
+        serviceTier: serviceTier,
         networkAccessEnabled: networkAccessEnabled,
         webSearchMode: webSearchMode,
         additionalWritableRoots: additionalWritableRoots,
@@ -1618,6 +1638,15 @@ class BridgeService implements BridgeServiceBase {
     return _runtimeStore.messages(sessionId);
   }
 
+  Set<String> respondedToolUseIds(String sessionId) =>
+      Set.unmodifiable(_respondedToolUseIds[sessionId] ?? const {});
+
+  void markToolUseResponded(String sessionId, String toolUseId) {
+    final ids = _respondedToolUseIds.putIfAbsent(sessionId, () => <String>{});
+    ids.add(toolUseId);
+    if (ids.length > 512) ids.remove(ids.first);
+  }
+
   @override
   int cachedSessionHistorySeq(String sessionId) {
     return _runtimeStore.cachedHistorySeq(sessionId);
@@ -1655,6 +1684,7 @@ class BridgeService implements BridgeServiceBase {
 
   void clearExplorerHistory(String sessionId) {
     _runtimeStore.clearSession(sessionId);
+    _respondedToolUseIds.remove(sessionId);
   }
 
   /// Rename a session. For running sessions, [sessionId] is the bridge id.
@@ -2034,6 +2064,16 @@ class BridgeService implements BridgeServiceBase {
     _sessionListController.add(_sessions);
   }
 
+  void patchSessionCodexSpeed(String sessionId, String serviceTier) {
+    final idx = _sessions.indexWhere((s) => s.id == sessionId);
+    if (idx < 0) return;
+    final current = _sessions[idx];
+    if (current.codexServiceTier == serviceTier) return;
+    _sessions = List.of(_sessions)
+      ..[idx] = current.copyWith(codexServiceTier: serviceTier);
+    _sessionListController.add(_sessions);
+  }
+
   void _patchSessionQueuedInput(String sessionId, QueuedInputItem? item) {
     final idx = _sessions.indexWhere((s) => s.id == sessionId);
     if (idx < 0) return;
@@ -2165,8 +2205,8 @@ class BridgeService implements BridgeServiceBase {
       final uri = Uri.tryParse(wsUrl);
       if (uri == null) return null;
       final scheme = uri.scheme == 'wss' ? 'https' : 'http';
-      final port = uri.hasPort ? ':${uri.port}' : '';
-      final healthUrl = '$scheme://${uri.host}$port/health';
+      final healthUrl =
+          '${formatUriOrigin(scheme: scheme, host: uri.host, port: uri.hasPort ? uri.port : null)}/health';
       final response = await http
           .get(Uri.parse(healthUrl))
           .timeout(const Duration(seconds: 3));
@@ -2322,6 +2362,7 @@ class BridgeService implements BridgeServiceBase {
     _recentSessionsController.close();
     _galleryController.close();
     _fileListController.close();
+    _fileListMessageController.close();
     _projectHistoryController.close();
     _diffResultController.close();
     _diffImageResultController.close();

@@ -36,7 +36,11 @@ vi.mock("node:child_process", () => ({
   spawn: spawnMock,
 }));
 
-import { buildCodexSpawnSpec, CodexProcess } from "./codex-process.js";
+import {
+  buildCodexSpawnSpec,
+  CodexProcess,
+  parseCodexGoal,
+} from "./codex-process.js";
 import { stopManagedCodexAppServers } from "./codex-transport.js";
 
 const originalCodexAppServerEnv = {
@@ -115,6 +119,218 @@ describe("CodexProcess (app-server)", () => {
         child.kill();
       }
     }
+  });
+
+  it("maps goal get, set, and clear to app-server RPCs", async () => {
+    const proc = new CodexProcess("linux");
+    (proc as any)._threadId = "thread-1";
+    const goal = {
+      threadId: "thread-1",
+      objective: "Ship Goal support",
+      status: "active",
+      tokenBudget: null,
+      tokensUsed: 12,
+      timeUsedSeconds: 3,
+      createdAt: 100,
+      updatedAt: 101,
+    };
+    const request = vi
+      .spyOn(proc as any, "request")
+      .mockResolvedValueOnce({ goal })
+      .mockResolvedValueOnce({ goal: { ...goal, status: "paused" } })
+      .mockResolvedValueOnce({ cleared: true });
+
+    await expect(proc.getGoal()).resolves.toEqual(goal);
+    await expect(
+      proc.setGoal({ objective: "  Ship Goal support  ", status: "paused" }),
+    ).resolves.toMatchObject({ status: "paused" });
+    await expect(proc.clearGoal()).resolves.toBe(true);
+
+    expect(request).toHaveBeenNthCalledWith(1, "thread/goal/get", {
+      threadId: "thread-1",
+    });
+    expect(request).toHaveBeenNthCalledWith(2, "thread/goal/set", {
+      threadId: "thread-1",
+      objective: "Ship Goal support",
+      status: "paused",
+    });
+    expect(request).toHaveBeenNthCalledWith(3, "thread/goal/clear", {
+      threadId: "thread-1",
+    });
+  });
+
+  it("validates goal payloads received from app-server", () => {
+    expect(() => parseCodexGoal({ status: "active" })).toThrow(
+      "invalid shape",
+    );
+    expect(() =>
+      parseCodexGoal({
+        threadId: "thread-1",
+        objective: "Goal",
+        status: "unknown",
+        tokenBudget: null,
+        tokensUsed: 0,
+        timeUsedSeconds: 0,
+        createdAt: 1,
+        updatedAt: 1,
+      }),
+    ).toThrow("invalid shape");
+  });
+
+  it("finalizes streamed agent text before turn completion", () => {
+    const proc = new CodexProcess("linux");
+    const messages: Array<Record<string, unknown>> = [];
+    proc.on("message", (message) =>
+      messages.push(message as Record<string, unknown>),
+    );
+
+    (proc as any).handleNotification("turn/started", {
+      turn: { id: "turn-stream-only" },
+    });
+    (proc as any).handleNotification("item/agentMessage/delta", {
+      itemId: "agent-message-1",
+      delta: "Streamed ",
+    });
+    (proc as any).handleNotification("item/agentMessage/delta", {
+      itemId: "agent-message-1",
+      delta: "response",
+    });
+    (proc as any).handleNotification("turn/completed", {
+      turn: { id: "turn-stream-only", status: "completed" },
+    });
+
+    const assistantIndex = messages.findIndex(
+      (message) => message.type === "assistant",
+    );
+    const resultIndex = messages.findIndex(
+      (message) => message.type === "result",
+    );
+    expect(assistantIndex).toBeGreaterThanOrEqual(0);
+    expect(resultIndex).toBeGreaterThan(assistantIndex);
+    expect(messages[assistantIndex]).toMatchObject({
+      type: "assistant",
+      message: {
+        id: "agent-message-1",
+        role: "assistant",
+        content: [{ type: "text", text: "Streamed response" }],
+      },
+    });
+    expect(messages[resultIndex]).toMatchObject({
+      type: "result",
+      subtype: "success",
+      result: "Streamed response",
+    });
+  });
+
+  it("finalizes multiple streamed agent items independently", () => {
+    const proc = new CodexProcess("linux");
+    const messages: Array<Record<string, unknown>> = [];
+    proc.on("message", (message) =>
+      messages.push(message as Record<string, unknown>),
+    );
+
+    (proc as any).handleNotification("turn/started", {
+      turn: { id: "turn-multiple-agents" },
+    });
+    (proc as any).handleNotification("item/agentMessage/delta", {
+      itemId: "agent-message-1",
+      delta: "First response",
+    });
+    (proc as any).handleNotification("item/agentMessage/delta", {
+      itemId: "agent-message-2",
+      delta: "Second response",
+    });
+    (proc as any).handleNotification("turn/completed", {
+      turn: { id: "turn-multiple-agents", status: "completed" },
+    });
+
+    const assistants = messages.filter(
+      (message) => message.type === "assistant",
+    );
+    expect(assistants).toMatchObject([
+      {
+        message: {
+          id: "agent-message-1",
+          content: [{ type: "text", text: "First response" }],
+        },
+      },
+      {
+        message: {
+          id: "agent-message-2",
+          content: [{ type: "text", text: "Second response" }],
+        },
+      },
+    ]);
+    expect(messages.find((message) => message.type === "result")).toMatchObject(
+      { result: "Second response" },
+    );
+  });
+
+  it("keeps an unknown-id delta when another agent item completes", () => {
+    const proc = new CodexProcess("linux");
+    const messages: Array<Record<string, unknown>> = [];
+    proc.on("message", (message) =>
+      messages.push(message as Record<string, unknown>),
+    );
+
+    (proc as any).handleNotification("turn/started", {
+      turn: { id: "turn-unknown-agent" },
+    });
+    (proc as any).handleNotification("item/agentMessage/delta", {
+      delta: "Unknown item response",
+    });
+    (proc as any).handleNotification("item/completed", {
+      item: {
+        id: "known-agent-message",
+        type: "agentMessage",
+        text: "Known item response",
+      },
+    });
+    (proc as any).handleNotification("turn/completed", {
+      turn: { id: "turn-unknown-agent", status: "completed" },
+    });
+
+    const assistantTexts = messages
+      .filter((message) => message.type === "assistant")
+      .map(
+        (message) =>
+          ((message.message as any).content[0] as Record<string, unknown>).text,
+      );
+    expect(assistantTexts).toEqual([
+      "Known item response",
+      "Unknown item response",
+    ]);
+  });
+
+  it("emits goal state for app-server goal notifications", () => {
+    const proc = new CodexProcess("linux");
+    (proc as any)._threadId = "thread-1";
+    const messages: unknown[] = [];
+    proc.on("message", (message) => messages.push(message));
+    const goal = {
+      threadId: "thread-1",
+      objective: "Ship Goal support",
+      status: "active",
+      tokenBudget: null,
+      tokensUsed: 0,
+      timeUsedSeconds: 0,
+      createdAt: 1,
+      updatedAt: 2,
+    };
+
+    (proc as any).handleNotification("thread/goal/updated", {
+      threadId: "thread-1",
+      turnId: null,
+      goal,
+    });
+    (proc as any).handleNotification("thread/goal/cleared", {
+      threadId: "thread-1",
+    });
+
+    expect(messages).toEqual([
+      { type: "goal_state", goal },
+      { type: "goal_state", goal: null },
+    ]);
   });
 
   it("moves the default managed app-server port when Bridge uses 8767", () => {
@@ -1456,8 +1672,30 @@ describe("CodexProcess (app-server)", () => {
               model: "gpt-5.5",
               id: "ignored",
               hidden: false,
-              supportedReasoningEfforts: ["low", "medium", "high", "xhigh"],
+              supportedReasoningEfforts: [
+                {
+                  reasoningEffort: "low",
+                  description: "Fast responses with lighter reasoning",
+                },
+                {
+                  reasoningEffort: "medium",
+                  description: "Balances speed and reasoning depth",
+                },
+                {
+                  reasoningEffort: "max",
+                  description: "Maximum reasoning depth",
+                },
+                {
+                  reasoningEffort: "ultra",
+                  description: "Maximum reasoning with automatic delegation",
+                },
+              ],
               defaultReasoningEffort: "medium",
+              additionalSpeedTiers: ["fast"],
+              serviceTiers: [
+                { id: "priority", name: "Fast", description: "1.5x speed" },
+              ],
+              defaultServiceTier: "fast",
             },
             { model: "gpt-hidden", hidden: true },
             { model: "gpt-5.5", hidden: false },
@@ -1496,13 +1734,16 @@ describe("CodexProcess (app-server)", () => {
     await expect(modelsPromise).resolves.toEqual([
       {
         model: "gpt-5.5",
-        supportedReasoningEfforts: ["low", "medium", "high", "xhigh"],
+        supportedReasoningEfforts: ["low", "medium", "max", "ultra"],
         defaultReasoningEffort: "medium",
+        supportedServiceTiers: ["fast"],
+        defaultServiceTier: "fast",
       },
       {
         model: "gpt-5.4-mini",
         supportedReasoningEfforts: ["low", "medium"],
         defaultReasoningEffort: "low",
+        supportedServiceTiers: [],
       },
     ]);
     proc.stop();
@@ -1603,6 +1844,7 @@ describe("CodexProcess (app-server)", () => {
     drainSkillsList(child);
 
     proc.setModel("gpt-5.4-mini", "low");
+    proc.setServiceTier("fast");
     proc.sendInput("continue with a smaller model");
     await tick();
 
@@ -1611,6 +1853,7 @@ describe("CodexProcess (app-server)", () => {
     expect(turnReq.params).toMatchObject({
       model: "gpt-5.4-mini",
       effort: "low",
+      serviceTier: "fast",
       collaborationMode: {
         mode: "default",
         settings: {
@@ -1987,8 +2230,30 @@ describe("CodexProcess (app-server)", () => {
                 title: "Confirmed",
                 description: "Whether to continue",
               },
+              count: { type: "number", title: "Count" },
+              location: { type: "string", title: "Location" },
+              retries: { type: "integer", title: "Retries" },
+              note: { type: "string", title: "Note" },
+              scope: {
+                type: "string",
+                title: "Scope",
+                oneOf: [
+                  { const: "repo", title: "Repository" },
+                  { const: "org", title: "Organization" },
+                ],
+              },
+              channels: {
+                type: "array",
+                title: "Channels",
+                items: {
+                  anyOf: [
+                    { const: "issues", title: "Issues" },
+                    { const: "pulls", title: "Pull requests" },
+                  ],
+                },
+              },
             },
-            required: ["confirmed"],
+            required: ["confirmed", "count", "location"],
           },
         },
       })}\n`,
@@ -2006,9 +2271,37 @@ describe("CodexProcess (app-server)", () => {
     expect(proc.getPendingPermission("req-elicit-1")).toMatchObject({
       toolUseId: "req-elicit-1",
       toolName: "McpElicitation",
+      input: {
+        questions: expect.arrayContaining([
+          expect.objectContaining({
+            id: "scope",
+            required: false,
+            options: expect.arrayContaining([
+              expect.objectContaining({ label: "Repository", value: "repo" }),
+            ]),
+          }),
+          expect.objectContaining({
+            id: "channels",
+            multiSelect: true,
+          }),
+        ]),
+      },
     });
 
-    proc.answer("req-elicit-1", "true");
+    proc.answer(
+      "req-elicit-1",
+      JSON.stringify({
+        answers: {
+          confirmed: "true",
+          count: "3.5",
+          location: "Tokyo, Japan",
+          retries: "2.5",
+          note: "",
+          scope: "repo",
+          channels: ["issues", "pulls"],
+        },
+      }),
+    );
     await tick();
 
     const response = nextOutgoingResponse(child);
@@ -2017,9 +2310,354 @@ describe("CodexProcess (app-server)", () => {
       result: {
         action: "accept",
         content: {
-          confirmed: "true",
+          confirmed: true,
+          count: 3.5,
+          location: "Tokyo, Japan",
+          scope: "repo",
+          channels: ["issues", "pulls"],
         },
       },
+    });
+    expect((response.result as any).content).not.toHaveProperty("retries");
+    expect((response.result as any).content).not.toHaveProperty("note");
+
+    proc.stop();
+  });
+
+  it("responds to current time requests with Unix seconds", () => {
+    const proc = new CodexProcess("linux");
+    const child = new FakeChildProcess();
+    attachFakeTransport(proc as any, child);
+
+    (proc as any).handleServerRequest("time-1", "currentTime/read", {
+      threadId: "thr_time",
+    });
+
+    expect(nextOutgoingResponse(child)).toEqual({
+      id: "time-1",
+      result: { currentTimeAt: expect.any(Number) },
+    });
+    proc.stop();
+  });
+
+  it("rejects unsupported server requests instead of returning empty success", () => {
+    const proc = new CodexProcess("linux");
+    const child = new FakeChildProcess();
+    attachFakeTransport(proc as any, child);
+
+    (proc as any).handleServerRequest("unknown-1", "future/request", {});
+
+    expect(nextOutgoingError(child)).toEqual({
+      id: "unknown-1",
+      error: {
+        code: -32601,
+        message: "Unsupported server request: future/request",
+      },
+    });
+    proc.stop();
+  });
+
+  it("surfaces Codex warnings and completed review output", () => {
+    const proc = new CodexProcess("linux");
+    const messages: unknown[] = [];
+    proc.on("message", (message) => messages.push(message));
+
+    (proc as any).handleNotification("configWarning", {
+      summary: "Invalid rule",
+      details: "Check .codex/rules/default.rules",
+    });
+    (proc as any).processItemCompleted({
+      type: "exitedReviewMode",
+      id: "review-1",
+      review: "Review complete: no findings.",
+    });
+
+    expect(messages).toContainEqual({
+      type: "error",
+      errorCode: "codex_warning",
+      message: "Invalid rule\nCheck .codex/rules/default.rules",
+    });
+    expect(messages).toContainEqual(
+      expect.objectContaining({
+        type: "assistant",
+        message: expect.objectContaining({
+          id: "review-1",
+          content: [{ type: "text", text: "Review complete: no findings." }],
+        }),
+      }),
+    );
+    proc.stop();
+  });
+
+  it("suppresses low-risk guardian allow decisions", () => {
+    const proc = new CodexProcess("linux");
+    const messages: unknown[] = [];
+    proc.on("message", (message) => messages.push(message));
+
+    (proc as any).handleNotification("guardianWarning", {
+      message:
+        "Automatic approval review approved (risk: low, authorization: unknown):\nAuto-review returned a\n  low-risk   allow decision.",
+    });
+    expect(messages).toEqual([]);
+    proc.stop();
+  });
+
+  it.each([
+    [
+      "medium",
+      "medium",
+      "Launching the Flutter app writes build files outside the workspace.",
+    ],
+    [
+      "high",
+      "high",
+      "Running this command can change files outside the workspace.",
+    ],
+  ] as const)(
+    "surfaces %s-risk guardian approvals as dedicated notices",
+    (risk, authorization, reason) => {
+      const proc = new CodexProcess("linux");
+      const messages: unknown[] = [];
+      proc.on("message", (message) => messages.push(message));
+
+      (proc as any).handleNotification("guardianWarning", {
+        message: `Automatic approval review approved (risk: ${risk}, authorization: ${authorization}):\n${reason}`,
+      });
+
+      expect(messages).toEqual([
+        {
+          type: "guardian_approval",
+          risk,
+          authorization,
+          reason,
+        },
+      ]);
+      proc.stop();
+    },
+  );
+
+  it("surfaces malformed approved guardian notifications as warnings", () => {
+    const proc = new CodexProcess("linux");
+    const messages: unknown[] = [];
+    proc.on("message", (message) => messages.push(message));
+    const message = "Automatic approval review approved without metadata.";
+
+    (proc as any).handleNotification("guardianWarning", { message });
+
+    expect(messages).toEqual([
+      { type: "error", errorCode: "codex_warning", message },
+    ]);
+    proc.stop();
+  });
+
+  it("continues to surface actionable guardian and standard warnings", () => {
+    const proc = new CodexProcess("linux");
+    const messages: unknown[] = [];
+    proc.on("message", (message) => messages.push(message));
+
+    (proc as any).handleNotification("guardianWarning", {
+      message: "Automatic approval review could not verify this command.",
+    });
+    (proc as any).handleNotification("warning", {
+      message: "Model fallback is active.",
+    });
+
+    expect(messages).toContainEqual({
+      type: "error",
+      errorCode: "codex_warning",
+      message: "Automatic approval review could not verify this command.",
+    });
+    expect(messages).toContainEqual({
+      type: "error",
+      errorCode: "codex_warning",
+      message: "Model fallback is active.",
+    });
+    proc.stop();
+  });
+
+  it("installs a suggested remote plugin before accepting the elicitation", async () => {
+    const proc = new CodexProcess("linux");
+    const child = new FakeChildProcess();
+    attachFakeTransport(proc as any, child);
+    const messages: unknown[] = [];
+    proc.on("message", (msg) => messages.push(msg));
+
+    (proc as any).handleServerRequest(
+      "req-tool-suggestion-1",
+      "mcpServer/elicitation/request",
+      {
+        serverName: "codex_apps",
+        mode: "form",
+        message: "GitHub makes it easier to inspect forks.",
+        requestedSchema: { type: "object", properties: {} },
+        _meta: {
+          codex_approval_kind: "tool_suggestion",
+          persist: "always",
+          tool_type: "plugin",
+          suggest_type: "install",
+          suggest_reason: "GitHub makes it easier to inspect forks.",
+          tool_id: "github@openai-curated-remote",
+          tool_name: "GitHub",
+          remote_plugin_id: "plugins~github-remote-id",
+          app_connector_ids: ["connector-github"],
+        },
+      },
+    );
+
+    expect(messages).toContainEqual({
+      type: "permission_request",
+      toolUseId: "req-tool-suggestion-1",
+      toolName: "ToolSuggestion",
+      input: expect.objectContaining({
+        toolName: "GitHub",
+        toolType: "plugin",
+        suggestType: "install",
+        installState: "idle",
+      }),
+    });
+
+    const installation = proc.installToolSuggestion("req-tool-suggestion-1");
+    const installRequest = nextOutgoingRequest(child);
+    expect(installRequest).toMatchObject({
+      method: "plugin/install",
+      params: {
+        remoteMarketplaceName: "openai-curated-remote",
+        pluginName: "plugins~github-remote-id",
+      },
+    });
+    (proc as any).handleRpcEnvelope({
+      id: installRequest.id,
+      result: { authPolicy: "ON_USE", appsNeedingAuth: [] },
+    });
+    await installation;
+
+    expect(nextOutgoingResponse(child)).toEqual({
+      id: "req-tool-suggestion-1",
+      result: { action: "accept", content: null, _meta: null },
+    });
+    expect(messages).toContainEqual({
+      type: "permission_resolved",
+      toolUseId: "req-tool-suggestion-1",
+    });
+    expect(proc.getPendingPermission("req-tool-suggestion-1")).toBeUndefined();
+
+    proc.stop();
+  });
+
+  it("does not install tool suggestions claimed by an external MCP server", async () => {
+    const proc = new CodexProcess("linux");
+    const child = new FakeChildProcess();
+    attachFakeTransport(proc as any, child);
+    const messages: unknown[] = [];
+    proc.on("message", (msg) => messages.push(msg));
+
+    (proc as any).handleServerRequest(
+      "req-untrusted-tool-suggestion",
+      "mcpServer/elicitation/request",
+      {
+        serverName: "untrusted_mcp",
+        mode: "form",
+        message: "Install this plugin.",
+        requestedSchema: { type: "object", properties: {} },
+        _meta: {
+          codex_approval_kind: "tool_suggestion",
+          tool_type: "plugin",
+          suggest_type: "install",
+          tool_id: "github@openai-curated-remote",
+          tool_name: "GitHub",
+          remote_plugin_id: "plugins~untrusted-id",
+        },
+      },
+    );
+
+    expect(messages).toContainEqual(
+      expect.objectContaining({
+        type: "permission_request",
+        toolUseId: "req-untrusted-tool-suggestion",
+        toolName: "McpElicitation",
+      }),
+    );
+    await expect(
+      proc.installToolSuggestion("req-untrusted-tool-suggestion"),
+    ).rejects.toThrow("No pending tool suggestion found");
+
+    proc.stop();
+  });
+
+  it("keeps a tool suggestion pending until required app authentication completes", async () => {
+    const proc = new CodexProcess("linux");
+    const child = new FakeChildProcess();
+    attachFakeTransport(proc as any, child);
+    const messages: unknown[] = [];
+    proc.on("message", (msg) => messages.push(msg));
+
+    (proc as any).handleServerRequest(
+      "req-tool-suggestion-auth",
+      "mcpServer/elicitation/request",
+      {
+        serverName: "codex_apps",
+        mode: "form",
+        message: "Install GitHub",
+        requestedSchema: { type: "object", properties: {} },
+        _meta: {
+          codex_approval_kind: "tool_suggestion",
+          tool_type: "plugin",
+          suggest_type: "install",
+          tool_id: "github@openai-curated-remote",
+          tool_name: "GitHub",
+          remote_plugin_id: "plugins~github-remote-id",
+        },
+      },
+    );
+
+    const installation = proc.installToolSuggestion(
+      "req-tool-suggestion-auth",
+    );
+    const installRequest = nextOutgoingRequest(child);
+    (proc as any).handleRpcEnvelope({
+      id: installRequest.id,
+      result: {
+        authPolicy: "ON_INSTALL",
+        appsNeedingAuth: [
+          {
+            id: "connector-github",
+            name: "GitHub",
+            description: "Connect GitHub",
+            installUrl: "https://chatgpt.com/connect/github",
+            category: "Developer",
+          },
+        ],
+      },
+    });
+    await installation;
+
+    expect(proc.getPendingPermission("req-tool-suggestion-auth")).toMatchObject(
+      {
+        toolName: "ToolSuggestion",
+        input: {
+          installState: "needs_auth",
+          appsNeedingAuth: [
+            {
+              id: "connector-github",
+              name: "GitHub",
+              installUrl: "https://chatgpt.com/connect/github",
+            },
+          ],
+        },
+      },
+    );
+    expect(messages).toContainEqual(
+      expect.objectContaining({
+        type: "permission_request",
+        toolUseId: "req-tool-suggestion-auth",
+        input: expect.objectContaining({ installState: "needs_auth" }),
+      }),
+    );
+
+    proc.approve("req-tool-suggestion-auth");
+    expect(nextOutgoingResponse(child)).toEqual({
+      id: "req-tool-suggestion-auth",
+      result: { action: "accept", content: null, _meta: null },
     });
 
     proc.stop();
@@ -2851,6 +3489,13 @@ describe("CodexProcess (app-server)", () => {
       "/tmp/project-completions",
     ) as Promise<void>;
 
+    await tick();
+    expect(outgoingRequests(child).map((request) => request.method)).toEqual([
+      "skills/list",
+      "app/list",
+      "plugin/list",
+    ]);
+
     const skillsReq = await waitForOutgoingRequest(child, "skills/list");
     expect(skillsReq.method).toBe("skills/list");
     emitRpc({ id: skillsReq.id, result: { data: [] } });
@@ -2893,6 +3538,45 @@ describe("CodexProcess (app-server)", () => {
     emitRpc({ id: refetchPluginsReq.id, result: { marketplaces: [] } });
     await tick();
 
+    proc.stop();
+  });
+
+  it("emits an empty skill snapshot before slower completion sources finish", async () => {
+    const proc = new CodexProcess("linux");
+    const child = new FakeChildProcess();
+    fakeChildren.push(child);
+    const messages: unknown[] = [];
+    proc.on("message", (msg) => messages.push(msg));
+    const internal = proc as any;
+    attachFakeTransport(internal, child);
+    const emitRpc = (message: Record<string, unknown>) => {
+      internal.handleStdoutChunk(`${JSON.stringify(message)}\n`);
+    };
+
+    const fetchPromise = internal.fetchCompletionEntities(
+      "/tmp/project-empty-completions",
+    ) as Promise<void>;
+    const skillsReq = await waitForOutgoingRequest(child, "skills/list");
+    const appsReq = await waitForOutgoingRequest(child, "app/list");
+    const pluginsReq = await waitForOutgoingRequest(child, "plugin/list");
+
+    emitRpc({ id: skillsReq.id, result: { data: [] } });
+    await tick();
+
+    expect(messages).toContainEqual({
+      type: "system",
+      subtype: "supported_commands",
+      skills: [],
+      skillMetadata: [],
+      apps: [],
+      appMetadata: [],
+      plugins: [],
+      pluginMetadata: [],
+    });
+
+    emitRpc({ id: appsReq.id, result: { data: [] } });
+    emitRpc({ id: pluginsReq.id, result: { marketplaces: [] } });
+    await fetchPromise;
     proc.stop();
   });
 
@@ -2977,7 +3661,11 @@ describe("CodexProcess (app-server)", () => {
       (msg): msg is { pluginMetadata: Array<Record<string, unknown>> } =>
         typeof msg === "object" &&
         msg !== null &&
-        (msg as { subtype?: unknown }).subtype === "supported_commands",
+        (msg as { subtype?: unknown }).subtype === "supported_commands" &&
+        Array.isArray(
+          (msg as { pluginMetadata?: unknown }).pluginMetadata,
+        ) &&
+        (msg as { pluginMetadata: unknown[] }).pluginMetadata.length > 0,
     );
     expect(supportedCommands?.pluginMetadata[0]?.composerIcon).toBeUndefined();
 
@@ -3021,6 +3709,16 @@ describe("CodexProcess (app-server)", () => {
         ],
       },
     });
+    await tick();
+    expect(messages).toContainEqual(
+      expect.objectContaining({
+        type: "system",
+        subtype: "supported_commands",
+        skills: ["review"],
+        apps: [],
+        plugins: [],
+      }),
+    );
     const appsReq = await waitForOutgoingRequest(child, "app/list");
     emitRpc({
       id: appsReq.id,
@@ -3146,6 +3844,16 @@ function nextOutgoingResponse(
     (value) =>
       value.id !== undefined &&
       value.result !== undefined &&
+      value.method === undefined,
+  );
+}
+
+function nextOutgoingError(child: FakeChildProcess): Record<string, unknown> {
+  return consumeOutgoing(
+    child,
+    (value) =>
+      value.id !== undefined &&
+      value.error !== undefined &&
       value.method === undefined,
   );
 }

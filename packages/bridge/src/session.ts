@@ -24,9 +24,11 @@ import type {
   AssistantToolUseContent,
   Provider,
   QueuedInputItem,
+  CodexGoal,
 } from "./parser.js";
 import type { ImageRef, ImageStore } from "./image-store.js";
 import type { GalleryStore, GalleryImageMeta } from "./gallery-store.js";
+import { withDerivedCodexPermissionsMode } from "./codex-permissions.js";
 import { createWorktree, worktreeExists } from "./worktree.js";
 import type { WorktreeStore } from "./worktree-store.js";
 import {
@@ -72,6 +74,7 @@ export interface SessionInfo {
     sandboxMode?: string;
     model?: string;
     modelReasoningEffort?: string;
+    serviceTier?: string;
     networkAccessEnabled?: boolean;
     webSearchMode?: string;
     additionalWritableRoots?: string[];
@@ -80,12 +83,22 @@ export interface SessionInfo {
   sandboxEnabled?: boolean;
   /** Codex-only pending input waiting for the next turn. */
   codexQueuedInput?: QueuedCodexInput;
+  /** Latest Codex goal state. Kept out of chat history. */
+  codexGoal?: CodexGoal | null;
   /** Synthetic Codex user UUIDs waiting for their app-server echo. */
   pendingCodexUserEchoUuids?: Set<string>;
   /** Raw Codex app-server user item ids mapped to valid ccpocket turn UUIDs. */
   codexUserTurnUuidByRawId?: Map<string, string>;
   /** Last Bridge history seq covered by the canonical Codex thread snapshot. */
   codexCanonicalHistoryRevision?: number;
+  /** Monotonic revision that invalidates deltas from an older Codex baseline. */
+  codexHistoryResetRevision?: number;
+  /** Latest Codex user input, retained even when the history tail is trimmed. */
+  codexLatestUserInput?: Extract<ServerMessage, { type: "user_input" }>;
+  /** Last merged Codex snapshot, retained to preserve live event ordering. */
+  codexOrderedHistoryEntries?: HistoryEntry[];
+  /** Bridge history revision covered by codexOrderedHistoryEntries. */
+  codexOrderedHistoryRevision?: number;
   /** Whether to generate a session name after the first completed turn. */
   autoRename?: boolean;
   /** Prevents automatic rename from running more than once. */
@@ -147,6 +160,7 @@ export interface SessionSummary {
     sandboxMode?: string;
     model?: string;
     modelReasoningEffort?: string;
+    serviceTier?: string;
     networkAccessEnabled?: boolean;
     webSearchMode?: string;
     additionalWritableRoots?: string[];
@@ -163,7 +177,8 @@ export interface SessionSummary {
   queuedInput?: QueuedInputItem;
 }
 
-const MAX_HISTORY_PER_SESSION = 100;
+export const MAX_HISTORY_PER_SESSION = 100;
+const MAX_IDLE_SESSIONS = 30;
 
 export type GalleryImageCallback = (meta: GalleryImageMeta) => void;
 export type SessionUpdatedCallback = (sessionId: string) => void;
@@ -173,8 +188,16 @@ function mergeCodexSettings(
   msg: Extract<ServerMessage, { type: "system" }>,
 ): SessionInfo["codexSettings"] {
   const model = sanitizeCodexModel(msg.model);
+  const hasRuntimePermissionUpdate =
+    msg.approvalPolicy !== undefined ||
+    msg.approvalsReviewer !== undefined ||
+    msg.sandboxMode !== undefined;
+  const currentSettings = { ...(current ?? {}) };
+  if (hasRuntimePermissionUpdate && msg.codexPermissionsMode === undefined) {
+    delete currentSettings.codexPermissionsMode;
+  }
   const next = {
-    ...(current ?? {}),
+    ...currentSettings,
     ...(msg.approvalPolicy !== undefined
       ? { approvalPolicy: msg.approvalPolicy }
       : {}),
@@ -188,6 +211,9 @@ function mergeCodexSettings(
     ...(model !== undefined ? { model } : {}),
     ...(msg.modelReasoningEffort !== undefined
       ? { modelReasoningEffort: msg.modelReasoningEffort }
+      : {}),
+    ...(msg.serviceTier !== undefined
+      ? { serviceTier: msg.serviceTier }
       : {}),
     ...(msg.networkAccessEnabled !== undefined
       ? { networkAccessEnabled: msg.networkAccessEnabled }
@@ -234,7 +260,7 @@ export class SessionManager {
   private worktreeStore: WorktreeStore | null;
   private onSessionUpdated: SessionUpdatedCallback | null;
 
-  /** Cache slash commands per project path for early loading on subsequent sessions. */
+  /** Cache completion entities per provider and effective cwd. */
   private commandCache = new Map<
     string,
     {
@@ -349,6 +375,13 @@ export class SessionManager {
     proc.on("message", async (msg) => {
       try {
         session.lastActivityAt = new Date();
+        const previousProviderSessionId = session.claudeSessionId;
+
+        if (msg.type === "goal_state") {
+          session.codexGoal = msg.goal;
+          this.onMessage(id, msg);
+          return;
+        }
 
         if (
           msg.type === "system" &&
@@ -361,31 +394,32 @@ export class SessionManager {
             msg.plugins ||
             msg.pluginMetadata)
         ) {
-          this.commandCache.set(projectPath, {
+          const commandCacheKey = this.commandCacheKey(
+            effectiveProvider,
+            effectiveCwd,
+          );
+          const previousCommands = this.commandCache.get(commandCacheKey);
+          this.commandCache.set(commandCacheKey, {
             slashCommands:
-              msg.slashCommands ??
-              this.commandCache.get(projectPath)?.slashCommands ??
-              [],
-            skills:
-              msg.skills ?? this.commandCache.get(projectPath)?.skills ?? [],
+              msg.slashCommands ?? previousCommands?.slashCommands ?? [],
+            skills: msg.skills ?? previousCommands?.skills ?? [],
             skillMetadata:
               (msg.skillMetadata as
                 | Array<Record<string, unknown>>
                 | undefined) ??
-              this.commandCache.get(projectPath)?.skillMetadata,
-            apps: msg.apps ?? this.commandCache.get(projectPath)?.apps ?? [],
+              previousCommands?.skillMetadata,
+            apps: msg.apps ?? previousCommands?.apps ?? [],
             appMetadata:
               (msg.appMetadata as
                 | Array<Record<string, unknown>>
                 | undefined) ??
-              this.commandCache.get(projectPath)?.appMetadata,
-            plugins:
-              msg.plugins ?? this.commandCache.get(projectPath)?.plugins ?? [],
+              previousCommands?.appMetadata,
+            plugins: msg.plugins ?? previousCommands?.plugins ?? [],
             pluginMetadata:
               (msg.pluginMetadata as
                 | Array<Record<string, unknown>>
                 | undefined) ??
-              this.commandCache.get(projectPath)?.pluginMetadata,
+              previousCommands?.pluginMetadata,
           });
         }
 
@@ -450,6 +484,13 @@ export class SessionManager {
               model: messageModel,
             };
           }
+        }
+
+        if (
+          session.claudeSessionId &&
+          session.claudeSessionId !== previousProviderSessionId
+        ) {
+          this.onSessionUpdated?.(session.id);
         }
 
         // Extract images from tool_result content for both Claude and Codex.
@@ -537,7 +578,7 @@ export class SessionManager {
 
         // Don't add streaming deltas to history
         let mergedUserInput = false;
-        let historyMsg = msg;
+        let historyMsg: ServerMessage = msg;
         if (msg.type !== "stream_delta" && msg.type !== "thinking_delta") {
           if (this.shouldSuppressCodexCanonicalUserEcho(session, msg)) {
             return;
@@ -575,6 +616,9 @@ export class SessionManager {
 
     proc.on("status", (status) => {
       session.status = status;
+      if (status === "idle") {
+        this.evictStaleIdleSessions();
+      }
     });
 
     if (proc instanceof CodexProcess) {
@@ -594,6 +638,7 @@ export class SessionManager {
       if (session.provider === "codex") {
         this.broadcastCodexQueue(session);
       }
+      this.evictStaleIdleSessions();
     });
 
     // Retry name persistence after the SDK/CLI has flushed transcript files.
@@ -635,6 +680,7 @@ export class SessionManager {
         sandboxMode: codexOptions.sandboxMode,
         model: codexOptions.model,
         modelReasoningEffort: codexOptions.modelReasoningEffort,
+        serviceTier: codexOptions.serviceTier,
         networkAccessEnabled: codexOptions.networkAccessEnabled,
         webSearchMode: codexOptions.webSearchMode,
         additionalWritableRoots: codexOptions.additionalWritableRoots,
@@ -664,6 +710,7 @@ export class SessionManager {
     // Add session to Map only after proc.start() succeeds.
     // If start() throws, no zombie session is left behind.
     this.sessions.set(id, session);
+    this.evictStaleIdleSessions();
 
     console.log(
       `[session] Created ${effectiveProvider} session ${id} for ${effectiveCwd}${wtPath ? ` (worktree of ${projectPath})` : ""}`,
@@ -723,6 +770,14 @@ export class SessionManager {
 
   list(): SessionSummary[] {
     return Array.from(this.sessions.values()).map((s) => {
+      const codexSettings = s.process instanceof CodexProcess
+        ? withDerivedCodexPermissionsMode(
+            s.codexSettings ??
+              (s.process.codexPermissionsMode
+                ? { codexPermissionsMode: s.process.codexPermissionsMode }
+                : undefined),
+          )
+        : s.codexSettings;
       const processWithPending = s.process as {
         getPendingPermission?: () =>
           | {
@@ -744,7 +799,7 @@ export class SessionManager {
               ? "acceptEdits"
               : "default"
           : s.process instanceof CodexProcess
-            ? (s.codexSettings?.approvalPolicy ?? s.process.approvalPolicy) ===
+            ? (codexSettings?.approvalPolicy ?? s.process.approvalPolicy) ===
               "never"
               ? "fullAccess"
               : "default"
@@ -774,7 +829,7 @@ export class SessionManager {
             : s.process instanceof CodexProcess
               ? s.process.collaborationMode === "plan"
                 ? "plan"
-                : (s.codexSettings?.approvalPolicy ??
+                : (codexSettings?.approvalPolicy ??
                     s.process.approvalPolicy) === "never"
                   ? "bypassPermissions"
                   : "acceptEdits"
@@ -782,7 +837,7 @@ export class SessionManager {
         executionMode,
         planMode,
         model: s.process instanceof SdkProcess ? s.process.model : undefined,
-        codexSettings: s.codexSettings,
+        codexSettings,
         agentNickname:
           s.process instanceof CodexProcess
             ? (s.process.agentNickname ?? undefined)
@@ -813,6 +868,9 @@ export class SessionManager {
     session.historyRevision = entry.seq;
     session.history.push(msg);
     session.historyEntries.push(entry);
+    if (session.provider === "codex" && msg.type === "user_input") {
+      session.codexLatestUserInput = msg;
+    }
     this.trimHistory(session);
     return entry;
   }
@@ -1345,7 +1403,8 @@ export class SessionManager {
   }
 
   getCachedCommands(
-    projectPath: string,
+    provider: Provider,
+    effectiveCwd: string,
   ):
     | {
         slashCommands: string[];
@@ -1357,7 +1416,11 @@ export class SessionManager {
         pluginMetadata?: Array<Record<string, unknown>>;
       }
     | undefined {
-    return this.commandCache.get(projectPath);
+    return this.commandCache.get(this.commandCacheKey(provider, effectiveCwd));
+  }
+
+  private commandCacheKey(provider: Provider, effectiveCwd: string): string {
+    return `${provider}\u0000${effectiveCwd}`;
   }
 
   /** Get worktree store for external use (e.g., resume_session in websocket.ts). */
@@ -1630,11 +1693,41 @@ export class SessionManager {
   destroy(id: string): boolean {
     const session = this.sessions.get(id);
     if (!session) return false;
+    // Remove first so synchronous status/exit events from stop() cannot try to
+    // evict the same session recursively.
+    this.sessions.delete(id);
     session.process.stop();
     session.process.removeAllListeners();
-    this.sessions.delete(id);
     console.log(`[session] Destroyed session ${id}`);
     return true;
+  }
+
+  private evictStaleIdleSessions(): void {
+    const staleIdleSessions = Array.from(this.sessions.values())
+      .filter((session) => session.status === "idle")
+      .sort(
+        (left, right) =>
+          left.lastActivityAt.getTime() - right.lastActivityAt.getTime(),
+      )
+      .slice(0, Math.max(0, this.idleSessionCount() - MAX_IDLE_SESSIONS));
+
+    for (const session of staleIdleSessions) {
+      console.log(
+        `[session] Evicting idle session ${session.id} (last active ${session.lastActivityAt.toISOString()})`,
+      );
+      this.destroy(session.id);
+    }
+    if (staleIdleSessions.length > 0) {
+      this.onSessionUpdated?.(staleIdleSessions.at(-1)!.id);
+    }
+  }
+
+  private idleSessionCount(): number {
+    let count = 0;
+    for (const session of this.sessions.values()) {
+      if (session.status === "idle") count += 1;
+    }
+    return count;
   }
 
   destroyAll(): void {

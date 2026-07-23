@@ -18,10 +18,47 @@
   },
   "rename": "Rename",
   "renameSession": "Rename Session",
+  "pin": "Pin session",
+  "unpin": "Unpin session",
+  "pinProject": "Pin project",
+  "unpinProject": "Unpin project",
   "sessionNameHint": "Session name",
   "clearName": "Clear name",
   "connect": "Connect",
+  "toolSuggestionTitle": "Add {toolName} to Codex?",
+  "@toolSuggestionTitle": {
+    "placeholders": {
+      "toolName": {
+        "type": "Object"
+      }
+    }
+  },
+  "toolSuggestionInstall": "Install {toolName}",
+  "@toolSuggestionInstall": {
+    "placeholders": {
+      "toolName": {
+        "type": "Object"
+      }
+    }
+  },
+  "toolSuggestionInstalling": "Installing…",
+  "toolSuggestionNotNow": "Not now",
+  "toolSuggestionAuthDescription": "Connect the required app, then confirm when you're done.",
+  "toolSuggestionConnect": "Connect {appName}",
+  "@toolSuggestionConnect": {
+    "placeholders": {
+      "appName": {
+        "type": "Object"
+      }
+    }
+  },
+  "toolSuggestionComplete": "I've finished connecting",
+  "toolSuggestionFailed": "Installation failed",
+  "toolSuggestionOpenFailed": "Could not open the connection page.",
   "copy": "Copy",
+  "markdownLinkOpenFailed": "Could not open this link.",
+  "markdownLinkUnsupported": "This link type is not supported.",
+  "markdownFileUnavailable": "This file cannot be previewed here.",
   "copied": "Copied",
   "copiedToClipboard": "Copied to clipboard",
   "lineCopied": "Line copied",
@@ -307,6 +344,9 @@
   "reasoningEffortMediumDesc": "Balanced speed and quality",
   "reasoningEffortHighDesc": "More thorough analysis",
   "reasoningEffortXhighDesc": "Most thorough, slowest",
+  "reasoningEffortMaxDesc": "Maximum reasoning for the hardest problems",
+  "reasoningEffortUltraDesc": "Maximum reasoning with automatic task delegation",
+  "reasoningEffortModelSpecificDesc": "Model-specific reasoning level",
 
   "changePermissionModeTitle": "Change Permission Mode",
   "changePermissionModeBody": "Switching to {mode} will restart the session. Your conversation will be preserved.",
@@ -342,6 +382,17 @@
   "codexAutoReview": "Auto Review",
   "codexAutoReviewDescription": "Let Codex review approval requests automatically",
   "codexAutoReviewUnavailableDescription": "Unavailable when approvals are disabled",
+  "guardianApprovalTitle": "Auto Review approved",
+  "guardianApprovalMediumRisk": "Medium risk",
+  "guardianApprovalHighRisk": "High risk",
+  "guardianApprovalDetails": "Details",
+  "guardianApprovalHideDetails": "Hide details",
+  "guardianApprovalAuthorization": "Authorization: {authorization}",
+  "@guardianApprovalAuthorization": {
+    "placeholders": {
+      "authorization": {"type": "String"}
+    }
+  },
   "enablePlanModeTitle": "Enable Plan Mode",
   "disablePlanModeTitle": "Disable Plan Mode",
   "enablePlanModeBody": "Enabling Plan Mode will restart the session. Your conversation will be preserved.",
@@ -721,6 +772,8 @@
   "showBridgeNameInSessionListSubtitle": "Show the connected Bridge name in the session list when multiple Bridges are registered.",
   "autoRenameCodexSessions": "Auto Rename (Codex)",
   "autoRenameCodexSessionsSubtitle": "Name Codex sessions automatically after the first agent response",
+  "showExtendedCodexEfforts": "Max / Ultra in Effort slider",
+  "showExtendedCodexEffortsSubtitle": "Show Max and Ultra on the slider when supported by the selected Codex model",
   "autoRenameClaudeSessions": "Auto Rename (Claude)",
   "autoRenameClaudeSessionsSubtitle": "Name Claude sessions automatically after the first agent response. Uses an additional Claude request when API key billing is active.",
   "newSessionTabCodex": "Codex",
@@ -855,7 +908,9 @@
   "rateOnStore": "Rate on App Store",
   "rateOnStoreAndroid": "Rate on Google Play",
   "supporterTitle": "Supporter",
-  "supporterMonthlyTitle": "Monthly Supporter",
+  "supporterMonthlyTitle": "Supporter Monthly",
+  "supporterMonthlyPlusTitle": "Supporter Monthly Plus",
+  "supporterSnackTitle": "Snack Support",
   "supporterCoffeeTitle": "Buy Me a Drink",
   "supporterLunchTitle": "Buy Me Lunch",
   "supporterStatusActive": "Thanks for backing CC Pocket.",
@@ -874,10 +929,12 @@
   },
   "supporterMonthlyDescription": "Ongoing support to keep the app improving.",
   "supporterMonthlyPerkLabel": "Includes alternate app icon perks",
+  "supporterSnackDescription": "If you feel like buying me a snack, I'd really appreciate the support.",
   "supporterCoffeeDescription": "If you feel like buying me a drink, I'd really appreciate the support.",
   "supporterLunchDescription": "If you feel like buying me lunch, I'd really appreciate the support.",
   "supporterBuyButton": "Support",
   "supporterActiveButton": "Active",
+  "supporterSubscribedButton": "Subscribed",
   "supporterRestoreButton": "Restore",
   "supporterRetryButton": "Retry",
   "supporterProductsUnavailable": "No support options are currently available.",
@@ -898,6 +955,12 @@
   },
   "supporterSummaryOneTimeCount": "One-time ×{count}",
   "@supporterSummaryOneTimeCount": {
+    "placeholders": {
+      "count": { "type": "int" }
+    }
+  },
+  "supporterSummarySnackCount": "Snacks ×{count}",
+  "@supporterSummarySnackCount": {
     "placeholders": {
       "count": { "type": "int" }
     }
@@ -969,5 +1032,6 @@
   "googleSearchSelectionAction": "Search with Google",
   "approvalQuestionNotificationTitle": "Question - ccpocket",
   "approvalRequiredNotificationTitle": "Approval Required - ccpocket",
-  "exitPlanModeNotificationBody": "The generated plan needs your review"
+  "exitPlanModeNotificationBody": "The generated plan needs your review",
+  "renderErrorFallback": "This content couldn't be displayed."
 }

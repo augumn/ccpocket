@@ -10,7 +10,6 @@ import '../../../core/logger.dart';
 import '../../../models/messages.dart';
 import '../../../services/bridge_service.dart';
 import '../../../services/chat_message_handler.dart';
-import '../../../widgets/new_session_sheet.dart';
 import 'chat_session_state.dart';
 import 'streaming_state_cubit.dart';
 
@@ -41,10 +40,17 @@ class ChatSessionCubit extends Cubit<ChatSessionState> {
   /// can preserve them while replacing in-memory history entries.
   int _pastEntryCount = 0;
 
-  /// Tool use IDs that have been approved or rejected locally.
-  /// Cleared when corresponding [ToolResultMessage] arrives or session
-  /// completes ([ResultMessage]).
+  /// Tool use IDs that have already been answered locally.
+  static const _maxRespondedToolUseIds = 512;
   final _respondedToolUseIds = <String>{};
+
+  void _markToolUseResponded(String toolUseId) {
+    _bridge.markToolUseResponded(sessionId, toolUseId);
+    _respondedToolUseIds.add(toolUseId);
+    if (_respondedToolUseIds.length > _maxRespondedToolUseIds) {
+      _respondedToolUseIds.remove(_respondedToolUseIds.first);
+    }
+  }
 
   PermissionMode? _pendingPermissionRollback;
   ExecutionMode? _pendingExecutionRollback;
@@ -61,6 +67,9 @@ class ChatSessionCubit extends Cubit<ChatSessionState> {
 
   Map<String, List<String>> get codexModelReasoningEfforts =>
       _bridge.codexModelReasoningEfforts;
+
+  Map<String, List<String>> get codexModelServiceTiers =>
+      _bridge.codexModelServiceTiers;
 
   String _nextOptimisticCodexUserTurnUuid() {
     final userTurnCount = state.entries.whereType<UserChatEntry>().length;
@@ -149,12 +158,21 @@ class ChatSessionCubit extends Cubit<ChatSessionState> {
            projectPath: initialProjectPath,
          ),
        ) {
+    _respondedToolUseIds.addAll(_bridge.respondedToolUseIds(sessionId));
     // Subscribe to messages for this session
     _subscription = _bridge.messagesForSession(sessionId).listen(_onMessage);
 
-    unawaited(_restorePersistedSessionSettings());
     _restoreCachedRuntimeMessages();
     _restoreDeliveryPendingInput();
+    if (isCodex &&
+        _bridge
+            .cachedSessionMessages(sessionId)
+            .any(
+              (message) =>
+                  message is SystemMessage && message.subtype == 'init',
+            )) {
+      requestGoal();
+    }
 
     // Request in-memory history from the bridge server
     _bridge.requestSessionHistory(sessionId);
@@ -187,6 +205,7 @@ class ChatSessionCubit extends Cubit<ChatSessionState> {
         history,
         isBackground: true,
         isCodex: isCodex,
+        ignoredToolUseIds: _respondedToolUseIds,
       );
       _applyUpdate(update, history);
     } catch (e, st) {
@@ -219,6 +238,9 @@ class ChatSessionCubit extends Cubit<ChatSessionState> {
       logger.error('[session:$sessionId] Error from bridge: ${msg.message}');
       _rollbackFailedModeChange(msg);
     }
+    if (isCodex && msg is SystemMessage && msg.subtype == 'init') {
+      requestGoal();
+    }
 
     // Prevent duplicate past_history processing
     if (msg is PastHistoryMessage) {
@@ -231,9 +253,22 @@ class ChatSessionCubit extends Cubit<ChatSessionState> {
       emit(state.copyWith(rewindPreview: msg));
       return;
     }
+    if (msg is GoalStateMessage) {
+      emit(state.copyWith(goal: msg.goal));
+      return;
+    }
+    if (msg is PermissionResolvedMessage) {
+      _markToolUseResponded(msg.toolUseId);
+      _emitNextApprovalOrNone(msg.toolUseId);
+    }
 
     try {
-      final update = _handler.handle(msg, isBackground: true, isCodex: isCodex);
+      final update = _handler.handle(
+        msg,
+        isBackground: true,
+        isCodex: isCodex,
+        ignoredToolUseIds: _respondedToolUseIds,
+      );
       _applyUpdate(update, msg);
     } catch (e, st) {
       logger.error(
@@ -417,13 +452,17 @@ class ChatSessionCubit extends Cubit<ChatSessionState> {
       // to prevent duplicates when get_history is received multiple times.
       final pastEntries = entries.take(_pastEntryCount).toList();
       final existingNonPast = entries.skip(_pastEntryCount).toList();
-
-      final mergedHistoryEntries = _mergeEntriesForHistoryReplace(
-        existingNonPast: existingNonPast,
+      final mergedHistoryEntries = _mergeRicherLiveAssistantEntries(
+        existingEntries: existingNonPast,
         historyEntries: nonStreamingEntries,
       );
 
-      entries = [...pastEntries, ...mergedHistoryEntries];
+      final extraLiveEntries = _entriesToPreserveAfterHistoryReplace(
+        existingNonPast: existingNonPast,
+        historyEntries: mergedHistoryEntries,
+      );
+
+      entries = [...pastEntries, ...mergedHistoryEntries, ...extraLiveEntries];
 
       // Preserve local data (image bytes, timestamps) from existing entries
       // that the server history does not contain.
@@ -477,14 +516,6 @@ class ChatSessionCubit extends Cubit<ChatSessionState> {
       didModifyEntries = result.didChange;
     }
 
-    // --- Cleanup responded tool use IDs ---
-    if (originalMsg is ToolResultMessage) {
-      _respondedToolUseIds.remove(originalMsg.toolUseId);
-    }
-    if (originalMsg is ResultMessage) {
-      _respondedToolUseIds.clear();
-    }
-
     // --- Build new approval state ---
     ApprovalState approval = current.approval;
     if (update.resetPending && update.resetAsk) {
@@ -500,16 +531,22 @@ class ChatSessionCubit extends Cubit<ChatSessionState> {
     }
 
     if (update.pendingPermission != null) {
-      approval = ApprovalState.permission(
-        toolUseId: update.pendingToolUseId!,
-        request: update.pendingPermission!,
-      );
+      final toolUseId = update.pendingToolUseId;
+      if (toolUseId != null && !_respondedToolUseIds.contains(toolUseId)) {
+        approval = ApprovalState.permission(
+          toolUseId: toolUseId,
+          request: update.pendingPermission!,
+        );
+      }
     }
     if (update.askToolUseId != null) {
-      approval = ApprovalState.askUser(
-        toolUseId: update.askToolUseId!,
-        input: update.askInput ?? {},
-      );
+      final toolUseId = update.askToolUseId!;
+      if (!_respondedToolUseIds.contains(toolUseId)) {
+        approval = ApprovalState.askUser(
+          toolUseId: toolUseId,
+          input: update.askInput ?? {},
+        );
+      }
     }
 
     // Stop status refresh timer when status changes from starting
@@ -648,6 +685,7 @@ class ChatSessionCubit extends Cubit<ChatSessionState> {
         codexModelReasoningEffort:
             update.codexModelReasoningEffort ??
             current.codexModelReasoningEffort,
+        codexSpeed: update.codexSpeed ?? current.codexSpeed,
         planMode: update.planMode ?? current.planMode,
         slashCommands: update.slashCommands ?? current.slashCommands,
         queuedInput: nextQueuedInput,
@@ -702,91 +740,104 @@ class ChatSessionCubit extends Cubit<ChatSessionState> {
     );
   }
 
-  List<ChatEntry> _mergeEntriesForHistoryReplace({
+  List<ChatEntry> _entriesToPreserveAfterHistoryReplace({
     required List<ChatEntry> existingNonPast,
     required List<ChatEntry> historyEntries,
   }) {
-    final merged = <ChatEntry>[];
-    var historyCursor = 0;
-    var lastMatchedExistingIndex = -1;
+    final lastUserIndex = existingNonPast.lastIndexWhere(
+      (entry) => entry is UserChatEntry,
+    );
+    final candidates = existingNonPast.skip(
+      lastUserIndex == -1 ? 0 : lastUserIndex,
+    );
+    final preserved = <ChatEntry>[];
+    final historyCurrentUserIndex = lastUserIndex == -1
+        ? -1
+        : historyEntries.lastIndexWhere(
+            (entry) => _entriesEquivalentForTurnBoundary(
+              entry,
+              existingNonPast[lastUserIndex],
+            ),
+          );
+    final covered = lastUserIndex == -1
+        ? [...historyEntries]
+        : historyCurrentUserIndex == -1
+        ? <ChatEntry>[]
+        : historyEntries.skip(historyCurrentUserIndex).toList();
 
-    for (
-      var existingIndex = 0;
-      existingIndex < existingNonPast.length;
-      existingIndex++
-    ) {
-      final existing = existingNonPast[existingIndex];
-      final matchIndex = _indexOfEquivalentEntry(
-        historyEntries,
-        existing,
-        start: historyCursor,
-        allowWeakMatch: true,
-      );
-      if (matchIndex != -1) {
-        merged.addAll(
-          historyEntries
-              .skip(historyCursor)
-              .take(matchIndex - historyCursor + 1),
-        );
-        historyCursor = matchIndex + 1;
-        lastMatchedExistingIndex = existingIndex;
-        continue;
-      }
-      if (_shouldPreserveLocalUserAcrossHistoryReplace(existing) &&
-          _indexOfEquivalentEntry([
-                ...merged,
-                ...historyEntries.skip(historyCursor),
-              ], existing) ==
-              -1) {
-        merged.add(existing);
-      }
-    }
-
-    merged.addAll(historyEntries.skip(historyCursor));
-
-    // Keep live server content when a history snapshot lags behind the current
-    // runtime timeline, even if it still overlaps earlier user turns.
-    final preserveLaggingLiveContent =
-        _historyIsLaggingLiveServerContent(existingNonPast, historyEntries) ||
-        lastMatchedExistingIndex == -1;
-    final tailStart = preserveLaggingLiveContent
-        ? 0
-        : lastMatchedExistingIndex + 1;
-    for (final candidate in existingNonPast.skip(tailStart)) {
-      if (candidate is UserChatEntry) continue;
-      if (preserveLaggingLiveContent) {
-        if (!_shouldPreserveLiveContentAcrossLaggingHistory(candidate)) {
-          continue;
-        }
-      } else if (!_shouldPreserveEntryAcrossHistoryReplace(candidate)) {
-        continue;
-      }
-      if (_indexOfEquivalentEntry(merged, candidate, allowWeakMatch: true) !=
+    for (final candidate in candidates) {
+      if (_indexOfEquivalentEntry(covered, candidate, allowWeakMatch: true) !=
           -1) {
         continue;
       }
-      merged.add(candidate);
+      if (!_shouldPreserveEntryAcrossHistoryReplace(candidate)) continue;
+      preserved.add(candidate);
+      covered.add(candidate);
     }
-
-    return merged;
+    return preserved;
   }
 
-  bool _historyIsLaggingLiveServerContent(
-    List<ChatEntry> existingNonPast,
-    List<ChatEntry> historyEntries,
-  ) {
-    for (final existing in existingNonPast) {
-      if (!_shouldPreserveLiveContentAcrossLaggingHistory(existing)) continue;
-      if (_indexOfEquivalentEntry(
-            historyEntries,
-            existing,
-            allowWeakMatch: true,
-          ) ==
-          -1) {
-        return true;
+  bool _entriesEquivalentForTurnBoundary(ChatEntry a, ChatEntry b) {
+    if (a is UserChatEntry && b is UserChatEntry) {
+      final aUuid = a.messageUuid;
+      final bUuid = b.messageUuid;
+      if (aUuid?.isNotEmpty == true && bUuid?.isNotEmpty == true) {
+        return aUuid == bUuid;
       }
+      final aClientId = a.clientMessageId;
+      final bClientId = b.clientMessageId;
+      if (aClientId?.isNotEmpty == true && bClientId?.isNotEmpty == true) {
+        return aClientId == bClientId;
+      }
+      return _entriesEquivalent(a, b, allowWeakMatch: true);
     }
-    return false;
+    final aKey = _entryStableKey(a);
+    final bKey = _entryStableKey(b);
+    if (aKey != null && bKey != null) return aKey == bKey;
+    return _entriesEquivalent(a, b, allowWeakMatch: true);
+  }
+
+  List<ChatEntry> _mergeRicherLiveAssistantEntries({
+    required List<ChatEntry> existingEntries,
+    required List<ChatEntry> historyEntries,
+  }) {
+    return historyEntries.map((historyEntry) {
+      final historyAssistant = _assistantMessageFromEntry(historyEntry);
+      if (historyAssistant == null) return historyEntry;
+
+      final existingIndex = _indexOfEquivalentEntry(
+        existingEntries,
+        historyEntry,
+      );
+      if (existingIndex == -1) return historyEntry;
+      final existingEntry = existingEntries[existingIndex];
+      final existingAssistant = _assistantMessageFromEntry(existingEntry);
+      if (existingAssistant == null) return historyEntry;
+
+      return _hasRenderableAssistantContent(existingAssistant) &&
+              !_hasRenderableAssistantContent(historyAssistant)
+          ? existingEntry
+          : historyEntry;
+    }).toList();
+  }
+
+  AssistantMessage? _assistantMessageFromEntry(ChatEntry entry) {
+    if (entry case ServerChatEntry(
+      message: AssistantServerMessage(:final message),
+    )) {
+      return message;
+    }
+    return null;
+  }
+
+  bool _hasRenderableAssistantContent(AssistantMessage message) {
+    return message.content.any(
+      (content) => switch (content) {
+        TextContent(:final text) => text.trim().isNotEmpty,
+        ThinkingContent(:final thinking) => thinking.trim().isNotEmpty,
+        ToolUseContent() => true,
+      },
+    );
   }
 
   ({List<ChatEntry> entries, bool didChange}) _appendEntriesDeduped(
@@ -797,7 +848,16 @@ class ChatSessionCubit extends Cubit<ChatSessionState> {
     var didChange = false;
 
     for (final addition in additions) {
-      final matchIndex = _indexOfEquivalentEntry(next, addition);
+      var matchIndex = _indexOfEquivalentEntry(next, addition);
+      if (matchIndex == -1 && _canWeakMatchAppendedEntry(addition)) {
+        final lastUserIndex = next.lastIndexWhere((e) => e is UserChatEntry);
+        matchIndex = _indexOfEquivalentEntry(
+          next,
+          addition,
+          start: lastUserIndex + 1,
+          allowWeakMatch: true,
+        );
+      }
       if (matchIndex != -1) {
         final merged = _mergeEquivalentEntry(next[matchIndex], addition);
         if (!identical(merged, next[matchIndex])) {
@@ -813,6 +873,17 @@ class ChatSessionCubit extends Cubit<ChatSessionState> {
     }
 
     return (entries: next, didChange: didChange);
+  }
+
+  bool _canWeakMatchAppendedEntry(ChatEntry entry) {
+    if (entry case ServerChatEntry(
+      message: AssistantServerMessage(:final messageUuid),
+    )) {
+      return messageUuid?.isNotEmpty == true;
+    }
+    return entry is ServerChatEntry &&
+        (entry.message is ResultMessage ||
+            entry.message is GuardianApprovalMessage);
   }
 
   int _indexOfEquivalentEntry(
@@ -840,13 +911,15 @@ class ChatSessionCubit extends Cubit<ChatSessionState> {
   }) {
     final aKey = _entryStableKey(a);
     final bKey = _entryStableKey(b);
-    if (aKey != null && bKey != null) return aKey == bKey;
+    if (aKey != null && bKey != null && aKey == bKey) return true;
 
     if (allowWeakMatch) {
       final aWeakKey = _entryWeakKey(a);
       final bWeakKey = _entryWeakKey(b);
       if (aWeakKey != null && bWeakKey != null) return aWeakKey == bWeakKey;
     }
+
+    if (aKey != null && bKey != null) return false;
 
     if (a is UserChatEntry && b is UserChatEntry) {
       // Older Bridge versions may not include clientMessageId in restored
@@ -945,21 +1018,24 @@ class ChatSessionCubit extends Cubit<ChatSessionState> {
         return 'assistant:content:${_assistantContentSignature(message)}';
       case ResultMessage(
         :final subtype,
-        :final sessionId,
         :final stopReason,
         :final result,
         :final error,
       ):
-        return [
-          'result',
-          subtype,
-          sessionId,
-          stopReason,
-          result,
-          error,
-        ].join('\u0001');
+        return ['result', subtype, stopReason, result, error].join('\u0001');
       case ErrorMessage(:final message, :final errorCode):
         return ['error', errorCode, message].join('\u0001');
+      case GuardianApprovalMessage(
+        :final risk,
+        :final reason,
+        :final authorization,
+      ):
+        return [
+          'guardian_approval',
+          risk.name,
+          authorization,
+          reason,
+        ].join('\u0001');
       case ToolUseSummaryMessage(:final summary, :final precedingToolUseIds):
         return [
           'tool_use_summary',
@@ -981,34 +1057,6 @@ class ChatSessionCubit extends Cubit<ChatSessionState> {
           };
         })
         .join('\u0001');
-  }
-
-  bool _isLocalUnconfirmedUserEntry(ChatEntry entry) {
-    return entry is UserChatEntry && entry.status != MessageStatus.sent;
-  }
-
-  bool _shouldPreserveLocalUserAcrossHistoryReplace(ChatEntry entry) {
-    if (entry is! UserChatEntry) return false;
-    if (_isLocalUnconfirmedUserEntry(entry)) return true;
-    if (entry.clientMessageId != null && entry.clientMessageId!.isNotEmpty) {
-      return true;
-    }
-    final uuid = entry.messageUuid;
-    return uuid != null && uuid.startsWith('codex:user-turn:');
-  }
-
-  bool _shouldPreserveLiveContentAcrossLaggingHistory(ChatEntry entry) {
-    if (entry is! ServerChatEntry) return false;
-    return switch (entry.message) {
-      AssistantServerMessage() => true,
-      ResultMessage() => true,
-      ToolResultMessage() => true,
-      PermissionRequestMessage() => true,
-      PermissionResolvedMessage() => true,
-      ToolUseSummaryMessage() => true,
-      ErrorMessage() => true,
-      _ => false,
-    };
   }
 
   bool _shouldPreserveEntryAcrossHistoryReplace(ChatEntry entry) {
@@ -1124,6 +1172,28 @@ class ChatSessionCubit extends Cubit<ChatSessionState> {
     Iterable<String>? mentionablePaths,
   }) {
     if (text.trim().isEmpty && (images == null || images.isEmpty)) return;
+    if (isCodex && (images == null || images.isEmpty)) {
+      final command = text.trim();
+      switch (command) {
+        case '/goal':
+          requestGoal();
+          return;
+        case '/goal pause':
+          setGoalStatus(CodexThreadGoalStatus.paused);
+          return;
+        case '/goal resume':
+          setGoalStatus(CodexThreadGoalStatus.active);
+          return;
+        case '/goal clear':
+          clearGoal();
+          return;
+        default:
+          if (command.startsWith('/goal ')) {
+            setGoalObjective(command.substring('/goal '.length));
+            return;
+          }
+      }
+    }
     if (isCodex && state.queuedInput != null) return;
 
     final clientMessageId = _uuid.v4();
@@ -1217,6 +1287,38 @@ class ChatSessionCubit extends Cubit<ChatSessionState> {
         item: deliveryPendingItem!,
       );
     }
+  }
+
+  void requestGoal() {
+    if (!isCodex) return;
+    _bridge.send(ClientMessage.getGoal(sessionId));
+  }
+
+  void setGoalObjective(String objective) {
+    if (!isCodex) return;
+    final normalized = objective.trim();
+    if (normalized.isEmpty || normalized.length > 4000) return;
+    _bridge.send(
+      ClientMessage.setGoal(sessionId: sessionId, objective: normalized),
+    );
+  }
+
+  void toggleGoalPaused() {
+    if (!isCodex || state.goal == null) return;
+    final next = state.goal!.status == CodexThreadGoalStatus.paused
+        ? CodexThreadGoalStatus.active
+        : CodexThreadGoalStatus.paused;
+    setGoalStatus(next);
+  }
+
+  void setGoalStatus(CodexThreadGoalStatus status) {
+    if (!isCodex) return;
+    _bridge.send(ClientMessage.setGoal(sessionId: sessionId, status: status));
+  }
+
+  void clearGoal() {
+    if (!isCodex) return;
+    _bridge.send(ClientMessage.clearGoal(sessionId));
   }
 
   void _scheduleDeliveryPendingQueue({
@@ -1331,7 +1433,7 @@ class ChatSessionCubit extends Cubit<ChatSessionState> {
       '[session:$sessionId] approve toolUseId=$toolUseId'
       '${clearContext ? ' clearContext' : ''}',
     );
-    _respondedToolUseIds.add(toolUseId);
+    _markToolUseResponded(toolUseId);
     _bridge.send(
       ClientMessage.approve(
         toolUseId,
@@ -1348,11 +1450,24 @@ class ChatSessionCubit extends Cubit<ChatSessionState> {
   /// Approve a tool and always allow it in the future.
   void approveAlways(String toolUseId) {
     final isExitPlanApproval = _isExitPlanApproval(toolUseId);
-    _respondedToolUseIds.add(toolUseId);
+    _markToolUseResponded(toolUseId);
     _bridge.send(ClientMessage.approveAlways(toolUseId, sessionId: sessionId));
     _emitNextApprovalOrNone(
       toolUseId,
       exitPlanModeResolved: isExitPlanApproval,
+    );
+  }
+
+  /// Begin installing a plugin or connector suggested by Codex.
+  ///
+  /// Unlike a normal approval, the request remains visible while Bridge
+  /// installs the plugin or waits for external connector authentication.
+  void installToolSuggestion(String toolUseId) {
+    logger.info(
+      '[session:$sessionId] install tool suggestion toolUseId=$toolUseId',
+    );
+    _bridge.send(
+      ClientMessage.installToolSuggestion(toolUseId, sessionId: sessionId),
     );
   }
 
@@ -1446,7 +1561,7 @@ class ChatSessionCubit extends Cubit<ChatSessionState> {
       '[session:$sessionId] reject toolUseId=$toolUseId'
       '${message != null ? ' msg=$message' : ''}',
     );
-    _respondedToolUseIds.add(toolUseId);
+    _markToolUseResponded(toolUseId);
     _bridge.send(
       ClientMessage.reject(toolUseId, message: message, sessionId: sessionId),
     );
@@ -1457,6 +1572,7 @@ class ChatSessionCubit extends Cubit<ChatSessionState> {
 
   /// Answer an AskUserQuestion.
   void answer(String toolUseId, String result) {
+    _markToolUseResponded(toolUseId);
     _bridge.send(ClientMessage.answer(toolUseId, result, sessionId: sessionId));
     emit(state.copyWith(approval: const ApprovalState.none()));
   }
@@ -1604,13 +1720,6 @@ class ChatSessionCubit extends Cubit<ChatSessionState> {
         sessionId: sessionId,
       ),
     );
-    unawaited(
-      _SessionSettingsHelper.save(sessionId, {
-        'codexApprovalPolicy': policy.value,
-        'codexApprovalsReviewer': normalizedReviewer,
-        'codexPermissionsMode': CodexPermissionsMode.custom.value,
-      }),
-    );
   }
 
   void setCodexPermissionsMode(CodexPermissionsMode mode) {
@@ -1676,14 +1785,6 @@ class ChatSessionCubit extends Cubit<ChatSessionState> {
         sessionId: sessionId,
       ),
     );
-    unawaited(
-      _SessionSettingsHelper.save(sessionId, {
-        'codexApprovalPolicy': policy.value,
-        'codexApprovalsReviewer': approvalsReviewer,
-        'codexPermissionsMode': mode.value,
-        'codexSandboxMode': (sandboxMode ?? state.sandboxMode).value,
-      }),
-    );
   }
 
   void setCodexModel(String model, {ReasoningEffort? reasoningEffort}) {
@@ -1714,11 +1815,15 @@ class ChatSessionCubit extends Cubit<ChatSessionState> {
         sessionId: sessionId,
       ),
     );
-    unawaited(
-      _SessionSettingsHelper.save(sessionId, {
-        'codexModel': normalizedModel,
-        'codexModelReasoningEffort': nextReasoningEffort?.value,
-      }),
+  }
+
+  void setCodexSpeed(CodexSpeed speed) {
+    if (!isCodex || speed == state.codexSpeed) return;
+    logger.info('[session:$sessionId] setCodexSpeed=${speed.value}');
+    emit(state.copyWith(codexSpeed: speed));
+    _bridge.patchSessionCodexSpeed(sessionId, speed.value);
+    _bridge.send(
+      ClientMessage.setCodexSpeed(speed.value, sessionId: sessionId),
     );
   }
 
@@ -1737,76 +1842,6 @@ class ChatSessionCubit extends Cubit<ChatSessionState> {
     final claudeSid = state.claudeSessionId;
     if (claudeSid != null && claudeSid.isNotEmpty) {
       _SessionSettingsHelper.save(claudeSid, {'sandboxMode': mode.value});
-    }
-    if (isCodex) {
-      _SessionSettingsHelper.save(sessionId, {'codexSandboxMode': mode.value});
-    }
-  }
-
-  Future<void> _restorePersistedSessionSettings() async {
-    final settings = await _SessionSettingsHelper.load(sessionId);
-    if (settings == null || settings.isEmpty) return;
-
-    if (isCodex) {
-      final persistedModel = sanitizeCodexModelName(
-        settings['codexModel'] as String?,
-      );
-      final availableModel =
-          normalizeCodexModelForAvailableList(persistedModel, codexModels) ??
-          persistedModel;
-      final persistedReasoning = reasoningEffortFromRaw(
-        settings['codexModelReasoningEffort'] as String?,
-      );
-      final persistedSandbox = sandboxModeFromRaw(
-        settings['codexSandboxMode'] as String?,
-      );
-      final persistedPolicy = codexApprovalPolicyFromRaw(
-        settings['codexApprovalPolicy'] as String?,
-      );
-      final persistedPermissionsMode = codexPermissionsModeFromRaw(
-        settings['codexPermissionsMode'] as String?,
-      );
-
-      if (!isClosed) {
-        emit(
-          state.copyWith(
-            codexModel: availableModel ?? state.codexModel,
-            codexModelReasoningEffort:
-                persistedReasoning ?? state.codexModelReasoningEffort,
-            sandboxMode: persistedSandbox ?? state.sandboxMode,
-            codexApprovalPolicy: persistedPolicy ?? state.codexApprovalPolicy,
-            codexApprovalsReviewer:
-                (settings['codexApprovalsReviewer'] as String?) ??
-                state.codexApprovalsReviewer,
-            codexPermissionsMode:
-                persistedPermissionsMode ?? state.codexPermissionsMode,
-          ),
-        );
-      }
-      return;
-    }
-
-    final persistedPermission = permissionModeFromRaw(
-      settings['permissionMode'] as String?,
-    );
-    final persistedSandbox = sandboxModeFromRaw(
-      settings['sandboxMode'] as String?,
-    );
-    final persistedExecution = executionModeFromRaw(
-      settings['executionMode'] as String?,
-    );
-    final persistedPlan = settings['planMode'] as bool?;
-
-    if (!isClosed) {
-      emit(
-        state.copyWith(
-          permissionMode: persistedPermission ?? state.permissionMode,
-          executionMode: persistedExecution ?? state.executionMode,
-          sandboxMode: persistedSandbox ?? state.sandboxMode,
-          planMode: persistedPlan ?? state.planMode,
-          inPlanMode: persistedPlan ?? state.inPlanMode,
-        ),
-      );
     }
   }
 
@@ -2136,17 +2171,6 @@ bool _listEquals(List<String> a, List<String> b) {
 class _SessionSettingsHelper {
   static const _prefix = 'claude_session_settings_';
 
-  static Future<Map<String, dynamic>?> load(String sessionId) async {
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      final raw = prefs.getString('$_prefix$sessionId');
-      if (raw == null || raw.isEmpty) return null;
-      return jsonDecode(raw) as Map<String, dynamic>;
-    } catch (_) {
-      return null;
-    }
-  }
-
   static Future<void> save(
     String sessionId,
     Map<String, dynamic> settings,
@@ -2154,7 +2178,13 @@ class _SessionSettingsHelper {
     try {
       final prefs = await SharedPreferences.getInstance();
       final key = '$_prefix$sessionId';
-      final existing = await load(sessionId) ?? <String, dynamic>{};
+      final raw = prefs.getString(key);
+      Map<String, dynamic> existing = {};
+      if (raw != null) {
+        try {
+          existing = jsonDecode(raw) as Map<String, dynamic>;
+        } catch (_) {}
+      }
       final merged = <String, dynamic>{...existing, ...settings};
       await prefs.setString(key, jsonEncode(merged));
     } catch (_) {

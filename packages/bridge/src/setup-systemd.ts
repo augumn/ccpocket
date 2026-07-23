@@ -6,6 +6,7 @@ import {
   defaultCodexSharedAppServerUrl,
   readCodexSharedAppServerUrl,
 } from "./codex-app-server-config.js";
+import { parseBridgePort } from "./bridge-port.js";
 
 const SERVICE_NAME = "ccpocket-bridge";
 
@@ -92,13 +93,16 @@ const START_BRIDGE_COMMAND =
   'if [ -s "$HOME/.nvm/nvm.sh" ]; then . "$HOME/.nvm/nvm.sh"; nvm use --silent default >/dev/null 2>&1 || nvm use --silent node >/dev/null 2>&1 || true; fi; export PATH="$HOME/.local/bin:$HOME/bin:$PATH"; exec npx --yes @ccpocket/bridge@latest';
 
 export function setupSystemd(opts: SetupOptions): void {
-  const port = opts.port ?? process.env.BRIDGE_PORT ?? "8765";
+  const port = parseBridgePort(opts.port ?? process.env.BRIDGE_PORT);
   const host = opts.host ?? process.env.BRIDGE_HOST ?? "0.0.0.0";
   const apiKey = opts.apiKey ?? process.env.BRIDGE_API_KEY ?? "";
   const allowedDirs = process.env.BRIDGE_ALLOWED_DIRS ?? "";
   const publicWsUrl =
     opts.publicWsUrl ?? process.env.BRIDGE_PUBLIC_WS_URL ?? "";
   const disableMdns = opts.disableMdns || process.env.BRIDGE_DISABLE_MDNS;
+  const codexAssistModel = process.env.BRIDGE_CODEX_ASSIST_MODEL?.trim() ?? "";
+  const codexAssistReasoningEffort =
+    process.env.BRIDGE_CODEX_ASSIST_REASONING_EFFORT?.trim() ?? "";
   const codexAppServerMode =
     opts.codexAppServerMode ?? process.env.BRIDGE_CODEX_APP_SERVER_MODE ?? "";
   const legacyCodexAppServerPort =
@@ -112,7 +116,7 @@ export function setupSystemd(opts: SetupOptions): void {
     (codexAppServerMode === "managed"
       ? legacyCodexAppServerPort
         ? `ws://127.0.0.1:${legacyCodexAppServerPort}`
-        : defaultCodexSharedAppServerUrl(port)
+        : defaultCodexSharedAppServerUrl(String(port))
       : "");
   if (codexAppServerMode === "external" && !codexAppServerUrl) {
     throw new Error(
@@ -153,6 +157,12 @@ Environment=BRIDGE_HOST=${host}`;
   }
   if (disableMdns) {
     envLines += "\nEnvironment=BRIDGE_DISABLE_MDNS=1";
+  }
+  if (codexAssistModel) {
+    envLines += `\nEnvironment=BRIDGE_CODEX_ASSIST_MODEL=${codexAssistModel}`;
+  }
+  if (codexAssistReasoningEffort) {
+    envLines += `\nEnvironment=BRIDGE_CODEX_ASSIST_REASONING_EFFORT=${codexAssistReasoningEffort}`;
   }
   if (codexAppServerMode) {
     envLines += `\nEnvironment=BRIDGE_CODEX_APP_SERVER_MODE=${codexAppServerMode}`;

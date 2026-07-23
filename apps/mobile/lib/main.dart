@@ -60,6 +60,7 @@ import 'theme/app_theme.dart';
 import 'services/store_screenshot_extension.dart';
 import 'theme/markdown_style.dart';
 import 'utils/platform_helper.dart';
+import 'widgets/release_error_widget.dart';
 
 /// Top-level handler for FCM background messages.
 /// Required by firebase_messaging to process messages when app is in background.
@@ -105,6 +106,7 @@ void main() async {
       details.stack,
     );
   };
+  installReleaseErrorWidget();
   // Initialize notifications eagerly so the Android notification channel is
   // created before any FCM message arrives. Without this, FCM falls back to
   // the low-importance fcm_fallback_notification_channel and notifications
@@ -159,7 +161,7 @@ void main() async {
   StoreScreenshotState.draftService = draftService;
   final dbService = DatabaseService();
   final promptHistoryService = PromptHistoryService(dbService);
-  bridge.connectionStatus.listen((state) {
+  final promptHistorySyncSub = bridge.connectionStatus.listen((state) {
     if (state == BridgeConnectionState.connected) {
       unawaited(
         promptHistoryService.syncAll(
@@ -193,29 +195,55 @@ void main() async {
     MultiRepositoryProvider(
       providers: [
         RepositoryProvider.value(value: logger),
-        RepositoryProvider<BridgeService>.value(value: bridge),
-        RepositoryProvider<GitViewCacheService>.value(
-          value: gitViewCacheService,
+        RepositoryProvider<BridgeService>(
+          create: (_) => bridge,
+          lazy: false,
+          dispose: (service) {
+            unawaited(promptHistorySyncSub.cancel());
+            service.dispose();
+          },
         ),
-        RepositoryProvider<DatabaseService>.value(value: dbService),
+        RepositoryProvider<GitViewCacheService>(
+          create: (_) => gitViewCacheService,
+          lazy: false,
+          dispose: (service) => unawaited(service.dispose()),
+        ),
+        RepositoryProvider<DatabaseService>(
+          create: (_) => dbService,
+          lazy: false,
+          dispose: (service) => unawaited(service.close()),
+        ),
         RepositoryProvider<DraftService>.value(value: draftService),
-        RepositoryProvider<InAppReviewService>.value(value: inAppReviewService),
-        ChangeNotifierProvider<SupportBannerService>.value(
-          value: supportBannerService,
+        RepositoryProvider<InAppReviewService>(
+          create: (_) => inAppReviewService,
+          lazy: false,
+          dispose: (service) => service.dispose(),
+        ),
+        ChangeNotifierProvider<SupportBannerService>(
+          create: (_) => supportBannerService,
+          lazy: false,
         ),
         RepositoryProvider<PromptHistoryService>.value(
           value: promptHistoryService,
         ),
         RepositoryProvider<AppIconService>.value(value: appIconService),
-        RepositoryProvider<RevenueCatService>.value(value: revenueCatService),
-        RepositoryProvider<MachineManagerService>.value(
-          value: machineManagerService,
+        RepositoryProvider<RevenueCatService>(
+          create: (_) => revenueCatService,
+          lazy: false,
+          dispose: (service) => unawaited(service.dispose()),
+        ),
+        RepositoryProvider<MachineManagerService>(
+          create: (_) => machineManagerService,
+          lazy: false,
+          dispose: (service) => service.dispose(),
         ),
         if (sshStartupService != null)
           RepositoryProvider<SshStartupService>.value(value: sshStartupService),
         if (sshBridgeTunnelService != null)
-          RepositoryProvider<SshBridgeTunnelService>.value(
-            value: sshBridgeTunnelService,
+          RepositoryProvider<SshBridgeTunnelService>(
+            create: (_) => sshBridgeTunnelService,
+            lazy: false,
+            dispose: (service) => unawaited(service.closeAll()),
           ),
       ],
       child: MultiBlocProvider(
@@ -226,7 +254,10 @@ void main() async {
               bridge.connectionStatus,
             ),
           ),
-          BlocProvider<GitStatusCubit>.value(value: gitStatusCubit),
+          BlocProvider<GitStatusCubit>(
+            create: (_) => gitStatusCubit,
+            lazy: false,
+          ),
           BlocProvider(
             create: (_) => ActiveSessionsCubit(const [], bridge.sessionList),
           ),
@@ -254,7 +285,10 @@ void main() async {
               refreshLatestBridgeVersionOnInit: true,
             ),
           ),
-          BlocProvider<SettingsCubit>.value(value: settingsCubit),
+          BlocProvider<SettingsCubit>(
+            create: (_) => settingsCubit,
+            lazy: false,
+          ),
         ],
         child: CcpocketApp(fcmService: fcmService),
       ),
@@ -473,6 +507,7 @@ class _CcpocketAppState extends State<CcpocketApp> {
             : Locale(settings.appLocaleId);
         final themeLocale =
             appLocale ?? WidgetsBinding.instance.platformDispatcher.locale;
+        updateReleaseErrorWidgetLocale(appLocale);
         return MaterialApp.router(
           title: 'CC Pocket',
           theme: AppTheme.lightThemeForLocale(themeLocale),

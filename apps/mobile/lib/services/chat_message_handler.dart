@@ -1,6 +1,7 @@
 import '../core/logger.dart';
 import '../models/messages.dart';
 import '../utils/codex_plan_update.dart';
+import '../utils/request_user_input.dart';
 import '../widgets/slash_command_sheet.dart'
     show
         SlashCommand,
@@ -35,6 +36,7 @@ class ChatStateUpdate {
   final CodexPermissionsMode? codexPermissionsMode;
   final String? codexModel;
   final ReasoningEffort? codexModelReasoningEffort;
+  final CodexSpeed? codexSpeed;
   final bool? planMode;
   final List<ChatEntry> entriesToAdd;
   final List<ChatEntry> entriesToPrepend;
@@ -93,6 +95,7 @@ class ChatStateUpdate {
     this.codexPermissionsMode,
     this.codexModel,
     this.codexModelReasoningEffort,
+    this.codexSpeed,
     this.planMode,
     this.entriesToAdd = const [],
     this.entriesToPrepend = const [],
@@ -143,8 +146,12 @@ const _unsupportedActions = <String, UnsupportedAction>{
   'read_file': UnsupportedAction.showUpdateHint,
   'steer_queued_input': UnsupportedAction.showUpdateHint,
   'set_codex_model': UnsupportedAction.showUpdateHint,
+  'set_codex_speed': UnsupportedAction.showUpdateHint,
+  'set_goal': UnsupportedAction.showUpdateHint,
+  'clear_goal': UnsupportedAction.showUpdateHint,
   'mutate_prompt_history': UnsupportedAction.showUpdateHint,
   'import_prompt_history_v1': UnsupportedAction.showUpdateHint,
+  'install_tool_suggestion': UnsupportedAction.showUpdateHint,
   // Git Operations (Phase 1-3)
   'git_stage': UnsupportedAction.showUpdateHint,
   'git_unstage': UnsupportedAction.showUpdateHint,
@@ -164,7 +171,6 @@ const _unsupportedActions = <String, UnsupportedAction>{
 class ChatMessageHandler {
   String currentThinkingText = '';
   StreamingChatEntry? currentStreaming;
-  String? _lastAssistantId;
 
   /// Whether a git_not_available tip has been shown in this session.
   /// Used to suppress duplicate git errors in the chat stream.
@@ -174,6 +180,7 @@ class ChatMessageHandler {
     ServerMessage msg, {
     required bool isBackground,
     bool isCodex = false,
+    Set<String> ignoredToolUseIds = const {},
   }) {
     switch (msg) {
       case StatusMessage(:final status):
@@ -193,7 +200,7 @@ class ChatMessageHandler {
       case PastHistoryMessage(:final claudeSessionId, :final messages):
         return _handlePastHistory(messages, claudeSessionId: claudeSessionId);
       case HistoryMessage(:final messages):
-        return _handleHistory(messages);
+        return _handleHistory(messages, ignoredToolUseIds: ignoredToolUseIds);
       case ConversationQueueMessage(:final items):
         return ChatStateUpdate(
           queuedInput: items.isNotEmpty ? items.first : null,
@@ -316,6 +323,10 @@ class ChatMessageHandler {
         }
         return const ChatStateUpdate();
       case ErrorMessage(:final message, :final errorCode):
+        if (errorCode == 'goal_get_failed') {
+          logger.warning('[handler] goal lookup unavailable: $message');
+          return const ChatStateUpdate();
+        }
         // Suppress duplicate git errors when the tip was already shown
         if (errorCode == 'git_not_available' && _gitTipShown) {
           return const ChatStateUpdate();
@@ -438,17 +449,25 @@ class ChatMessageHandler {
     String? askToolUseId;
     Map<String, dynamic>? askInput;
     String? pendingToolUseId;
-    _lastAssistantId = msg.message.id;
+    PermissionRequestMessage? pendingPermission;
     bool? inPlanMode;
     for (final content in message.content) {
       if (content is ToolUseContent) {
-        if (content.name == 'AskUserQuestion') {
+        if (content.name == 'AskUserQuestion' &&
+            hasRequestUserInputQuestions(content.input)) {
           askToolUseId = content.id;
           askInput = content.input;
           effects.add(ChatSideEffect.mediumHaptic);
           if (isBackground) effects.add(ChatSideEffect.notifyAskQuestion);
         } else {
           pendingToolUseId = content.id;
+          pendingPermission = content.name == 'AskUserQuestion'
+              ? PermissionRequestMessage(
+                  toolUseId: content.id,
+                  toolName: content.name,
+                  input: content.input,
+                )
+              : null;
           if (content.name == 'EnterPlanMode') {
             inPlanMode = true;
           }
@@ -466,6 +485,7 @@ class ChatMessageHandler {
       askToolUseId: askToolUseId,
       askInput: askInput,
       pendingToolUseId: pendingToolUseId,
+      pendingPermission: pendingPermission,
       inPlanMode: inPlanMode,
       sideEffects: effects,
     );
@@ -542,7 +562,10 @@ class ChatMessageHandler {
     );
   }
 
-  ChatStateUpdate _handleHistory(List<ServerMessage> messages) {
+  ChatStateUpdate _handleHistory(
+    List<ServerMessage> messages, {
+    Set<String> ignoredToolUseIds = const {},
+  }) {
     final entries = <ChatEntry>[];
     ProcessStatus? lastStatus;
     List<SlashCommand>? commands;
@@ -555,6 +578,9 @@ class ChatMessageHandler {
     Map<String, dynamic>? lastAskInput;
     String? claudeSessionId;
     String? projectPath;
+    String? codexModel;
+    ReasoningEffort? codexModelReasoningEffort;
+    CodexSpeed? codexSpeed;
     QueuedInputItem? queuedInput;
     var clearQueuedInput = false;
 
@@ -595,10 +621,12 @@ class ChatMessageHandler {
           ),
         );
       } else {
-        // Don't add internal metadata messages as visible entries
+        // Don't add internal metadata messages as visible entries.
+        // codex_settings is re-sent after every history sync.
         if (m is! SystemMessage ||
             (m.subtype != 'supported_commands' &&
-                m.subtype != 'session_created')) {
+                m.subtype != 'session_created' &&
+                m.subtype != 'codex_settings')) {
           entries.add(ServerChatEntry(m, timestamp: lastKnownTs));
         }
         // Restore slash commands from history (init, supported_commands, or
@@ -610,22 +638,21 @@ class ChatMessageHandler {
           if (m.provider == Provider.codex.value) {
             isCodexSession = true;
           }
-          if (m.slashCommands.isNotEmpty) {
+          final isCompletionSnapshot = m.subtype == 'supported_commands';
+          final hasCompletionEntities =
+              m.slashCommands.isNotEmpty ||
+              m.skills.isNotEmpty ||
+              m.apps.isNotEmpty ||
+              m.plugins.isNotEmpty;
+          if (isCompletionSnapshot || hasCompletionEntities) {
             commands = _buildCommandList(
               m.slashCommands,
               m.skills,
               m.skillMetadata,
               m.apps,
               m.appMetadata,
-              includeDollarEntities: isCodexSession,
-            );
-          } else if (m.skills.isNotEmpty || m.apps.isNotEmpty) {
-            commands = _buildCommandList(
-              const [],
-              m.skills,
-              m.skillMetadata,
-              m.apps,
-              m.appMetadata,
+              plugins: m.plugins,
+              pluginMetadata: m.pluginMetadata,
               includeDollarEntities: isCodexSession,
             );
           }
@@ -640,8 +667,19 @@ class ChatMessageHandler {
         if (m is SystemMessage && m.projectPath?.trim().isNotEmpty == true) {
           projectPath = m.projectPath;
         }
+        if (m is SystemMessage) {
+          if (m.model?.trim().isNotEmpty == true) {
+            codexModel = m.model;
+          }
+          final effort = reasoningEffortByValue(m.modelReasoningEffort);
+          if (effort != null) codexModelReasoningEffort = effort;
+          if (m.serviceTier != null) {
+            codexSpeed = codexSpeedFromRaw(m.serviceTier);
+          }
+        }
         // Track pending permission request
         if (m is PermissionRequestMessage) {
+          if (ignoredToolUseIds.contains(m.toolUseId)) continue;
           if (m.usesAskUserUi) {
             // Codex may send question-based prompts directly as permission_request.
             lastAskToolUseId = m.toolUseId;
@@ -654,9 +692,18 @@ class ChatMessageHandler {
         if (m is AssistantServerMessage) {
           for (final content in m.message.content) {
             if (content is ToolUseContent &&
-                content.name == 'AskUserQuestion') {
-              lastAskToolUseId = content.id;
-              lastAskInput = content.input;
+                content.name == 'AskUserQuestion' &&
+                !ignoredToolUseIds.contains(content.id)) {
+              if (hasRequestUserInputQuestions(content.input)) {
+                lastAskToolUseId = content.id;
+                lastAskInput = content.input;
+              } else {
+                pendingPermissions[content.id] = PermissionRequestMessage(
+                  toolUseId: content.id,
+                  toolName: content.name,
+                  input: content.input,
+                );
+              }
             }
           }
         }
@@ -702,6 +749,9 @@ class ChatMessageHandler {
       askInput: isWaiting ? lastAskInput : null,
       claudeSessionId: claudeSessionId,
       projectPath: projectPath,
+      codexModel: codexModel,
+      codexModelReasoningEffort: codexModelReasoningEffort,
+      codexSpeed: codexSpeed,
       queuedInput: queuedInput,
       clearQueuedInput: clearQueuedInput,
     );
@@ -729,16 +779,19 @@ class ChatMessageHandler {
     bool? planMode;
     String? codexModel;
     ReasoningEffort? codexModelReasoningEffort;
+    CodexSpeed? codexSpeed;
     bool hasExecutionSignals(SystemMessage message) =>
         message.executionMode != null ||
         message.permissionMode != null ||
         message.approvalPolicy != null;
     bool hasPlanSignals(SystemMessage message) =>
         message.planMode != null || message.permissionMode != null;
+    final isCompletionSnapshot = subtype == 'supported_commands';
     if ((subtype == 'init' ||
             subtype == 'session_created' ||
-            subtype == 'supported_commands') &&
-        (slashCommands.isNotEmpty ||
+            isCompletionSnapshot) &&
+        (isCompletionSnapshot ||
+            slashCommands.isNotEmpty ||
             skills.isNotEmpty ||
             apps.isNotEmpty ||
             plugins.isNotEmpty)) {
@@ -815,6 +868,9 @@ class ChatMessageHandler {
       codexModelReasoningEffort = reasoningEffortByValue(
         msg.modelReasoningEffort,
       );
+      if (msg.serviceTier != null) {
+        codexSpeed = codexSpeedFromRaw(msg.serviceTier);
+      }
     }
     // Extract claudeSessionId from session_created or init messages.
     // Prefer the full Claude CLI UUID (claudeSessionId) over the Bridge's
@@ -840,6 +896,7 @@ class ChatMessageHandler {
       codexPermissionsMode: codexPermissionsMode,
       codexModel: codexModel,
       codexModelReasoningEffort: codexModelReasoningEffort,
+      codexSpeed: codexSpeed,
       planMode: planMode,
       inPlanMode: inPlanMode,
       slashCommands: commands,
@@ -865,31 +922,8 @@ class ChatMessageHandler {
       currentStreaming = null;
       effects.add(ChatSideEffect.clearPlanFeedback);
     }
-    final entries = <ChatEntry>[ServerChatEntry(msg)];
-
-    // Fallback: if the last assistant message was lost in state (e.g. history
-    // replace race), re-inject it with the same id so dedup handles it.
-    if (subtype == 'success' && msg is ResultMessage) {
-      final resultText = msg.result;
-      final lastId = _lastAssistantId;
-      if (resultText != null && resultText.trim().isNotEmpty && lastId != null && lastId.isNotEmpty) {
-        entries.add(
-          ServerChatEntry(
-            AssistantServerMessage(
-              message: AssistantMessage(
-                id: lastId,
-                role: 'assistant',
-                content: [TextContent(text: resultText)],
-                model: '',
-              ),
-            ),
-          ),
-        );
-      }
-    }
-
     return ChatStateUpdate(
-      entriesToAdd: entries,
+      entriesToAdd: [ServerChatEntry(msg)],
       status: isStopped ? ProcessStatus.idle : null,
       costDelta: cost,
       resetPending: isStopped,
@@ -903,7 +937,6 @@ class ChatMessageHandler {
       markUserMessagesSent: true,
       sideEffects: effects,
     );
-
   }
 
   bool _isCodexPlanUpdateMessage(AssistantMessage message) {

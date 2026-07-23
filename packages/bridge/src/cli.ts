@@ -5,6 +5,10 @@ import { startServer } from "./index.js";
 import { getPackageVersion } from "./version.js";
 import { hasFlag, parseCliArgs, parseFlag } from "./cli-args.js";
 
+function startupErrorMessage(err: unknown): string {
+  return err instanceof Error ? err.message : String(err);
+}
+
 const args = process.argv.slice(2);
 const parsed = parseCliArgs(args);
 
@@ -38,12 +42,15 @@ Options:
 Setup options:
       --uninstall       Remove the registered service
       setup persists --port, --host, --api-key, --public-ws-url,
-      --no-mdns, Codex app-server options, and BRIDGE_ALLOWED_DIRS
+      --no-mdns, Codex app-server options, BRIDGE_ALLOWED_DIRS, and
+      BRIDGE_CODEX_ASSIST_MODEL / BRIDGE_CODEX_ASSIST_REASONING_EFFORT
 
 Configuration can also be provided with BRIDGE_PORT, BRIDGE_HOST,
 BRIDGE_API_KEY, BRIDGE_ALLOWED_DIRS, BRIDGE_PUBLIC_WS_URL, and
 BRIDGE_DISABLE_MDNS. Codex app-server configuration can be provided with
-BRIDGE_CODEX_APP_SERVER_MODE and BRIDGE_CODEX_SHARED_APP_SERVER_URL.`);
+BRIDGE_CODEX_APP_SERVER_MODE and BRIDGE_CODEX_SHARED_APP_SERVER_URL.
+Codex assist calls can be configured with BRIDGE_CODEX_ASSIST_MODEL and
+BRIDGE_CODEX_ASSIST_REASONING_EFFORT.`);
 }
 
 if (parsed.helpRequested) {
@@ -128,7 +135,7 @@ if (parsed.helpRequested) {
   const codexAppServerPort = parseFlag(parsed, "codex-app-server-port");
   const codexAppServerUrl = parseFlag(parsed, "codex-app-server-url");
 
-  if (port) process.env.BRIDGE_PORT = port;
+  if (port !== undefined) process.env.BRIDGE_PORT = port;
   if (host) process.env.BRIDGE_HOST = host;
   if (apiKey) process.env.BRIDGE_API_KEY = apiKey;
   if (publicWsUrl) process.env.BRIDGE_PUBLIC_WS_URL = publicWsUrl;
@@ -145,5 +152,8 @@ if (parsed.helpRequested) {
   }
   if (hasFlag(parsed, "no-mdns")) process.env.BRIDGE_DISABLE_MDNS = "1";
 
-  startServer();
+  startServer().catch((err) => {
+    console.error(`[bridge] Failed to start: ${startupErrorMessage(err)}`);
+    process.exit(1);
+  });
 }

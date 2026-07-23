@@ -38,6 +38,18 @@ class AppLocalizationsEn extends AppLocalizations {
   String get renameSession => 'Rename Session';
 
   @override
+  String get pin => 'Pin session';
+
+  @override
+  String get unpin => 'Unpin session';
+
+  @override
+  String get pinProject => 'Pin project';
+
+  @override
+  String get unpinProject => 'Unpin project';
+
+  @override
   String get sessionNameHint => 'Session name';
 
   @override
@@ -47,7 +59,50 @@ class AppLocalizationsEn extends AppLocalizations {
   String get connect => 'Connect';
 
   @override
+  String toolSuggestionTitle(Object toolName) {
+    return 'Add $toolName to Codex?';
+  }
+
+  @override
+  String toolSuggestionInstall(Object toolName) {
+    return 'Install $toolName';
+  }
+
+  @override
+  String get toolSuggestionInstalling => 'Installing…';
+
+  @override
+  String get toolSuggestionNotNow => 'Not now';
+
+  @override
+  String get toolSuggestionAuthDescription =>
+      'Connect the required app, then confirm when you\'re done.';
+
+  @override
+  String toolSuggestionConnect(Object appName) {
+    return 'Connect $appName';
+  }
+
+  @override
+  String get toolSuggestionComplete => 'I\'ve finished connecting';
+
+  @override
+  String get toolSuggestionFailed => 'Installation failed';
+
+  @override
+  String get toolSuggestionOpenFailed => 'Could not open the connection page.';
+
+  @override
   String get copy => 'Copy';
+
+  @override
+  String get markdownLinkOpenFailed => 'Could not open this link.';
+
+  @override
+  String get markdownLinkUnsupported => 'This link type is not supported.';
+
+  @override
+  String get markdownFileUnavailable => 'This file cannot be previewed here.';
 
   @override
   String get copied => 'Copied';
@@ -877,6 +932,18 @@ class AppLocalizationsEn extends AppLocalizations {
   String get reasoningEffortXhighDesc => 'Most thorough, slowest';
 
   @override
+  String get reasoningEffortMaxDesc =>
+      'Maximum reasoning for the hardest problems';
+
+  @override
+  String get reasoningEffortUltraDesc =>
+      'Maximum reasoning with automatic task delegation';
+
+  @override
+  String get reasoningEffortModelSpecificDesc =>
+      'Model-specific reasoning level';
+
+  @override
   String get changePermissionModeTitle => 'Change Permission Mode';
 
   @override
@@ -926,6 +993,26 @@ class AppLocalizationsEn extends AppLocalizations {
   @override
   String get codexAutoReviewUnavailableDescription =>
       'Unavailable when approvals are disabled';
+
+  @override
+  String get guardianApprovalTitle => 'Auto Review approved';
+
+  @override
+  String get guardianApprovalMediumRisk => 'Medium risk';
+
+  @override
+  String get guardianApprovalHighRisk => 'High risk';
+
+  @override
+  String get guardianApprovalDetails => 'Details';
+
+  @override
+  String get guardianApprovalHideDetails => 'Hide details';
+
+  @override
+  String guardianApprovalAuthorization(String authorization) {
+    return 'Authorization: $authorization';
+  }
 
   @override
   String get enablePlanModeTitle => 'Enable Plan Mode';
@@ -1888,6 +1975,13 @@ class AppLocalizationsEn extends AppLocalizations {
       'Name Codex sessions automatically after the first agent response';
 
   @override
+  String get showExtendedCodexEfforts => 'Max / Ultra in Effort slider';
+
+  @override
+  String get showExtendedCodexEffortsSubtitle =>
+      'Show Max and Ultra on the slider when supported by the selected Codex model';
+
+  @override
   String get autoRenameClaudeSessions => 'Auto Rename (Claude)';
 
   @override
@@ -2174,7 +2268,13 @@ class AppLocalizationsEn extends AppLocalizations {
   String get supporterTitle => 'Supporter';
 
   @override
-  String get supporterMonthlyTitle => 'Monthly Supporter';
+  String get supporterMonthlyTitle => 'Supporter Monthly';
+
+  @override
+  String get supporterMonthlyPlusTitle => 'Supporter Monthly Plus';
+
+  @override
+  String get supporterSnackTitle => 'Snack Support';
 
   @override
   String get supporterCoffeeTitle => 'Buy Me a Drink';
@@ -2221,6 +2321,10 @@ class AppLocalizationsEn extends AppLocalizations {
   String get supporterMonthlyPerkLabel => 'Includes alternate app icon perks';
 
   @override
+  String get supporterSnackDescription =>
+      'If you feel like buying me a snack, I\'d really appreciate the support.';
+
+  @override
   String get supporterCoffeeDescription =>
       'If you feel like buying me a drink, I\'d really appreciate the support.';
 
@@ -2233,6 +2337,9 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get supporterActiveButton => 'Active';
+
+  @override
+  String get supporterSubscribedButton => 'Subscribed';
 
   @override
   String get supporterRestoreButton => 'Restore';
@@ -2267,6 +2374,11 @@ class AppLocalizationsEn extends AppLocalizations {
   @override
   String supporterSummaryOneTimeCount(int count) {
     return 'One-time ×$count';
+  }
+
+  @override
+  String supporterSummarySnackCount(int count) {
+    return 'Snacks ×$count';
   }
 
   @override
@@ -2426,4 +2538,7 @@ class AppLocalizationsEn extends AppLocalizations {
   @override
   String get exitPlanModeNotificationBody =>
       'The generated plan needs your review';
+
+  @override
+  String get renderErrorFallback => 'This content couldn\'t be displayed.';
 }

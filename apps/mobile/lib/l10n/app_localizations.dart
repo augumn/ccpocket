@@ -156,6 +156,30 @@ abstract class AppLocalizations {
   /// **'セッション名を変更'**
   String get renameSession;
 
+  /// No description provided for @pin.
+  ///
+  /// In ja, this message translates to:
+  /// **'セッションをピン留め'**
+  String get pin;
+
+  /// No description provided for @unpin.
+  ///
+  /// In ja, this message translates to:
+  /// **'セッションのピン留めを解除'**
+  String get unpin;
+
+  /// No description provided for @pinProject.
+  ///
+  /// In ja, this message translates to:
+  /// **'プロジェクトをピン留め'**
+  String get pinProject;
+
+  /// No description provided for @unpinProject.
+  ///
+  /// In ja, this message translates to:
+  /// **'プロジェクトのピン留めを解除'**
+  String get unpinProject;
+
   /// No description provided for @sessionNameHint.
   ///
   /// In ja, this message translates to:
@@ -174,11 +198,83 @@ abstract class AppLocalizations {
   /// **'接続'**
   String get connect;
 
+  /// No description provided for @toolSuggestionTitle.
+  ///
+  /// In ja, this message translates to:
+  /// **'Codex に {toolName} を追加しますか？'**
+  String toolSuggestionTitle(Object toolName);
+
+  /// No description provided for @toolSuggestionInstall.
+  ///
+  /// In ja, this message translates to:
+  /// **'{toolName} をインストール'**
+  String toolSuggestionInstall(Object toolName);
+
+  /// No description provided for @toolSuggestionInstalling.
+  ///
+  /// In ja, this message translates to:
+  /// **'インストール中…'**
+  String get toolSuggestionInstalling;
+
+  /// No description provided for @toolSuggestionNotNow.
+  ///
+  /// In ja, this message translates to:
+  /// **'今回はしない'**
+  String get toolSuggestionNotNow;
+
+  /// No description provided for @toolSuggestionAuthDescription.
+  ///
+  /// In ja, this message translates to:
+  /// **'必要なアプリを接続し、完了したら確認してください。'**
+  String get toolSuggestionAuthDescription;
+
+  /// No description provided for @toolSuggestionConnect.
+  ///
+  /// In ja, this message translates to:
+  /// **'{appName} を接続'**
+  String toolSuggestionConnect(Object appName);
+
+  /// No description provided for @toolSuggestionComplete.
+  ///
+  /// In ja, this message translates to:
+  /// **'接続が完了しました'**
+  String get toolSuggestionComplete;
+
+  /// No description provided for @toolSuggestionFailed.
+  ///
+  /// In ja, this message translates to:
+  /// **'インストールに失敗しました'**
+  String get toolSuggestionFailed;
+
+  /// No description provided for @toolSuggestionOpenFailed.
+  ///
+  /// In ja, this message translates to:
+  /// **'接続ページを開けませんでした。'**
+  String get toolSuggestionOpenFailed;
+
   /// No description provided for @copy.
   ///
   /// In ja, this message translates to:
   /// **'コピー'**
   String get copy;
+
+  /// No description provided for @markdownLinkOpenFailed.
+  ///
+  /// In ja, this message translates to:
+  /// **'リンクを開けませんでした。'**
+  String get markdownLinkOpenFailed;
+
+  /// No description provided for @markdownLinkUnsupported.
+  ///
+  /// In ja, this message translates to:
+  /// **'この種類のリンクには対応していません。'**
+  String get markdownLinkUnsupported;
+
+  /// No description provided for @markdownFileUnavailable.
+  ///
+  /// In ja, this message translates to:
+  /// **'このファイルはここではプレビューできません。'**
+  String get markdownFileUnavailable;
 
   /// No description provided for @copied.
   ///
@@ -1704,6 +1800,24 @@ abstract class AppLocalizations {
   /// **'最も丁寧、最も遅い'**
   String get reasoningEffortXhighDesc;
 
+  /// No description provided for @reasoningEffortMaxDesc.
+  ///
+  /// In ja, this message translates to:
+  /// **'最も難しい問題向けの最大推論'**
+  String get reasoningEffortMaxDesc;
+
+  /// No description provided for @reasoningEffortUltraDesc.
+  ///
+  /// In ja, this message translates to:
+  /// **'最大推論と自動タスク委譲'**
+  String get reasoningEffortUltraDesc;
+
+  /// No description provided for @reasoningEffortModelSpecificDesc.
+  ///
+  /// In ja, this message translates to:
+  /// **'モデル固有の推論レベル'**
+  String get reasoningEffortModelSpecificDesc;
+
   /// No description provided for @changePermissionModeTitle.
   ///
   /// In ja, this message translates to:
@@ -1781,6 +1895,42 @@ abstract class AppLocalizations {
   /// In ja, this message translates to:
   /// **'Never Ask では承認リクエストが発生しないため利用できません'**
   String get codexAutoReviewUnavailableDescription;
+
+  /// No description provided for @guardianApprovalTitle.
+  ///
+  /// In ja, this message translates to:
+  /// **'自動レビューで承認'**
+  String get guardianApprovalTitle;
+
+  /// No description provided for @guardianApprovalMediumRisk.
+  ///
+  /// In ja, this message translates to:
+  /// **'中リスク'**
+  String get guardianApprovalMediumRisk;
+
+  /// No description provided for @guardianApprovalHighRisk.
+  ///
+  /// In ja, this message translates to:
+  /// **'高リスク'**
+  String get guardianApprovalHighRisk;
+
+  /// No description provided for @guardianApprovalDetails.
+  ///
+  /// In ja, this message translates to:
+  /// **'詳細'**
+  String get guardianApprovalDetails;
+
+  /// No description provided for @guardianApprovalHideDetails.
+  ///
+  /// In ja, this message translates to:
+  /// **'詳細を閉じる'**
+  String get guardianApprovalHideDetails;
+
+  /// No description provided for @guardianApprovalAuthorization.
+  ///
+  /// In ja, this message translates to:
+  /// **'承認レベル: {authorization}'**
+  String guardianApprovalAuthorization(String authorization);
 
   /// No description provided for @enablePlanModeTitle.
   ///
@@ -3468,6 +3618,18 @@ abstract class AppLocalizations {
   /// **'最初のエージェント応答後に Codex セッションへ自動で名前を付ける'**
   String get autoRenameCodexSessionsSubtitle;
 
+  /// No description provided for @showExtendedCodexEfforts.
+  ///
+  /// In ja, this message translates to:
+  /// **'Effortスライダーに Max / Ultra を表示'**
+  String get showExtendedCodexEfforts;
+
+  /// No description provided for @showExtendedCodexEffortsSubtitle.
+  ///
+  /// In ja, this message translates to:
+  /// **'選択した Codex モデルが対応している場合、スライダーに Max と Ultra を追加します'**
+  String get showExtendedCodexEffortsSubtitle;
+
   /// No description provided for @autoRenameClaudeSessions.
   ///
   /// In ja, this message translates to:
@@ -4002,6 +4164,18 @@ abstract class AppLocalizations {
   /// **'月額サポーター'**
   String get supporterMonthlyTitle;
 
+  /// No description provided for @supporterMonthlyPlusTitle.
+  ///
+  /// In ja, this message translates to:
+  /// **'月額サポーター Plus'**
+  String get supporterMonthlyPlusTitle;
+
+  /// No description provided for @supporterSnackTitle.
+  ///
+  /// In ja, this message translates to:
+  /// **'おやつで応援'**
+  String get supporterSnackTitle;
+
   /// No description provided for @supporterCoffeeTitle.
   ///
   /// In ja, this message translates to:
@@ -4080,6 +4254,12 @@ abstract class AppLocalizations {
   /// **'アプリアイコン変更特典付き'**
   String get supporterMonthlyPerkLabel;
 
+  /// No description provided for @supporterSnackDescription.
+  ///
+  /// In ja, this message translates to:
+  /// **'おやつを1つおごる'**
+  String get supporterSnackDescription;
+
   /// No description provided for @supporterCoffeeDescription.
   ///
   /// In ja, this message translates to:
@@ -4103,6 +4283,12 @@ abstract class AppLocalizations {
   /// In ja, this message translates to:
   /// **'応援中'**
   String get supporterActiveButton;
+
+  /// No description provided for @supporterSubscribedButton.
+  ///
+  /// In ja, this message translates to:
+  /// **'購読中'**
+  String get supporterSubscribedButton;
 
   /// No description provided for @supporterRestoreButton.
   ///
@@ -4157,6 +4343,12 @@ abstract class AppLocalizations {
   /// In ja, this message translates to:
   /// **'単発 ×{count}'**
   String supporterSummaryOneTimeCount(int count);
+
+  /// No description provided for @supporterSummarySnackCount.
+  ///
+  /// In ja, this message translates to:
+  /// **'おやつ ×{count}'**
+  String supporterSummarySnackCount(int count);
 
   /// No description provided for @supporterSummaryCoffeeCount.
   ///
@@ -4415,6 +4607,12 @@ abstract class AppLocalizations {
   /// In ja, this message translates to:
   /// **'作成したプランの確認が必要です'**
   String get exitPlanModeNotificationBody;
+
+  /// No description provided for @renderErrorFallback.
+  ///
+  /// In ja, this message translates to:
+  /// **'このコンテンツを表示できませんでした'**
+  String get renderErrorFallback;
 }
 
 class _AppLocalizationsDelegate

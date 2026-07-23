@@ -18,10 +18,26 @@
   },
   "rename": "重命名",
   "renameSession": "重命名会话",
+  "pin": "置顶会话",
+  "unpin": "取消置顶会话",
+  "pinProject": "置顶项目",
+  "unpinProject": "取消置顶项目",
   "sessionNameHint": "会话名称",
   "clearName": "清除名称",
   "connect": "连接",
+  "toolSuggestionTitle": "将 {toolName} 添加到 Codex？",
+  "toolSuggestionInstall": "安装 {toolName}",
+  "toolSuggestionInstalling": "正在安装…",
+  "toolSuggestionNotNow": "暂不安装",
+  "toolSuggestionAuthDescription": "连接所需的应用，完成后请确认。",
+  "toolSuggestionConnect": "连接 {appName}",
+  "toolSuggestionComplete": "连接已完成",
+  "toolSuggestionFailed": "安装失败",
+  "toolSuggestionOpenFailed": "无法打开连接页面。",
   "copy": "复制",
+  "markdownLinkOpenFailed": "无法打开此链接。",
+  "markdownLinkUnsupported": "不支持此类型的链接。",
+  "markdownFileUnavailable": "无法在此处预览此文件。",
   "copied": "已复制",
   "copiedToClipboard": "已复制到剪贴板",
   "lineCopied": "已复制此行",
@@ -278,6 +294,12 @@
   "codexAutoReview": "自动审查",
   "codexAutoReviewDescription": "让 Codex 自动审查审批请求",
   "codexAutoReviewUnavailableDescription": "关闭审批时不可用",
+  "guardianApprovalTitle": "自动审查已批准",
+  "guardianApprovalMediumRisk": "中等风险",
+  "guardianApprovalHighRisk": "高风险",
+  "guardianApprovalDetails": "详细信息",
+  "guardianApprovalHideDetails": "收起详细信息",
+  "guardianApprovalAuthorization": "授权级别：{authorization}",
   "codexPlanModeDescription": "先起草计划，再等待批准后执行",
   "enablePlanModeTitle": "启用 Plan Mode",
   "disablePlanModeTitle": "关闭 Plan Mode",
@@ -325,6 +347,9 @@
   "reasoningEffortMediumDesc": "速度与质量的平衡",
   "reasoningEffortHighDesc": "更深入的分析",
   "reasoningEffortXhighDesc": "最深入，最慢",
+  "reasoningEffortMaxDesc": "针对最难问题的最大推理深度",
+  "reasoningEffortUltraDesc": "最大推理并自动委派任务",
+  "reasoningEffortModelSpecificDesc": "模型特定的推理级别",
 
   "changeSandboxModeTitle": "更改沙箱模式",
   "changeSandboxModeBody": "切换到 {mode} 会重启当前会话。你的对话会被保留。",
@@ -811,6 +836,8 @@
   "showBridgeNameInSessionListSubtitle": "注册多个 Bridge 时，在会话列表中显示当前连接的 Bridge 名称。",
   "autoRenameCodexSessions": "自动 Rename (Codex)",
   "autoRenameCodexSessionsSubtitle": "在首次智能体回复后自动为 Codex 会话命名",
+  "showExtendedCodexEfforts": "在 Effort 滑块中显示 Max / Ultra",
+  "showExtendedCodexEffortsSubtitle": "当所选 Codex 模型支持时，在滑块中添加 Max 和 Ultra",
   "autoRenameClaudeSessions": "自动 Rename (Claude)",
   "autoRenameClaudeSessionsSubtitle": "在首次智能体回复后自动为 Claude 会话命名。使用 API Key 计费时会产生额外按量费用。",
   "newSessionTabCodex": "Codex",
@@ -987,6 +1014,8 @@
   "rateOnStoreAndroid": "在 Google Play 评分",
   "supporterTitle": "Supporter",
   "supporterMonthlyTitle": "每月支持",
+  "supporterMonthlyPlusTitle": "每月支持 Plus",
+  "supporterSnackTitle": "请吃份零食",
   "supporterCoffeeTitle": "请喝杯饮料",
   "supporterLunchTitle": "请吃顿午餐",
   "supporterStatusActive": "感谢你在支持 CC Pocket。",
@@ -1005,10 +1034,12 @@
   },
   "supporterMonthlyDescription": "如果你愿意持续支持，帮助这个应用继续改进，我会很开心。",
   "supporterMonthlyPerkLabel": "包含更换应用图标特典",
+  "supporterSnackDescription": "如果你想请我吃份零食，我会很感谢这份支持。",
   "supporterCoffeeDescription": "如果你想请我喝一杯饮料，我会很感谢这份支持。",
   "supporterLunchDescription": "如果你想请我吃一顿午餐，我会很感谢这份支持。",
   "supporterBuyButton": "支持",
   "supporterActiveButton": "支持中",
+  "supporterSubscribedButton": "已订阅",
   "supporterRestoreButton": "恢复购买",
   "supporterRetryButton": "重试",
   "supporterProductsUnavailable": "当前没有可用的支持选项。",
@@ -1029,6 +1060,12 @@
   },
   "supporterSummaryOneTimeCount": "单次 ×{count}",
   "@supporterSummaryOneTimeCount": {
+    "placeholders": {
+      "count": { "type": "int" }
+    }
+  },
+  "supporterSummarySnackCount": "零食 ×{count}",
+  "@supporterSummarySnackCount": {
     "placeholders": {
       "count": { "type": "int" }
     }
@@ -1100,5 +1137,6 @@
   "googleSearchSelectionAction": "用 Google 搜索",
   "approvalQuestionNotificationTitle": "有一个问题 - ccpocket",
   "approvalRequiredNotificationTitle": "等待审批 - ccpocket",
-  "exitPlanModeNotificationBody": "生成的计划需要你确认"
+  "exitPlanModeNotificationBody": "生成的计划需要你确认",
+  "renderErrorFallback": "无法显示此内容。"
 }

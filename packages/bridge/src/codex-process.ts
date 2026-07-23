@@ -3,7 +3,12 @@ import { randomUUID } from "node:crypto";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { rm, writeFile } from "node:fs/promises";
-import type { ServerMessage, ProcessStatus } from "./parser.js";
+import type {
+  CodexGoal,
+  CodexGoalStatus,
+  ServerMessage,
+  ProcessStatus,
+} from "./parser.js";
 import {
   createCodexTransport,
   buildCodexSpawnSpec,
@@ -16,6 +21,7 @@ export { buildCodexSpawnSpec };
 
 const DEFAULT_CODEX_MODEL = "gpt-5.5";
 const COMPLETION_FETCH_COOLDOWN_MS = 1000;
+const UNKNOWN_AGENT_ITEM_ID = "__unknown_agent_message__";
 const DEFAULT_CODEX_RATE_LIMIT_MAX_RETRIES = 5;
 const DEFAULT_CODEX_RATE_LIMIT_BASE_DELAY_MS = 10_000;
 const DEFAULT_CODEX_RATE_LIMIT_MAX_DELAY_MS = 10_000;
@@ -36,13 +42,8 @@ export interface CodexStartOptions {
   codexPermissionsMode?: "default" | "autoReview" | "fullAccess" | "custom";
   sandboxMode?: "read-only" | "workspace-write" | "danger-full-access";
   model?: string;
-  modelReasoningEffort?:
-    | "none"
-    | "minimal"
-    | "low"
-    | "medium"
-    | "high"
-    | "xhigh";
+  modelReasoningEffort?: string;
+  serviceTier?: string;
   networkAccessEnabled?: boolean;
   webSearchMode?: "disabled" | "cached" | "live";
   collaborationMode?: "plan" | "default";
@@ -57,7 +58,6 @@ export interface CodexProcessEvents {
 
 interface PendingInput {
   text: string;
-  synthetic?: "codex_rate_limit_retry" | "codex_rate_limit_continuation";
   images?: Array<{
     base64: string;
     mimeType: string;
@@ -70,6 +70,7 @@ interface PendingInput {
     name: string;
     path: string;
   }>;
+  synthetic?: "codex_rate_limit_retry" | "codex_rate_limit_continuation";
 }
 
 /** Skill metadata returned by the Codex `skills/list` RPC. */
@@ -161,7 +162,16 @@ interface PendingUserInputRequest {
     | "questions"
     | "elicitation_form"
     | "elicitation_url"
-    | "elicitation_approval";
+    | "elicitation_approval"
+    | "tool_suggestion";
+}
+
+interface ToolSuggestionApp {
+  id: string;
+  name: string;
+  description?: string;
+  installUrl?: string;
+  category?: string;
 }
 
 interface PendingTurnCompletion {
@@ -183,25 +193,6 @@ interface RpcError {
   };
 }
 
-interface CodexErrorInfo {
-  message: string;
-  statusCode?: number;
-  code?: string | number;
-  type?: string;
-}
-
-class CodexRpcError extends Error {
-  readonly code?: number;
-  readonly data?: unknown;
-
-  constructor(message: string, options?: { code?: number; data?: unknown }) {
-    super(message);
-    this.name = "CodexRpcError";
-    this.code = options?.code;
-    this.data = options?.data;
-  }
-}
-
 interface JsonRpcEnvelope {
   id?: number | string;
   method?: string;
@@ -221,6 +212,7 @@ interface CodexResolvedSettings {
   codexPermissionsMode?: string;
   sandboxMode?: string;
   modelReasoningEffort?: string;
+  serviceTier?: string;
   networkAccessEnabled?: boolean;
   webSearchMode?: string;
 }
@@ -234,11 +226,24 @@ export interface CodexModelMetadata {
   model: string;
   supportedReasoningEfforts: string[];
   defaultReasoningEffort?: string;
+  supportedServiceTiers: string[];
+  defaultServiceTier?: string;
 }
 
 interface CodexModelListResponse {
   data?: unknown[];
   nextCursor?: unknown;
+}
+
+class CodexRpcError extends Error {
+  constructor(
+    message: string,
+    readonly code?: number,
+    readonly data?: unknown,
+  ) {
+    super(message);
+    this.name = "CodexRpcError";
+  }
 }
 
 function isCodexCliNotFoundError(err: Error): boolean {
@@ -302,7 +307,7 @@ function codexRateLimitContinuePrompt(): string {
   );
 }
 
-function codexRateLimitRetryDelayMs(attempt: number): number {
+function codexRateLimitRetryDelayMs(_attempt: number): number {
   const baseDelay = parsePositiveIntEnv(
     "BRIDGE_CODEX_RATE_LIMIT_BASE_DELAY_MS",
     DEFAULT_CODEX_RATE_LIMIT_BASE_DELAY_MS,
@@ -326,6 +331,13 @@ function numberFromUnknown(value: unknown): number | undefined {
 function codexErrorCodeFromUnknown(value: unknown): string | number | undefined {
   if (typeof value === "number" || typeof value === "string") return value;
   return undefined;
+}
+
+interface CodexErrorInfo {
+  message: string;
+  statusCode?: number;
+  code?: string | number;
+  type?: string;
 }
 
 function parseCodexErrorMessage(message: string): CodexErrorInfo | null {
@@ -442,11 +454,11 @@ export class CodexProcess extends EventEmitter<CodexProcessEvents> {
   private startModel: string | undefined;
 
   private inputResolve: ((input: PendingInput) => void) | null = null;
+  private pendingRateLimitInput: PendingInput | null = null;
   private pendingTurnId: string | null = null;
   private pendingTurnCompletion: PendingTurnCompletion | null = null;
-  private pendingRateLimitInput: PendingInput | null = null;
-  private pendingRateLimitTimer: ReturnType<typeof setTimeout> | null = null;
   private pendingTurnStartTimer: ReturnType<typeof setTimeout> | null = null;
+  private pendingRateLimitTimer: ReturnType<typeof setTimeout> | null = null;
   private rateLimitRecoveryAttempt = 0;
   private pendingApprovals = new Map<string, PendingApproval>();
   private pendingUserInputs = new Map<string, PendingUserInputRequest>();
@@ -460,12 +472,15 @@ export class CodexProcess extends EventEmitter<CodexProcessEvents> {
   private _skills: CodexSkillMetadata[] = [];
   /** Full app metadata from the last `app/list` response. */
   private _apps: CodexAppMetadata[] = [];
+  /** Full plugin metadata from the last `plugin/list` response. */
+  private _plugins: CodexPluginMetadata[] = [];
   /** Project path stored for re-fetching skills on `skills/changed`. */
   private _projectPath: string | null = null;
   /** Prevent redundant completion fetch storms from repeated change notifications. */
   private _completionFetchInFlight: Promise<void> | null = null;
   private _lastCompletionEntitiesSignature: string | null = null;
   private _completionFetchCooldownUntil = 0;
+  private _launchStartedAt = 0;
 
   /** Expose skill metadata so session/websocket can access it. */
   get skills(): CodexSkillMetadata[] {
@@ -497,9 +512,14 @@ export class CodexProcess extends EventEmitter<CodexProcessEvents> {
   private _runtimeModelReasoningEffort:
     | CodexStartOptions["modelReasoningEffort"]
     | undefined;
+  private _runtimeServiceTier: string | null | undefined;
   private lastPlanItemText: string | null = null;
   /** Last assistant text message — used as `result` in completion notification. */
   private lastResultText: string | null = null;
+  /** Agent text received as deltas but not yet confirmed by item/completed. */
+  private readonly pendingAgentTextByItemId = new Map<string, string>();
+  /** Suppresses late item/completed events after synthetic fallbacks. */
+  private readonly syntheticAgentTextByItemId = new Map<string, string>();
   private pendingPlanCompletion: {
     toolUseId: string;
     planText: string;
@@ -570,6 +590,10 @@ export class CodexProcess extends EventEmitter<CodexProcessEvents> {
     return this._runtimeModelReasoningEffort;
   }
 
+  get serviceTier(): string {
+    return this._runtimeServiceTier ?? "standard";
+  }
+
   /**
    * Update Codex model at runtime.
    * Takes effect on the next `turn/start` RPC call.
@@ -593,6 +617,12 @@ export class CodexProcess extends EventEmitter<CodexProcessEvents> {
           ? ` (${this._runtimeModelReasoningEffort})`
           : ""),
     );
+  }
+
+  /** Update Codex speed for the next turn without restarting the thread. */
+  setServiceTier(serviceTier: string): void {
+    this._runtimeServiceTier = normalizeServiceTier(serviceTier);
+    console.log(`[codex-process] Speed changed to: ${this.serviceTier}`);
   }
 
   /**
@@ -642,6 +672,49 @@ export class CodexProcess extends EventEmitter<CodexProcessEvents> {
       threadId: this._threadId,
       name,
     });
+  }
+
+  /** Read the persisted goal attached to this Codex thread. */
+  async getGoal(): Promise<CodexGoal | null> {
+    if (!this._threadId) {
+      throw new Error("No thread ID available for goal lookup");
+    }
+    const response = (await this.request("thread/goal/get", {
+      threadId: this._threadId,
+    })) as Record<string, unknown>;
+    return response.goal == null ? null : parseCodexGoal(response.goal);
+  }
+
+  /** Create or update the persisted goal attached to this Codex thread. */
+  async setGoal(update: {
+    objective?: string;
+    status?: CodexGoalStatus;
+  }): Promise<CodexGoal> {
+    if (!this._threadId) {
+      throw new Error("No thread ID available for goal update");
+    }
+    const response = (await this.request("thread/goal/set", {
+      threadId: this._threadId,
+      ...(update.objective !== undefined
+        ? { objective: update.objective.trim() }
+        : {}),
+      ...(update.status !== undefined ? { status: update.status } : {}),
+    })) as Record<string, unknown>;
+    return parseCodexGoal(response.goal);
+  }
+
+  /** Remove the persisted goal attached to this Codex thread. */
+  async clearGoal(): Promise<boolean> {
+    if (!this._threadId) {
+      throw new Error("No thread ID available for goal clear");
+    }
+    const response = (await this.request("thread/goal/clear", {
+      threadId: this._threadId,
+    })) as Record<string, unknown>;
+    if (typeof response.cleared !== "boolean") {
+      throw new Error("thread/goal/clear returned an invalid response");
+    }
+    return response.cleared;
   }
 
   /**
@@ -784,6 +857,13 @@ export class CodexProcess extends EventEmitter<CodexProcessEvents> {
                 : typeof raw.default_reasoning_effort === "string"
                   ? raw.default_reasoning_effort
                   : undefined,
+            supportedServiceTiers: extractServiceTiers(raw),
+            defaultServiceTier:
+              typeof raw.defaultServiceTier === "string"
+                ? raw.defaultServiceTier
+                : typeof raw.default_service_tier === "string"
+                  ? raw.default_service_tier
+                  : undefined,
           });
         }
       }
@@ -827,14 +907,15 @@ export class CodexProcess extends EventEmitter<CodexProcessEvents> {
 
   stop(): void {
     this.stopped = true;
-    this.clearPendingRateLimitRetry();
-    this.resetRateLimitRecovery();
 
     if (this.inputResolve) {
       this.inputResolve({ text: "" });
       this.inputResolve = null;
     }
 
+    this.clearPendingTurnStartTimer();
+    this.clearPendingRateLimitRetry();
+    this.resetRateLimitRecovery();
     this.pendingApprovals.clear();
     this.pendingUserInputs.clear();
     this.cleanupSteerTempPaths();
@@ -859,11 +940,20 @@ export class CodexProcess extends EventEmitter<CodexProcessEvents> {
     this._agentRole = null;
     this.pendingTurnId = null;
     this.pendingTurnCompletion = null;
+    this.clearPendingTurnStartTimer();
+    this.clearPendingRateLimitRetry();
+    this.resetRateLimitRecovery();
     this.pendingApprovals.clear();
     this.pendingUserInputs.clear();
     this.cleanupSteerTempPaths();
     this.lastTokenUsage = null;
     this.startModel = sanitizeCodexModel(options?.model);
+    this._runtimeModel = undefined;
+    this._runtimeModelReasoningEffort = options?.modelReasoningEffort;
+    this._runtimeServiceTier =
+      options?.serviceTier === undefined
+        ? undefined
+        : normalizeServiceTier(options.serviceTier);
     this._approvalPolicy = options?.approvalPolicy;
     this._approvalsReviewer =
       options?.approvalsReviewer === undefined
@@ -873,10 +963,15 @@ export class CodexProcess extends EventEmitter<CodexProcessEvents> {
     this._collaborationMode = options?.collaborationMode ?? "default";
     this.lastPlanItemText = null;
     this.lastResultText = null;
+    this._skills = [];
+    this._apps = [];
+    this._plugins = [];
+    this._lastCompletionEntitiesSignature = null;
+    this._launchStartedAt = Date.now();
+    this.pendingAgentTextByItemId.clear();
+    this.syntheticAgentTextByItemId.clear();
     this.pendingPlanCompletion = null;
     this._pendingPlanInput = null;
-    this.clearPendingRateLimitRetry();
-    this.resetRateLimitRecovery();
     this._projectPath = projectPath;
   }
 
@@ -946,27 +1041,6 @@ export class CodexProcess extends EventEmitter<CodexProcessEvents> {
     });
   }
 
-  private resolveManualInput(input: PendingInput, caller: string): void {
-    if (this.inputResolve) {
-      this.clearPendingRateLimitRetry();
-      this.resetRateLimitRecovery();
-      const resolve = this.inputResolve;
-      this.inputResolve = null;
-      resolve(input);
-      return;
-    }
-    if (this.pendingRateLimitInput || this.pendingRateLimitTimer) {
-      if (this.pendingRateLimitTimer) {
-        clearTimeout(this.pendingRateLimitTimer);
-        this.pendingRateLimitTimer = null;
-      }
-      this.resetRateLimitRecovery();
-      this.pendingRateLimitInput = input;
-      return;
-    }
-    console.error(`[codex-process] No pending input resolver for ${caller}`);
-  }
-
   sendInput(text: string): void {
     this.resolveManualInput({ text }, "sendInput");
   }
@@ -1002,6 +1076,26 @@ export class CodexProcess extends EventEmitter<CodexProcessEvents> {
       },
       "sendInputStructured",
     );
+  }
+
+  private resolveManualInput(input: PendingInput, caller: string): void {
+    if (this.inputResolve) {
+      this.clearPendingRateLimitRetry();
+      this.resetRateLimitRecovery();
+      const resolve = this.inputResolve;
+      this.inputResolve = null;
+      resolve(input);
+      return;
+    }
+
+    if (this.pendingRateLimitInput || this.pendingRateLimitTimer) {
+      this.clearPendingRateLimitRetry();
+      this.resetRateLimitRecovery();
+      this.pendingRateLimitInput = input;
+      return;
+    }
+
+    console.error(`[codex-process] No pending input resolver for ${caller}`);
   }
 
   async steerInputStructured(
@@ -1153,6 +1247,104 @@ export class CodexProcess extends EventEmitter<CodexProcessEvents> {
     }
   }
 
+  /**
+   * Install a plugin or begin connector authentication proposed by Codex.
+   * The elicitation remains pending while external app authentication is
+   * required, and is accepted only after installation is complete.
+   */
+  async installToolSuggestion(toolUseId: string): Promise<void> {
+    const pending = this.resolvePendingUserInput(toolUseId);
+    if (!pending || pending.kind !== "tool_suggestion") {
+      throw new Error("No pending tool suggestion found");
+    }
+
+    const currentState = pending.input.installState;
+    if (currentState === "installing") return;
+    if (currentState === "needs_auth") return;
+
+    const meta = asRecord(pending.input._meta) ?? {};
+    const toolType = stringValue(meta.tool_type) ?? "";
+    const suggestType = stringValue(meta.suggest_type) ?? "";
+    if (suggestType !== "install") {
+      this.updateToolSuggestion(pending, {
+        installState: "failed",
+        installError: `Unsupported suggestion action: ${suggestType || "unknown"}`,
+      });
+      return;
+    }
+
+    if (toolType === "connector") {
+      const installUrl = stringValue(meta.install_url);
+      if (!installUrl) {
+        this.updateToolSuggestion(pending, {
+          installState: "failed",
+          installError: "This connector did not provide an installation URL.",
+        });
+        return;
+      }
+      this.updateToolSuggestion(pending, { installState: "needs_auth" });
+      return;
+    }
+
+    if (toolType !== "plugin") {
+      this.updateToolSuggestion(pending, {
+        installState: "failed",
+        installError: `Unsupported tool type: ${toolType || "unknown"}`,
+      });
+      return;
+    }
+
+    const toolId = stringValue(meta.tool_id) ?? "";
+    const remotePluginId = stringValue(meta.remote_plugin_id);
+    const separator = toolId.lastIndexOf("@");
+    const fallbackPluginName =
+      separator > 0 ? toolId.slice(0, separator) : toolId;
+    const remoteMarketplaceName =
+      separator > 0 ? toolId.slice(separator + 1) : "openai-curated-remote";
+    const pluginName = remotePluginId ?? fallbackPluginName;
+    if (!pluginName) {
+      this.updateToolSuggestion(pending, {
+        installState: "failed",
+        installError: "This plugin did not provide an installation identifier.",
+      });
+      return;
+    }
+
+    this.updateToolSuggestion(pending, {
+      installState: "installing",
+      installError: null,
+    });
+
+    try {
+      const result = (await this.request("plugin/install", {
+        remoteMarketplaceName,
+        pluginName,
+      })) as Record<string, unknown>;
+
+      // The user may reject the suggestion while installation is in flight.
+      if (this.pendingUserInputs.get(toolUseId) !== pending) return;
+
+      const appsNeedingAuth = normalizeToolSuggestionApps(
+        result.appsNeedingAuth,
+      );
+      if (appsNeedingAuth.length > 0) {
+        this.updateToolSuggestion(pending, {
+          installState: "needs_auth",
+          appsNeedingAuth,
+        });
+        return;
+      }
+
+      this.resolveToolSuggestion(pending, "Installed");
+    } catch (err) {
+      if (this.pendingUserInputs.get(toolUseId) !== pending) return;
+      this.updateToolSuggestion(pending, {
+        installState: "failed",
+        installError: err instanceof Error ? err.message : String(err),
+      });
+    }
+  }
+
   getPendingPermission(
     toolUseId?: string,
   ):
@@ -1225,6 +1417,15 @@ export class CodexProcess extends EventEmitter<CodexProcessEvents> {
     const pending = this.resolvePendingUserInput(toolUseId);
     if (!pending) return false;
 
+    if (pending.kind === "tool_suggestion") {
+      if (pending.input.installState === "needs_auth") {
+        this.resolveToolSuggestion(pending, "Installed");
+      } else {
+        void this.installToolSuggestion(pending.toolUseId);
+      }
+      return true;
+    }
+
     this.pendingUserInputs.delete(pending.toolUseId);
     this.respondToServerRequest(
       pending.requestId,
@@ -1236,6 +1437,39 @@ export class CodexProcess extends EventEmitter<CodexProcessEvents> {
       this.setStatus("running");
     }
     return true;
+  }
+
+  private updateToolSuggestion(
+    pending: PendingUserInputRequest,
+    changes: Record<string, unknown>,
+  ): void {
+    pending.input = { ...pending.input, ...changes };
+    this.emitMessage({
+      type: "permission_request",
+      toolUseId: pending.toolUseId,
+      toolName: "ToolSuggestion",
+      input: { ...pending.input },
+    });
+  }
+
+  private resolveToolSuggestion(
+    pending: PendingUserInputRequest,
+    toolResult: string,
+  ): void {
+    this.pendingUserInputs.delete(pending.toolUseId);
+    this.respondToServerRequest(pending.requestId, {
+      action: "accept",
+      content: null,
+      _meta: null,
+    });
+    this.emitMessage({
+      type: "permission_resolved",
+      toolUseId: pending.toolUseId,
+    });
+    this.emitToolResult(pending.toolUseId, toolResult);
+    if (this.pendingApprovals.size === 0 && this.pendingUserInputs.size === 0) {
+      this.setStatus("running");
+    }
   }
 
   /**
@@ -1368,6 +1602,9 @@ export class CodexProcess extends EventEmitter<CodexProcessEvents> {
         ? normalizeReasoningEffort(options.modelReasoningEffort)
         : undefined;
       if (requestedModel) threadParams.model = requestedModel;
+      if (options?.serviceTier !== undefined) {
+        threadParams.serviceTier = normalizeServiceTier(options.serviceTier);
+      }
       if (requestedReasoningEffort) {
         // app-server applies reasoning effort on thread start via config overrides,
         // not the top-level thread/start payload.
@@ -1478,6 +1715,9 @@ export class CodexProcess extends EventEmitter<CodexProcessEvents> {
           : requestedReasoningEffort
             ? { modelReasoningEffort: requestedReasoningEffort }
           : {}),
+        serviceTier: normalizeServiceTierForClient(
+          resolvedSettings.serviceTier ?? options?.serviceTier,
+        ),
         ...(resolvedSettings.networkAccessEnabled !== undefined
           ? { networkAccessEnabled: resolvedSettings.networkAccessEnabled }
           : {}),
@@ -1491,7 +1731,7 @@ export class CodexProcess extends EventEmitter<CodexProcessEvents> {
       });
       this.setStatus("idle");
 
-      // Fetch skills/apps in background (non-blocking)
+      // Fetch completion entities in background (non-blocking).
       this._projectPath = projectPath;
       setTimeout(() => {
         if (!this.stopped) {
@@ -1662,26 +1902,6 @@ export class CodexProcess extends EventEmitter<CodexProcessEvents> {
             setTimeout(() => resolve(null), TIMEOUT_MS),
           ),
         ]) as Promise<T | null>;
-      const skillsResult = (await Promise.race([
-        this.request("skills/list", { cwds: [projectPath] }),
-        new Promise<null>((resolve) =>
-          setTimeout(() => resolve(null), TIMEOUT_MS),
-        ),
-      ])) as { data?: Array<{ cwd: string; skills: SkillRaw[] }> } | null;
-      const appsResult = (await Promise.race([
-        this.request("app/list", {
-          cursor: null,
-          limit: 100,
-          threadId: this._threadId ?? undefined,
-          forceRefetch: false,
-        }),
-        new Promise<null>((resolve) =>
-          setTimeout(() => resolve(null), TIMEOUT_MS),
-        ),
-      ])) as { data?: AppRaw[] } | null;
-      const pluginsResult = await requestOrNull<{
-        marketplaces?: PluginMarketplaceRaw[];
-      }>("plugin/list", { cwds: [projectPath] });
       const optionalString = (value: unknown): string | undefined =>
         typeof value === "string" ? value : undefined;
       const optionalFirstString = (value: unknown): string | undefined => {
@@ -1690,13 +1910,27 @@ export class CodexProcess extends EventEmitter<CodexProcessEvents> {
         return value.find((entry): entry is string => typeof entry === "string");
       };
 
-      const skills: string[] = [];
-      const skillMetadata: CodexSkillMetadata[] = [];
-      if (skillsResult?.data) {
-        for (const entry of skillsResult.data) {
-          for (const skill of entry.skills) {
-            if (skill.enabled) {
-              skills.push(skill.name);
+      const skillsRequest = requestOrNull<{
+        data?: Array<{ cwd: string; skills: SkillRaw[] }>;
+      }>("skills/list", { cwds: [projectPath] });
+      const appsRequest = requestOrNull<{ data?: AppRaw[] }>("app/list", {
+        cursor: null,
+        limit: 100,
+        threadId: this._threadId ?? undefined,
+        forceRefetch: false,
+      });
+      const pluginsRequest = requestOrNull<{
+        marketplaces?: PluginMarketplaceRaw[];
+      }>("plugin/list", { cwds: [projectPath] });
+      let skillsReady = false;
+
+      await Promise.all([
+        skillsRequest.then((skillsResult) => {
+          if (this.stopped || skillsResult === null) return;
+          const skillMetadata: CodexSkillMetadata[] = [];
+          for (const entry of skillsResult.data ?? []) {
+            for (const skill of entry.skills) {
+              if (!skill.enabled) continue;
               skillMetadata.push({
                 name: skill.name,
                 path: skill.path,
@@ -1713,80 +1947,107 @@ export class CodexProcess extends EventEmitter<CodexProcessEvents> {
               });
             }
           }
-        }
-      }
-      this._skills = skillMetadata;
-      const appMetadata = (appsResult?.data ?? [])
-        .filter((app) => (app.isAccessible ?? true) && (app.isEnabled ?? true))
-        .map((app) => ({
-          id: app.id,
-          name: app.name,
-          description: app.description,
-          installUrl: app.installUrl ?? undefined,
-          isAccessible: app.isAccessible ?? true,
-          isEnabled: app.isEnabled ?? true,
-        }));
-      this._apps = appMetadata;
-      const pluginMetadata: CodexPluginMetadata[] = [];
-      for (const marketplace of pluginsResult?.marketplaces ?? []) {
-        for (const plugin of marketplace.plugins ?? []) {
-          if (!plugin.installed || !plugin.enabled) continue;
-          pluginMetadata.push({
-            id: plugin.id,
-            name: plugin.name,
-            path: `plugin://${plugin.id}`,
-            marketplaceName: marketplace.name,
-            marketplacePath: marketplace.path ?? undefined,
-            installed: plugin.installed,
-            enabled: plugin.enabled,
-            displayName: optionalString(plugin.interface?.displayName),
-            shortDescription: optionalString(plugin.interface?.shortDescription),
-            longDescription: optionalString(plugin.interface?.longDescription),
-            defaultPrompt: optionalFirstString(plugin.interface?.defaultPrompt),
-            brandColor: optionalString(plugin.interface?.brandColor),
-            composerIcon: optionalString(plugin.interface?.composerIcon),
-            composerIconUrl: optionalString(plugin.interface?.composerIconUrl),
-          });
-        }
-      }
-      const plugins = pluginMetadata.map((plugin) => plugin.name);
-      if (this.stopped) return;
-      const signature = JSON.stringify({
-        skills,
-        skillMetadata,
-        apps: appMetadata.map((app) => app.id),
-        appMetadata,
-        plugins,
-        pluginMetadata,
-      });
-      if (signature === this._lastCompletionEntitiesSignature) {
-        return;
-      }
-      this._lastCompletionEntitiesSignature = signature;
-      if (
-        skills.length > 0 ||
-        appMetadata.length > 0 ||
-        pluginMetadata.length > 0
-      ) {
-        console.log(
-          `[codex-process] completion entities loaded: ${skills.length} skills, ${appMetadata.length} apps, ${pluginMetadata.length} plugins`,
-        );
-        this.emitMessage({
-          type: "system",
-          subtype: "supported_commands",
-          skills,
-          skillMetadata,
-          apps: appMetadata.map((app) => app.id),
-          appMetadata,
-          plugins,
-          pluginMetadata,
-        });
-      }
+          this._skills = skillMetadata;
+          skillsReady = true;
+          const elapsedMs =
+            this._launchStartedAt > 0
+              ? Date.now() - this._launchStartedAt
+              : undefined;
+          console.log(
+            `[codex-process] completion skills ready: ${skillMetadata.length} skills${elapsedMs === undefined ? "" : ` (${elapsedMs}ms since start)`}`,
+          );
+          this.emitCompletionEntitiesSnapshot("skills");
+        }),
+        appsRequest.then((appsResult) => {
+          if (this.stopped || appsResult === null) return;
+          this._apps = (appsResult.data ?? [])
+            .filter(
+              (app) =>
+                (app.isAccessible ?? true) && (app.isEnabled ?? true),
+            )
+            .map((app) => ({
+              id: app.id,
+              name: app.name,
+              description: app.description,
+              installUrl: app.installUrl ?? undefined,
+              isAccessible: app.isAccessible ?? true,
+              isEnabled: app.isEnabled ?? true,
+            }));
+          if (skillsReady) this.emitCompletionEntitiesSnapshot("apps");
+        }),
+        pluginsRequest.then((pluginsResult) => {
+          if (this.stopped || pluginsResult === null) return;
+          const pluginMetadata: CodexPluginMetadata[] = [];
+          for (const marketplace of pluginsResult.marketplaces ?? []) {
+            for (const plugin of marketplace.plugins ?? []) {
+              if (!plugin.installed || !plugin.enabled) continue;
+              pluginMetadata.push({
+                id: plugin.id,
+                name: plugin.name,
+                path: `plugin://${plugin.id}`,
+                marketplaceName: marketplace.name,
+                marketplacePath: marketplace.path ?? undefined,
+                installed: plugin.installed,
+                enabled: plugin.enabled,
+                displayName: optionalString(plugin.interface?.displayName),
+                shortDescription: optionalString(
+                  plugin.interface?.shortDescription,
+                ),
+                longDescription: optionalString(
+                  plugin.interface?.longDescription,
+                ),
+                defaultPrompt: optionalFirstString(
+                  plugin.interface?.defaultPrompt,
+                ),
+                brandColor: optionalString(plugin.interface?.brandColor),
+                composerIcon: optionalString(plugin.interface?.composerIcon),
+                composerIconUrl: optionalString(
+                  plugin.interface?.composerIconUrl,
+                ),
+              });
+            }
+          }
+          this._plugins = pluginMetadata;
+          if (skillsReady) this.emitCompletionEntitiesSnapshot("plugins");
+        }),
+      ]);
     } catch (err) {
       console.log(
         `[codex-process] completion entity fetch failed (non-fatal): ${err instanceof Error ? err.message : String(err)}`,
       );
     }
+  }
+
+  private emitCompletionEntitiesSnapshot(
+    source: "skills" | "apps" | "plugins",
+  ): void {
+    if (this.stopped) return;
+    const skills = this._skills.map((skill) => skill.name);
+    const apps = this._apps.map((app) => app.id);
+    const plugins = this._plugins.map((plugin) => plugin.name);
+    const signature = JSON.stringify({
+      skills,
+      skillMetadata: this._skills,
+      apps,
+      appMetadata: this._apps,
+      plugins,
+      pluginMetadata: this._plugins,
+    });
+    if (signature === this._lastCompletionEntitiesSignature) return;
+    this._lastCompletionEntitiesSignature = signature;
+    console.log(
+      `[codex-process] completion entities updated (${source}): ${skills.length} skills, ${apps.length} apps, ${plugins.length} plugins`,
+    );
+    this.emitMessage({
+      type: "system",
+      subtype: "supported_commands",
+      skills,
+      skillMetadata: this._skills,
+      apps,
+      appMetadata: this._apps,
+      plugins,
+      pluginMetadata: this._plugins,
+    });
   }
 
   private resetRateLimitRecovery(): void {
@@ -1815,32 +2076,26 @@ export class CodexProcess extends EventEmitter<CodexProcessEvents> {
   }
 
   private codexTurnStartTimeoutMs(): number {
-    const raw = process.env.BRIDGE_CODEX_TURN_START_TIMEOUT_MS?.trim();
-    if (!raw) return DEFAULT_CODEX_TURN_START_TIMEOUT_MS;
-    const parsed = Number(raw);
-    if (!Number.isFinite(parsed) || parsed <= 0) {
-      return DEFAULT_CODEX_TURN_START_TIMEOUT_MS;
-    }
-    return parsed;
+    return parsePositiveIntEnv(
+      "BRIDGE_CODEX_TURN_START_TIMEOUT_MS",
+      DEFAULT_CODEX_TURN_START_TIMEOUT_MS,
+    );
   }
 
   private failPendingTurn(message: string): void {
+    const pending = this.pendingTurnCompletion;
     this.clearPendingTurnStartTimer();
     this.pendingTurnId = null;
     this.pendingTurnCompletion = null;
-    this.emitMessage({ type: "error", message });
-    this.emitMessage({
-      type: "result",
-      subtype: "error",
-      error: message,
-      sessionId: this._threadId ?? undefined,
-    });
-    this.setStatus("idle");
+    if (pending) {
+      pending.reject(new Error(message));
+    }
   }
 
   private schedulePendingTurnStartTimeout(): void {
     this.clearPendingTurnStartTimer();
     const timeoutMs = this.codexTurnStartTimeoutMs();
+    if (timeoutMs <= 0) return;
     this.pendingTurnStartTimer = setTimeout(() => {
       if (!this.pendingTurnCompletion || this.stopped) return;
       this.failPendingTurn(
@@ -1856,9 +2111,7 @@ export class CodexProcess extends EventEmitter<CodexProcessEvents> {
       lowered.includes("worker quit with fatal") ||
       lowered.includes("transport channel closed")
     ) {
-      this.failPendingTurn(
-        `Codex app-server failed during the turn: ${line}`,
-      );
+      this.failPendingTurn(`Codex app-server failed during the turn: ${line}`);
     }
   }
 
@@ -1891,12 +2144,11 @@ export class CodexProcess extends EventEmitter<CodexProcessEvents> {
 
     this.emitMessage({
       type: "error",
-      message,
       errorCode: CODEX_RATE_LIMIT_RETRYING_ERROR_CODE,
+      message,
     });
-    this.setStatus("running");
-    this.clearPendingRateLimitRetry();
 
+    this.clearPendingRateLimitRetry();
     this.pendingRateLimitTimer = setTimeout(() => {
       this.pendingRateLimitTimer = null;
       if (this.stopped) return;
@@ -1924,11 +2176,10 @@ export class CodexProcess extends EventEmitter<CodexProcessEvents> {
       `continuation attempt${maxRetries === 1 ? "" : "s"}. ` +
       "Automatic recovery stopped, but you can still send a manual continue message." +
       (originalMessage ? ` Original error: ${originalMessage}` : "");
-
     this.emitMessage({
       type: "error",
-      message,
       errorCode: CODEX_RATE_LIMIT_EXHAUSTED_ERROR_CODE,
+      message,
     });
   }
 
@@ -1975,7 +2226,6 @@ export class CodexProcess extends EventEmitter<CodexProcessEvents> {
 
       const completion = await new Promise<void>((resolve, reject) => {
         this.pendingTurnCompletion = { resolve, reject };
-        this.schedulePendingTurnStartTimeout();
 
         const params: Record<string, unknown> = {
           threadId: this._threadId,
@@ -2003,6 +2253,9 @@ export class CodexProcess extends EventEmitter<CodexProcessEvents> {
         if (requestedReasoningEffort) {
           params.effort = requestedReasoningEffort;
         }
+        if (this._runtimeServiceTier !== undefined) {
+          params.serviceTier = this._runtimeServiceTier;
+        }
 
         // Always send collaborationMode so the server switches modes correctly.
         // Omitting it causes the server to persist the previous turn's mode.
@@ -2023,6 +2276,7 @@ export class CodexProcess extends EventEmitter<CodexProcessEvents> {
         console.log(
           `[codex-process] turn/start: approval=${params.approvalPolicy}, collaboration=${this._collaborationMode}`,
         );
+        this.schedulePendingTurnStartTimeout();
         void this.request("turn/start", params)
           .then((result) => {
             const turn = (result as Record<string, unknown>).turn as
@@ -2142,12 +2396,7 @@ export class CodexProcess extends EventEmitter<CodexProcessEvents> {
     if ("error" in envelope && envelope.error) {
       const message =
         envelope.error.message ?? `RPC error ${envelope.error.code ?? ""}`;
-      pending.reject(
-        new CodexRpcError(message, {
-          code: envelope.error.code,
-          data: envelope.error.data,
-        }),
-      );
+      pending.reject(new CodexRpcError(message, envelope.error.code, envelope.error.data));
       return;
     }
 
@@ -2311,10 +2560,14 @@ export class CodexProcess extends EventEmitter<CodexProcessEvents> {
       case "mcpServer/elicitation/request": {
         const toolUseId = this.extractToolUseId(params, id);
         const elicitation = createElicitationInput(params);
+        const toolName =
+          elicitation.kind === "tool_suggestion"
+            ? "ToolSuggestion"
+            : "McpElicitation";
         this.pendingUserInputs.set(toolUseId, {
           requestId: id,
           toolUseId,
-          toolName: "McpElicitation",
+          toolName,
           questions: elicitation.questions,
           input: elicitation.input,
           kind: elicitation.kind,
@@ -2322,16 +2575,29 @@ export class CodexProcess extends EventEmitter<CodexProcessEvents> {
         this.emitMessage({
           type: "permission_request",
           toolUseId,
-          toolName: "McpElicitation",
+          toolName,
           input: elicitation.input,
         });
         this.setStatus("waiting_approval");
         break;
       }
 
-      default:
-        this.respondToServerRequest(id, {});
+      case "currentTime/read": {
+        this.respondToServerRequest(id, {
+          currentTimeAt: Math.floor(Date.now() / 1000),
+        });
         break;
+      }
+
+      default: {
+        console.warn(`[codex-process] unsupported server request: ${method}`);
+        this.respondToServerRequestError(
+          id,
+          -32601,
+          `Unsupported server request: ${method}`,
+        );
+        break;
+      }
     }
   }
 
@@ -2358,6 +2624,9 @@ export class CodexProcess extends EventEmitter<CodexProcessEvents> {
           this.pendingTurnId = turn.id;
         }
         this.clearPendingTurnStartTimer();
+        this.lastResultText = null;
+        this.pendingAgentTextByItemId.clear();
+        this.syntheticAgentTextByItemId.clear();
         this.setStatus("running");
         break;
       }
@@ -2371,6 +2640,25 @@ export class CodexProcess extends EventEmitter<CodexProcessEvents> {
 
       case "thread/name/updated": {
         // Name change notification — handled by session manager
+        break;
+      }
+
+      case "thread/goal/updated": {
+        try {
+          this.emitMessage({
+            type: "goal_state",
+            goal: parseCodexGoal(params.goal),
+          });
+        } catch (err) {
+          console.warn(
+            `[codex-process] Ignoring invalid goal notification: ${err instanceof Error ? err.message : String(err)}`,
+          );
+        }
+        break;
+      }
+
+      case "thread/goal/cleared": {
+        this.emitMessage({ type: "goal_state", goal: null });
         break;
       }
 
@@ -2412,6 +2700,11 @@ export class CodexProcess extends EventEmitter<CodexProcessEvents> {
               ? params.textDelta
               : "";
         if (delta) {
+          const itemId = stringOrNull(params.itemId) ?? UNKNOWN_AGENT_ITEM_ID;
+          this.pendingAgentTextByItemId.set(
+            itemId,
+            (this.pendingAgentTextByItemId.get(itemId) ?? "") + delta,
+          );
           this.emitMessage({ type: "stream_delta", text: delta });
         }
         break;
@@ -2479,6 +2772,78 @@ export class CodexProcess extends EventEmitter<CodexProcessEvents> {
         break;
       }
 
+      case "warning": {
+        const message = stringValue(params.message);
+        if (message) {
+          this.emitMessage({
+            type: "error",
+            errorCode: "codex_warning",
+            message,
+          });
+        }
+        break;
+      }
+
+      case "guardianWarning": {
+        const message = stringValue(params.message);
+        if (!message) break;
+        const approval = parseGuardianApproval(message);
+        if (
+          approval?.risk === "low" &&
+          isLowRiskAllowDecision(approval.reason)
+        ) {
+          console.debug(
+            "[codex-process] suppressed informational guardian approval notification",
+          );
+          break;
+        }
+        if (
+          approval &&
+          (approval.risk === "medium" || approval.risk === "high")
+        ) {
+          this.emitMessage({
+            type: "guardian_approval",
+            risk: approval.risk,
+            reason: approval.reason,
+            ...(approval.authorization
+              ? { authorization: approval.authorization }
+              : {}),
+          });
+          break;
+        }
+        this.emitMessage({
+          type: "error",
+          errorCode: "codex_warning",
+          message,
+        });
+        break;
+      }
+
+      case "configWarning":
+      case "deprecationNotice": {
+        const summary = stringValue(params.summary);
+        const details = stringValue(params.details);
+        if (summary || details) {
+          this.emitMessage({
+            type: "error",
+            errorCode: "codex_warning",
+            message: [summary, details].filter(Boolean).join("\n"),
+          });
+        }
+        break;
+      }
+
+      case "error": {
+        const error = asRecord(params.error);
+        const message = stringValue(error?.message) ?? "Codex runtime error";
+        this.emitMessage({
+          type: "error",
+          errorCode: params.willRetry ? "codex_warning" : "codex_runtime_error",
+          message: params.willRetry ? `${message}\nCodex will retry.` : message,
+        });
+        break;
+      }
+
       default:
         break;
     }
@@ -2502,10 +2867,12 @@ export class CodexProcess extends EventEmitter<CodexProcessEvents> {
 
   private handleTurnCompleted(turn: Record<string, unknown> | undefined): void {
     const status = String(turn?.status ?? "completed");
+    this.finalizePendingAgentText();
+    this.clearPendingTurnStartTimer();
+    let rateLimitContinuationScheduled = false;
 
     const usage = this.lastTokenUsage;
     this.lastTokenUsage = null;
-    let rateLimitContinuationScheduled = false;
 
     if (status === "failed") {
       const errorObj = turn?.error as Record<string, unknown> | undefined;
@@ -2555,14 +2922,13 @@ export class CodexProcess extends EventEmitter<CodexProcessEvents> {
       });
     }
 
-    this.clearPendingTurnStartTimer();
     this.pendingTurnId = null;
 
-    // Plan mode: emit synthetic plan approval and wait for user decision
     if (rateLimitContinuationScheduled) {
-      this.lastPlanItemText = null;
       this.setStatus("running");
-    } else if (this._collaborationMode === "plan" && this.lastPlanItemText) {
+    } else
+    // Plan mode: emit synthetic plan approval and wait for user decision
+    if (this._collaborationMode === "plan" && this.lastPlanItemText) {
       const toolUseId = `plan_${randomUUID()}`;
       this.pendingPlanCompletion = {
         toolUseId,
@@ -2593,6 +2959,27 @@ export class CodexProcess extends EventEmitter<CodexProcessEvents> {
       this.pendingTurnCompletion = null;
     }
     this.cleanupSteerTempPaths();
+  }
+
+  private finalizePendingAgentText(): void {
+    const pendingItems = [...this.pendingAgentTextByItemId.entries()];
+    this.pendingAgentTextByItemId.clear();
+    for (const [pendingItemId, text] of pendingItems) {
+      if (!text.trim()) continue;
+      const itemId =
+        pendingItemId === UNKNOWN_AGENT_ITEM_ID ? randomUUID() : pendingItemId;
+      this.lastResultText = text;
+      this.syntheticAgentTextByItemId.set(itemId, text);
+      this.emitMessage({
+        type: "assistant",
+        message: {
+          id: itemId,
+          role: "assistant",
+          content: [{ type: "text", text }],
+          model: this.getMessageModel(),
+        },
+      });
+    }
   }
 
   private cleanupSteerTempPaths(): void {
@@ -2748,8 +3135,35 @@ export class CodexProcess extends EventEmitter<CodexProcessEvents> {
 
     switch (itemType) {
       case "agentmessage": {
-        const text = extractAgentText(item);
-        if (!text) return;
+        const completedText = extractAgentText(item);
+        const hasCompletedText = completedText?.trim().length > 0;
+        const directPendingText = this.pendingAgentTextByItemId.get(itemId);
+        const usedUnknownPendingText =
+          !hasCompletedText && directPendingText === undefined;
+        const pendingText = usedUnknownPendingText
+          ? (this.pendingAgentTextByItemId.get(UNKNOWN_AGENT_ITEM_ID) ?? "")
+          : (directPendingText ?? "");
+        const text = hasCompletedText ? completedText : pendingText;
+        this.pendingAgentTextByItemId.delete(itemId);
+        if (usedUnknownPendingText) {
+          this.pendingAgentTextByItemId.delete(UNKNOWN_AGENT_ITEM_ID);
+        }
+        if (!text.trim()) return;
+        if (this.pendingTurnId === null) {
+          const syntheticText = this.syntheticAgentTextByItemId.get(itemId);
+          if (syntheticText === text) {
+            this.syntheticAgentTextByItemId.delete(itemId);
+            return;
+          }
+          const syntheticEntry = [
+            ...this.syntheticAgentTextByItemId.entries(),
+          ].find(([, candidate]) => candidate === text);
+          if (syntheticEntry) {
+            this.syntheticAgentTextByItemId.delete(syntheticEntry[0]);
+            return;
+          }
+        }
+        this.syntheticAgentTextByItemId.delete(itemId);
         this.markRateLimitRecoveryProgress();
         this.lastResultText = text;
         this.emitMessage({
@@ -2944,6 +3358,23 @@ export class CodexProcess extends EventEmitter<CodexProcessEvents> {
         break;
       }
 
+      case "exitedreviewmode": {
+        const text = typeof item.review === "string" ? item.review : "";
+        if (!text) break;
+        this.markRateLimitRecoveryProgress();
+        this.lastResultText = text;
+        this.emitMessage({
+          type: "assistant",
+          message: {
+            id: itemId,
+            role: "assistant",
+            content: [{ type: "text", text }],
+            model: this.getMessageModel(),
+          },
+        });
+        break;
+      }
+
       case "error": {
         const message =
           typeof item.message === "string" ? item.message : "Codex item error";
@@ -3054,6 +3485,22 @@ export class CodexProcess extends EventEmitter<CodexProcessEvents> {
     }
   }
 
+  private respondToServerRequestError(
+    id: number | string,
+    code: number,
+    message: string,
+  ): void {
+    try {
+      this.writeEnvelope({ id, error: { code, message } });
+    } catch (err) {
+      if (!this.stopped) {
+        console.warn(
+          `[codex-process] failed to reject server request: ${err instanceof Error ? err.message : String(err)}`,
+        );
+      }
+    }
+  }
+
   private writeEnvelope(envelope: Record<string, unknown>): void {
     if (!this.transport || !this.transport.isRunning) {
       throw new Error("codex app-server is not running");
@@ -3062,7 +3509,6 @@ export class CodexProcess extends EventEmitter<CodexProcessEvents> {
   }
 
   private rejectAllPending(error: Error): void {
-    this.clearPendingTurnStartTimer();
     for (const pending of this.pendingRpc.values()) {
       pending.reject(error);
     }
@@ -3299,13 +3745,67 @@ function extractReasoningEfforts(raw: Record<string, unknown>): string[] {
   const seen = new Set<string>();
   const efforts: string[] = [];
   for (const value of values) {
-    if (typeof value !== "string") continue;
-    const normalized = value.trim();
+    const effort =
+      typeof value === "string"
+        ? value
+        : value && typeof value === "object"
+          ? ((value as Record<string, unknown>).reasoningEffort ??
+            (value as Record<string, unknown>).effort)
+          : undefined;
+    if (typeof effort !== "string") continue;
+    const normalized = effort.trim();
     if (!normalized || seen.has(normalized)) continue;
     seen.add(normalized);
     efforts.push(normalized);
   }
   return efforts;
+}
+
+function extractServiceTiers(raw: Record<string, unknown>): string[] {
+  // Recent app-server versions expose the user-facing Fast option as
+  // `additionalSpeedTiers: ["fast"]`, while the lower-level service tier is
+  // advertised as `{ id: "priority", name: "Fast" }`. Merge both shapes and
+  // normalize them to the value accepted by `service_tier` in config/RPCs.
+  const values = [
+    ...(Array.isArray(raw.additionalSpeedTiers)
+      ? raw.additionalSpeedTiers
+      : []),
+    ...(Array.isArray(raw.serviceTiers) ? raw.serviceTiers : []),
+  ];
+  const seen = new Set<string>();
+  const tiers: string[] = [];
+  for (const value of values) {
+    const metadata =
+      value && typeof value === "object"
+        ? (value as Record<string, unknown>)
+        : undefined;
+    const rawTier = typeof value === "string" ? value : metadata?.id;
+    const rawName = metadata?.name;
+    const tier =
+      rawTier === "priority" ||
+      (typeof rawName === "string" && rawName.toLowerCase() === "fast")
+        ? "fast"
+        : rawTier;
+    if (typeof tier !== "string") continue;
+    const normalized = tier.trim();
+    if (!normalized || seen.has(normalized)) continue;
+    seen.add(normalized);
+    tiers.push(normalized);
+  }
+  return tiers;
+}
+
+function normalizeServiceTier(value: string): string | null {
+  const normalized = value.trim();
+  return !normalized || normalized === "standard" || normalized === "default"
+    ? null
+    : normalized;
+}
+
+function normalizeServiceTierForClient(value: unknown): string {
+  if (typeof value !== "string") return "standard";
+  const normalized = value.trim();
+  return !normalized || normalized === "default" ? "standard" : normalized;
 }
 
 function sanitizeCodexModel(value: unknown): string | undefined {
@@ -3344,6 +3844,10 @@ function extractResolvedSettingsFromThreadResponse(
         ? response.reasoningEffort
         : typeof collaborationSettings?.reasoning_effort === "string"
           ? collaborationSettings.reasoning_effort
+        : undefined,
+    serviceTier:
+      typeof response.serviceTier === "string"
+        ? response.serviceTier
         : undefined,
     networkAccessEnabled:
       typeof sandbox?.networkAccess === "boolean"
@@ -3399,6 +3903,55 @@ function notificationThreadId(params: Record<string, unknown>): string | null {
   }
 
   return null;
+}
+
+const CODEX_GOAL_STATUSES = new Set<CodexGoalStatus>([
+  "active",
+  "paused",
+  "blocked",
+  "usageLimited",
+  "budgetLimited",
+  "complete",
+]);
+
+/** Validate the app-server ThreadGoal payload at the process boundary. */
+export function parseCodexGoal(value: unknown): CodexGoal {
+  if (!value || typeof value !== "object") {
+    throw new Error("Goal payload is missing");
+  }
+  const goal = value as Record<string, unknown>;
+  const status = goal.status as CodexGoalStatus;
+  const requiredNumbers = [
+    "tokensUsed",
+    "timeUsedSeconds",
+    "createdAt",
+    "updatedAt",
+  ] as const;
+  if (
+    typeof goal.threadId !== "string" ||
+    typeof goal.objective !== "string" ||
+    !CODEX_GOAL_STATUSES.has(status) ||
+    requiredNumbers.some(
+      (field) =>
+        typeof goal[field] !== "number" ||
+        !Number.isFinite(goal[field] as number),
+    ) ||
+    (goal.tokenBudget !== null &&
+      (typeof goal.tokenBudget !== "number" ||
+        !Number.isFinite(goal.tokenBudget)))
+  ) {
+    throw new Error("Goal payload has an invalid shape");
+  }
+  return {
+    threadId: goal.threadId,
+    objective: goal.objective,
+    status,
+    tokenBudget: goal.tokenBudget as number | null,
+    tokensUsed: goal.tokensUsed as number,
+    timeUsedSeconds: goal.timeUsedSeconds as number,
+    createdAt: goal.createdAt as number,
+    updatedAt: goal.updatedAt as number,
+  };
 }
 
 function numberOrUndefined(value: unknown): number | undefined {
@@ -3688,16 +4241,6 @@ function extractAgentText(item: Record<string, unknown>): string {
     if (text) return text;
   }
 
-  // Fallback: content is a plain string (third-party model proxies e.g.)
-  if (typeof parts === "string" && parts.trim().length > 0) {
-    return parts;
-  }
-
-  // Fallback: item.message as string
-  if (typeof item.message === "string" && item.message.trim().length > 0) {
-    return item.message;
-  }
-
   return "";
 }
 
@@ -3822,12 +4365,54 @@ function parseResultObject(rawResult: string): {
   }
 }
 
+interface GuardianApproval {
+  risk: "low" | "medium" | "high";
+  reason: string;
+  authorization?: string;
+}
+
+function parseGuardianApproval(message: string): GuardianApproval | null {
+  const match = message
+    .trim()
+    .match(
+      /^automatic approval review approved\s*\(([^)]*)\)\s*:\s*([\s\S]+)$/i,
+    );
+  if (!match) return null;
+
+  const metadata = new Map<string, string>();
+  for (const field of match[1].split(",")) {
+    const separator = field.indexOf(":");
+    if (separator === -1) continue;
+    metadata.set(
+      field.slice(0, separator).trim().toLowerCase(),
+      field.slice(separator + 1).trim(),
+    );
+  }
+
+  const risk = metadata.get("risk")?.toLowerCase();
+  const reason = match[2].trim();
+  if (!reason || (risk !== "low" && risk !== "medium" && risk !== "high")) {
+    return null;
+  }
+  const authorization = metadata.get("authorization");
+  return {
+    risk,
+    reason,
+    ...(authorization ? { authorization } : {}),
+  };
+}
+
+function isLowRiskAllowDecision(reason: string): boolean {
+  const normalized = reason.trim().replace(/\s+/g, " ");
+  return /^auto-review returned a low[- ]risk allow decision\.?$/i.test(
+    normalized,
+  );
+}
+
 function normalizeAnswerValues(value: unknown): string[] {
   if (typeof value === "string") {
-    return value
-      .split(",")
-      .map((part) => part.trim())
-      .filter((part) => part.length > 0);
+    const normalized = value.trim();
+    return normalized ? [normalized] : [];
   }
 
   if (Array.isArray(value)) {
@@ -3854,6 +4439,14 @@ function buildElicitationResponse(
   pending: PendingUserInputRequest,
   rawResult: string,
 ): Record<string, unknown> {
+  if (pending.kind === "tool_suggestion") {
+    return {
+      action: parseElicitationAction(rawResult),
+      content: null,
+      _meta: null,
+    };
+  }
+
   if (pending.kind === "elicitation_url") {
     const action = parseElicitationAction(rawResult);
     return {
@@ -3869,24 +4462,26 @@ function buildElicitationResponse(
 
   const parsed = parseResultObject(rawResult);
   const content: Record<string, unknown> = {};
+  const schema = asRecord(pending.input.requestedSchema);
+  const properties = asRecord(schema?.properties) ?? {};
 
   for (const question of pending.questions) {
     const candidate =
       parsed.byId[question.id] ?? parsed.byQuestion[question.question];
-    const answers = normalizeAnswerValues(candidate);
-    if (answers.length === 1) {
-      content[question.id] = answers[0];
-    } else if (answers.length > 1) {
-      content[question.id] = answers;
+    const value = coerceElicitationValue(candidate, asRecord(properties[question.id]));
+    if (value !== undefined) {
+      content[question.id] = value;
     }
   }
 
   if (Object.keys(content).length === 0 && pending.questions.length === 1) {
-    const answers = normalizeAnswerValues(rawResult);
-    if (answers.length === 1) {
-      content[pending.questions[0].id] = answers[0];
-    } else if (answers.length > 1) {
-      content[pending.questions[0].id] = answers;
+    const questionId = pending.questions[0].id;
+    const value = coerceElicitationValue(
+      rawResult,
+      asRecord(properties[questionId]),
+    );
+    if (value !== undefined) {
+      content[questionId] = value;
     }
   }
 
@@ -3895,6 +4490,47 @@ function buildElicitationResponse(
     content: Object.keys(content).length > 0 ? content : null,
     _meta: null,
   };
+}
+
+function coerceElicitationValue(
+  value: unknown,
+  field: Record<string, unknown> | undefined,
+): unknown {
+  if (value == null) return undefined;
+  const type = stringValue(field?.type) ?? "string";
+
+  if (type === "array") {
+    if (Array.isArray(value)) {
+      const entries = value.map((entry) => String(entry));
+      return entries.length > 0 ? entries : undefined;
+    }
+    if (typeof value === "string") {
+      return value
+        .split(",")
+        .map((entry) => entry.trim())
+        .filter(Boolean);
+    }
+    return [String(value)];
+  }
+
+  const scalar = Array.isArray(value) ? value[0] : value;
+  if (scalar == null) return undefined;
+  if (typeof scalar === "string" && scalar.trim().length === 0) {
+    return undefined;
+  }
+  if (type === "boolean") {
+    if (typeof scalar === "boolean") return scalar;
+    if (String(scalar).toLowerCase() === "true") return true;
+    if (String(scalar).toLowerCase() === "false") return false;
+    return undefined;
+  }
+  if (type === "number" || type === "integer") {
+    const number = typeof scalar === "number" ? scalar : Number(scalar);
+    if (!Number.isFinite(number)) return undefined;
+    if (type === "integer" && !Number.isInteger(number)) return undefined;
+    return number;
+  }
+  return String(scalar);
 }
 
 function buildApprovalElicitationResponse(
@@ -4015,7 +4651,34 @@ function createElicitationInput(params: Record<string, unknown>): {
 
   const schema = asRecord(params.requestedSchema);
   const elicitationMeta = asRecord(params._meta);
-  if (isApprovalActionElicitation(schema, elicitationMeta)) {
+  if (isToolSuggestionElicitation(serverName, elicitationMeta)) {
+    const toolName = stringValue(elicitationMeta?.tool_name) ?? "Tool";
+    return {
+      kind: "tool_suggestion",
+      questions: [],
+      input: {
+        mode: "form",
+        serverName,
+        message,
+        _meta: elicitationMeta ?? null,
+        toolType: stringValue(elicitationMeta?.tool_type),
+        suggestType: stringValue(elicitationMeta?.suggest_type),
+        suggestReason: stringValue(elicitationMeta?.suggest_reason) ?? message,
+        toolId: stringValue(elicitationMeta?.tool_id),
+        toolName,
+        installUrl: stringValue(elicitationMeta?.install_url),
+        remotePluginId: stringValue(elicitationMeta?.remote_plugin_id),
+        appConnectorIds: Array.isArray(elicitationMeta?.app_connector_ids)
+          ? elicitationMeta.app_connector_ids.filter(
+              (entry): entry is string => typeof entry === "string",
+            )
+          : [],
+        installState: "idle",
+        appsNeedingAuth: [],
+      },
+    };
+  }
+  if (isApprovalActionElicitation(schema, serverName, elicitationMeta)) {
     const questionId = "approval";
     const isToolApproval = isToolApprovalElicitation(elicitationMeta);
     return {
@@ -4062,28 +4725,16 @@ function createElicitationInput(params: Record<string, unknown>): {
       const title = typeof field.title === "string" ? field.title : key;
       const description =
         typeof field.description === "string" ? field.description : message;
-      const enumValues = Array.isArray(field.enum)
-        ? field.enum.map((entry) => String(entry))
-        : [];
       const type = typeof field.type === "string" ? field.type : "";
-      const options =
-        enumValues.length > 0
-          ? enumValues.map((entry, index) => ({
-              label: entry,
-              description: index === 0 ? description : "",
-            }))
-          : type === "boolean"
-            ? [
-                { label: "true", description: description },
-                { label: "false", description: "" },
-              ]
-            : [];
+      const options = buildElicitationFieldOptions(field, description);
 
       return {
         id: key,
         question: requiredFields.has(key) ? `${title} (required)` : title,
         header: serverName,
         options,
+        required: requiredFields.has(key),
+        multiSelect: type === "array",
         isOther: options.length === 0,
         isSecret: false,
       };
@@ -4097,7 +4748,13 @@ function createElicitationInput(params: Record<string, unknown>): {
             id: "value",
             question: message,
             header: serverName,
-            options: [] as Array<{ label: string; description: string }>,
+            options: [] as Array<{
+              label: string;
+              value: string;
+              description: string;
+            }>,
+            required: true,
+            multiSelect: false,
             isOther: true,
             isSecret: false,
           },
@@ -4108,6 +4765,7 @@ function createElicitationInput(params: Record<string, unknown>): {
     questions: normalizedQuestions.map((question) => ({
       id: question.id,
       question: question.question,
+      required: question.required,
     })),
     input: {
       mode: "form",
@@ -4120,7 +4778,8 @@ function createElicitationInput(params: Record<string, unknown>): {
         header: question.header,
         question: question.question,
         options: question.options,
-        multiSelect: false,
+        required: question.required,
+        multiSelect: question.multiSelect,
         isOther: question.isOther,
         isSecret: question.isSecret,
       })),
@@ -4128,11 +4787,61 @@ function createElicitationInput(params: Record<string, unknown>): {
   };
 }
 
+function buildElicitationFieldOptions(
+  field: Record<string, unknown>,
+  description: string,
+): Array<{ label: string; value: string; description: string }> {
+  const type = stringValue(field.type);
+  const source = type === "array" ? asRecord(field.items) ?? {} : field;
+  const rawOptions = Array.isArray(source.oneOf)
+    ? source.oneOf
+    : Array.isArray(source.anyOf)
+      ? source.anyOf
+      : null;
+  if (rawOptions) {
+    return rawOptions.flatMap((entry, index) => {
+      const option = asRecord(entry);
+      const value = stringValue(option?.const);
+      if (!value) return [];
+      return [
+        {
+          label: stringValue(option?.title) ?? value,
+          value,
+          description: index === 0 ? description : "",
+        },
+      ];
+    });
+  }
+
+  if (Array.isArray(source.enum)) {
+    return source.enum.map((entry, index) => {
+      const value = String(entry);
+      return {
+        label: value,
+        value,
+        description: index === 0 ? description : "",
+      };
+    });
+  }
+
+  if (type === "boolean") {
+    return [
+      { label: "true", value: "true", description },
+      { label: "false", value: "false", description: "" },
+    ];
+  }
+  return [];
+}
+
 function isApprovalActionElicitation(
   schema: Record<string, unknown> | undefined,
+  serverName: string,
   meta: Record<string, unknown> | undefined,
 ): boolean {
-  return isEmptyObjectSchema(schema) && !isToolSuggestionElicitation(meta);
+  return (
+    isEmptyObjectSchema(schema) &&
+    !isToolSuggestionElicitation(serverName, meta)
+  );
 }
 
 function isEmptyObjectSchema(
@@ -4151,9 +4860,13 @@ function isToolApprovalElicitation(
 }
 
 function isToolSuggestionElicitation(
+  serverName: string,
   meta: Record<string, unknown> | undefined,
 ): boolean {
-  return meta?.codex_approval_kind === "tool_suggestion";
+  return (
+    serverName === "codex_apps" &&
+    meta?.codex_approval_kind === "tool_suggestion"
+  );
 }
 
 function buildApprovalActionElicitationOptions(
@@ -4264,6 +4977,32 @@ function asRecord(value: unknown): Record<string, unknown> | undefined {
   return value && typeof value === "object" && !Array.isArray(value)
     ? (value as Record<string, unknown>)
     : undefined;
+}
+
+function stringValue(value: unknown): string | undefined {
+  return typeof value === "string" && value.length > 0 ? value : undefined;
+}
+
+function normalizeToolSuggestionApps(value: unknown): ToolSuggestionApp[] {
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((entry) => {
+    const app = asRecord(entry);
+    const id = stringValue(app?.id);
+    const name = stringValue(app?.name);
+    if (!id || !name) return [];
+    const description = stringValue(app?.description);
+    const installUrl = stringValue(app?.installUrl);
+    const category = stringValue(app?.category);
+    return [
+      {
+        id,
+        name,
+        ...(description ? { description } : {}),
+        ...(installUrl ? { installUrl } : {}),
+        ...(category ? { category } : {}),
+      },
+    ];
+  });
 }
 
 function buildPlanUpdateToolUseInput(

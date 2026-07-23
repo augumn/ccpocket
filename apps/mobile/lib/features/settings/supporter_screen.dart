@@ -273,16 +273,12 @@ class _SupportPackageSection extends StatelessWidget {
     if (state.isLoading && !state.hasPackages) {
       children.add(const Card(child: _SupportLoadingTile()));
     } else if (state.hasPackages) {
-      final recurringPackages = state.packages
-          .where((package) => package.isSubscription)
-          .toList();
+      final recurringPackages =
+          state.packages.where((package) => package.isSubscription).toList()
+            ..sort(_comparePackagesByPrice);
       final oneTimePackages =
           state.packages.where((package) => !package.isSubscription).toList()
-            ..sort(
-              (a, b) => _packageDisplayPriority(
-                a,
-              ).compareTo(_packageDisplayPriority(b)),
-            );
+            ..sort(_comparePackagesByPrice);
 
       if (recurringPackages.isNotEmpty) {
         children.add(
@@ -588,18 +584,23 @@ class _SupportSummaryContent extends StatelessWidget {
     final summary = state.summary;
     final activityChips = <Widget>[
       if (summary.oneTimeSupportCount > 0 &&
+          summary.snackSupportCount == 0 &&
           summary.coffeeSupportCount == 0 &&
           summary.lunchSupportCount == 0)
         _SupportSummaryBadge(
           label: l.supporterSummaryOneTimeCount(summary.oneTimeSupportCount),
         ),
-      if (summary.lunchSupportCount > 0)
+      if (summary.snackSupportCount > 0)
         _SupportSummaryBadge(
-          label: l.supporterSummaryLunchCount(summary.lunchSupportCount),
+          label: l.supporterSummarySnackCount(summary.snackSupportCount),
         ),
       if (summary.coffeeSupportCount > 0)
         _SupportSummaryBadge(
           label: l.supporterSummaryCoffeeCount(summary.coffeeSupportCount),
+        ),
+      if (summary.lunchSupportCount > 0)
+        _SupportSummaryBadge(
+          label: l.supporterSummaryLunchCount(summary.lunchSupportCount),
         ),
     ];
 
@@ -750,11 +751,13 @@ class _SupportTextLink extends StatelessWidget {
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Text(
-              label,
-              style: Theme.of(context).textTheme.labelLarge?.copyWith(
-                color: cs.primary,
-                fontWeight: FontWeight.w700,
+            Flexible(
+              child: Text(
+                label,
+                style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                  color: cs.primary,
+                  fontWeight: FontWeight.w700,
+                ),
               ),
             ),
             const SizedBox(width: 4),
@@ -801,7 +804,9 @@ class _SupportPackageTile extends StatelessWidget {
     final cs = Theme.of(context).colorScheme;
     final textTheme = Theme.of(context).textTheme;
     final revenueCat = context.read<RevenueCatService>();
-    final isCurrentSubscription = package.isSubscription && state.isSupporter;
+    final isCurrentSubscription = _isCurrentSubscription(package, state);
+    final isPlanChangeUnavailable =
+        package.isSubscription && state.isSupporter && !isCurrentSubscription;
     final isPurchasing = state.purchasingPackageId == package.id;
 
     return Padding(
@@ -822,8 +827,6 @@ class _SupportPackageTile extends StatelessWidget {
                     fontWeight: FontWeight.bold,
                     letterSpacing: 0,
                   ),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
                 ),
                 const SizedBox(height: 6),
                 if (package.kind == SupportPackageKind.monthly)
@@ -859,7 +862,10 @@ class _SupportPackageTile extends StatelessWidget {
                   padding: const EdgeInsets.symmetric(horizontal: 16),
                   minimumSize: const Size(0, 44),
                 ),
-                onPressed: state.isBusy || isCurrentSubscription
+                onPressed:
+                    state.isBusy ||
+                        isCurrentSubscription ||
+                        isPlanChangeUnavailable
                     ? null
                     : () async {
                         final result = await revenueCat.purchasePackage(
@@ -877,6 +883,8 @@ class _SupportPackageTile extends StatelessWidget {
                     : Text(
                         isCurrentSubscription
                             ? l.supporterActiveButton
+                            : isPlanChangeUnavailable
+                            ? l.supporterSubscribedButton
                             : l.supporterBuyButton,
                       ),
               ),
@@ -891,6 +899,8 @@ class _SupportPackageTile extends StatelessWidget {
     switch (package.kind) {
       case SupportPackageKind.monthly:
         return l.supporterMonthlyDescription;
+      case SupportPackageKind.snack:
+        return l.supporterSnackDescription;
       case SupportPackageKind.coffee:
         return l.supporterCoffeeDescription;
       case SupportPackageKind.lunch:
@@ -903,7 +913,16 @@ class _SupportPackageTile extends StatelessWidget {
   String _titleForPackage(AppLocalizations l, SupportPackage package) {
     switch (package.kind) {
       case SupportPackageKind.monthly:
-        return l.supporterMonthlyTitle;
+        final monthlyPackages =
+            state.packages.where((item) => item.isSubscription).toList()
+              ..sort(_comparePackagesByPrice);
+        if (monthlyPackages.length <= 1 ||
+            monthlyPackages.first.id == package.id) {
+          return l.supporterMonthlyTitle;
+        }
+        return l.supporterMonthlyPlusTitle;
+      case SupportPackageKind.snack:
+        return l.supporterSnackTitle;
       case SupportPackageKind.coffee:
         return l.supporterCoffeeTitle;
       case SupportPackageKind.lunch:
@@ -956,10 +975,66 @@ class _MonthlySupportDescription extends StatelessWidget {
 int _packageDisplayPriority(SupportPackage package) {
   return switch (package.kind) {
     SupportPackageKind.monthly => 0,
-    SupportPackageKind.lunch => 1,
+    SupportPackageKind.snack => 1,
     SupportPackageKind.coffee => 2,
-    SupportPackageKind.other => 3,
+    SupportPackageKind.lunch => 3,
+    SupportPackageKind.other => 4,
   };
+}
+
+int _comparePackagesByPrice(SupportPackage a, SupportPackage b) {
+  final aPrice = a.price;
+  final bPrice = b.price;
+  if (aPrice == null && bPrice == null) return _comparePackageTiebreakers(a, b);
+  if (aPrice == null) return 1;
+  if (bPrice == null) return -1;
+  final priceComparison = aPrice.compareTo(bPrice);
+  if (priceComparison != 0) return priceComparison;
+  return _comparePackageTiebreakers(a, b);
+}
+
+int _comparePackageTiebreakers(SupportPackage a, SupportPackage b) {
+  final kindComparison = _packageDisplayPriority(
+    a,
+  ).compareTo(_packageDisplayPriority(b));
+  if (kindComparison != 0) return kindComparison;
+  if (a.isSubscription && b.isSubscription) {
+    final tierComparison = _monthlyPackagePriority(
+      a,
+    ).compareTo(_monthlyPackagePriority(b));
+    if (tierComparison != 0) return tierComparison;
+  }
+  return a.id.compareTo(b.id);
+}
+
+int _monthlyPackagePriority(SupportPackage package) {
+  if (package.subscriptionPlanId == 'monthly-3' ||
+      package.productId == 'supporter_monthly_3_ios' ||
+      package.id == r'$rc_custom_monthly_3') {
+    return 0;
+  }
+  if (package.subscriptionPlanId == 'monthly' ||
+      package.productId == 'supporter_monthly_10_ios' ||
+      package.id == r'$rc_monthly') {
+    return 1;
+  }
+  return 2;
+}
+
+bool _isCurrentSubscription(SupportPackage package, SupportCatalogState state) {
+  if (!package.isSubscription || !state.isSupporter) return false;
+
+  final activeProductId = state.activeSubscriptionProductId;
+  if (activeProductId == null) {
+    return state.packages.where((item) => item.isSubscription).length == 1;
+  }
+  if (activeProductId != package.productId) return false;
+
+  final activePlanId = state.activeSubscriptionPlanId;
+  final packagePlanId = package.subscriptionPlanId;
+  return activePlanId == null ||
+      packagePlanId == null ||
+      activePlanId == packagePlanId;
 }
 
 class _SupportPackageLeading extends StatelessWidget {
@@ -986,6 +1061,8 @@ class _SupportPackageLeading extends StatelessWidget {
     switch (package.kind) {
       case SupportPackageKind.monthly:
         return Icons.favorite;
+      case SupportPackageKind.snack:
+        return Icons.volunteer_activism;
       case SupportPackageKind.coffee:
         return Icons.local_cafe;
       case SupportPackageKind.lunch:
@@ -997,6 +1074,7 @@ class _SupportPackageLeading extends StatelessWidget {
 
   String? _emojiForPackage(BuildContext context, SupportPackage package) {
     final candidates = switch (package.kind) {
+      SupportPackageKind.snack => ['🍪', '🍩', '🍫', '🍿', '🥨'],
       SupportPackageKind.coffee => [
         '☕',
         '🍵',

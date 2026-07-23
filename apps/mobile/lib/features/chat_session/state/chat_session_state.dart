@@ -43,6 +43,7 @@ abstract class ChatSessionState with _$ChatSessionState {
     CodexPermissionsMode codexPermissionsMode,
     String? codexModel,
     ReasoningEffort? codexModelReasoningEffort,
+    @Default(CodexSpeed.standard) CodexSpeed codexSpeed,
     @Default(false) bool planMode,
 
     // Sandbox mode - Freezed default is .on but Cubit constructor overrides
@@ -64,6 +65,9 @@ abstract class ChatSessionState with _$ChatSessionState {
 
     // Codex conversation queue (Bridge is the source of truth).
     QueuedInputItem? queuedInput,
+
+    // Persisted Codex thread goal (Bridge/app-server is the source of truth).
+    CodexGoal? goal,
   }) = _ChatSessionState;
 }
 

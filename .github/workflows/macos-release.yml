@@ -27,7 +27,7 @@ jobs:
       MACOS_CERTIFICATE_P12: ${{ secrets.MACOS_CERTIFICATE_P12 }}
       MACOS_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
     steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Read Flutter version from .mise.toml
         id: mise
@@ -328,7 +328,7 @@ jobs:
       SPARKLE_VERSION: 2.9.1
       SPARKLE_PRIVATE_KEY: ${{ secrets.SPARKLE_PRIVATE_KEY }}
     steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: main
 
@@ -473,6 +473,13 @@ jobs:
         id: deployment
         uses: actions/deploy-pages@cd2ce8fcbc39b97be8ca5fce6e763baed58fa128 # v5.0.0
 
+  verify-sparkle-appcast:
+    if: startsWith(github.ref, 'refs/tags/macos/v')
+    needs:
+      - release
+      - deploy-sparkle-appcast
+    runs-on: ubuntu-latest
+    steps:
       - name: Verify published Sparkle appcast
         env:
           EXPECTED_BUILD_NUMBER: ${{ needs.release.outputs.build_number }}

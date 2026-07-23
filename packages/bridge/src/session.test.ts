@@ -147,6 +147,38 @@ describe("SessionManager codex path", () => {
 
     const session = manager.get(sessionId);
     expect(session?.provider).toBe("codex");
+    expect(manager.list()[0].codexSettings?.codexPermissionsMode).toBe(
+      "default",
+    );
+  });
+
+  it("re-derives permissions after incremental runtime settings", () => {
+    const manager = new SessionManager(() => {});
+    const sessionId = manager.create(
+      "/tmp/project-codex-permissions",
+      undefined,
+      undefined,
+      undefined,
+      "codex",
+      {
+        codexPermissionsMode: "default",
+        approvalPolicy: "on-request",
+        sandboxMode: "workspace-write",
+      },
+    );
+
+    codexInstances[0].emit("message", {
+      type: "system",
+      subtype: "init",
+      approvalPolicy: "on-request",
+      sandboxMode: "read-only",
+    });
+
+    expect(manager.get(sessionId)?.codexSettings?.codexPermissionsMode)
+      .toBeUndefined();
+    expect(manager.list()[0].codexSettings?.codexPermissionsMode).toBe(
+      "custom",
+    );
   });
 
   it("caches codex plugin completion metadata", () => {
@@ -175,7 +207,9 @@ describe("SessionManager codex path", () => {
       ],
     } satisfies ServerMessage);
 
-    expect(manager.getCachedCommands("/tmp/project-codex")).toMatchObject({
+    expect(
+      manager.getCachedCommands("codex", "/tmp/project-codex"),
+    ).toMatchObject({
       plugins: ["sample"],
       pluginMetadata: [
         expect.objectContaining({
@@ -183,6 +217,105 @@ describe("SessionManager codex path", () => {
           path: "plugin://sample@test",
         }),
       ],
+    });
+  });
+
+  it("separates completion caches by provider", () => {
+    const manager = new SessionManager(() => {});
+    manager.create(
+      "/tmp/shared-project",
+      undefined,
+      undefined,
+      undefined,
+      "codex",
+    );
+    manager.create(
+      "/tmp/shared-project",
+      undefined,
+      undefined,
+      undefined,
+      "claude",
+    );
+
+    codexInstances[0].emit("message", {
+      type: "system",
+      subtype: "supported_commands",
+      skills: ["codex-skill"],
+    } satisfies ServerMessage);
+    sdkInstances[0].emit("message", {
+      type: "system",
+      subtype: "supported_commands",
+      slashCommands: ["claude-command"],
+    } satisfies ServerMessage);
+
+    expect(
+      manager.getCachedCommands("codex", "/tmp/shared-project")?.skills,
+    ).toEqual(["codex-skill"]);
+    expect(
+      manager.getCachedCommands("claude", "/tmp/shared-project")
+        ?.slashCommands,
+    ).toEqual(["claude-command"]);
+  });
+
+  it("keys completion caches by the effective worktree cwd", () => {
+    const manager = new SessionManager(() => {});
+    manager.create(
+      "/tmp/base-project",
+      undefined,
+      undefined,
+      { existingWorktreePath: "/tmp/project-worktree" },
+      "codex",
+    );
+
+    codexInstances[0].emit("message", {
+      type: "system",
+      subtype: "supported_commands",
+      skills: ["worktree-skill"],
+    } satisfies ServerMessage);
+
+    expect(
+      manager.getCachedCommands("codex", "/tmp/project-worktree")?.skills,
+    ).toEqual(["worktree-skill"]);
+    expect(
+      manager.getCachedCommands("codex", "/tmp/base-project"),
+    ).toBeUndefined();
+  });
+
+  it("replaces cached completion entities with an empty snapshot", () => {
+    const manager = new SessionManager(() => {});
+    manager.create(
+      "/tmp/project-empty",
+      undefined,
+      undefined,
+      undefined,
+      "codex",
+    );
+
+    codexInstances[0].emit("message", {
+      type: "system",
+      subtype: "supported_commands",
+      skills: ["removed-skill"],
+    } satisfies ServerMessage);
+    codexInstances[0].emit("message", {
+      type: "system",
+      subtype: "supported_commands",
+      slashCommands: [],
+      skills: [],
+      skillMetadata: [],
+      apps: [],
+      appMetadata: [],
+      plugins: [],
+      pluginMetadata: [],
+    } satisfies ServerMessage);
+
+    expect(manager.getCachedCommands("codex", "/tmp/project-empty")).toEqual({
+      slashCommands: [],
+      skills: [],
+      skillMetadata: [],
+      apps: [],
+      appMetadata: [],
+      plugins: [],
+      pluginMetadata: [],
     });
   });
 
@@ -311,6 +444,38 @@ describe("SessionManager codex path", () => {
     ]);
   });
 
+  it("retains the latest Codex user anchor after history compaction", () => {
+    const manager = new SessionManager(() => {});
+    const sessionId = manager.create(
+      "/tmp/project-codex-history-anchor",
+      undefined,
+      undefined,
+      undefined,
+      "codex",
+    );
+    manager.appendHistory(sessionId, {
+      type: "user_input",
+      text: "delegate this task",
+      userMessageUuid: "codex:user-turn:1",
+    });
+    for (let index = 0; index < 100; index++) {
+      manager.appendHistory(sessionId, {
+        type: "status",
+        status: index % 2 === 0 ? "running" : "idle",
+      });
+    }
+
+    const session = manager.get(sessionId);
+    expect(session?.history).toHaveLength(100);
+    expect(session?.history.some((message) => message.type === "user_input"))
+      .toBe(false);
+    expect(session?.codexLatestUserInput).toMatchObject({
+      type: "user_input",
+      text: "delegate this task",
+      userMessageUuid: "codex:user-turn:1",
+    });
+  });
+
   it("keeps history delta sequences isolated per running session", () => {
     const manager = new SessionManager(() => {});
     const sessionA = manager.create("/tmp/project-history-a");
@@ -333,8 +498,16 @@ describe("SessionManager codex path", () => {
     expect(manager.getHistorySince(sessionB, 0)?.toSeq).toBe(1);
   });
 
-  it("updates codex session settings from runtime init metadata", () => {
-    const manager = new SessionManager(() => {});
+  it("updates codex session settings and broadcasts the resolved thread id", () => {
+    const onSessionUpdated = vi.fn();
+    const manager = new SessionManager(
+      () => {},
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      onSessionUpdated,
+    );
     const sessionId = manager.create(
       "/tmp/project-codex",
       undefined,
@@ -368,6 +541,8 @@ describe("SessionManager codex path", () => {
 
     const session = manager.get(sessionId);
     expect(session?.claudeSessionId).toBe("thread-runtime");
+    expect(onSessionUpdated).toHaveBeenCalledOnce();
+    expect(onSessionUpdated).toHaveBeenCalledWith(sessionId);
     expect(session?.codexSettings).toMatchObject({
       model: "gpt-5.4",
       approvalPolicy: "never",
@@ -502,6 +677,40 @@ describe("SessionManager codex path", () => {
       status: "idle",
       historySeq: 1,
     });
+  });
+
+  it("evicts the least recently active idle session above the retention limit", () => {
+    const onSessionUpdated = vi.fn();
+    const manager = new SessionManager(
+      () => {},
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      onSessionUpdated,
+    );
+    const sessionIds = Array.from({ length: 31 }, (_, index) => {
+      const id = manager.create(
+        `/tmp/project-idle-${index}`,
+        undefined,
+        undefined,
+        undefined,
+        "codex",
+      );
+      manager.get(id)!.lastActivityAt = new Date(index * 1000);
+      return id;
+    });
+
+    for (const process of codexInstances) {
+      process.emit("status", "idle" satisfies ProcessStatus);
+    }
+
+    expect(manager.get(sessionIds[0])).toBeUndefined();
+    expect(codexInstances[0].stop).toHaveBeenCalledOnce();
+    expect(manager.get(sessionIds[1])).toBeDefined();
+    expect(manager.list()).toHaveLength(30);
+    expect(onSessionUpdated).toHaveBeenCalledOnce();
+    manager.destroyAll();
   });
 
   it("includes codex agent metadata in session summaries", () => {
