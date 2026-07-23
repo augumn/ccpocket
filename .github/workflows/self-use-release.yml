@@ -342,16 +342,15 @@ jobs:
             exit 1
           fi
 
-          ENTITLEMENTS_PATH="apps/mobile/macos/Runner/Release.entitlements"
-          if [[ ! -f "$ENTITLEMENTS_PATH" ]]; then
-            echo "::error::Missing entitlements file at $ENTITLEMENTS_PATH"
+          SELF_USE_ENTITLEMENTS_PATH="$RUNNER_TEMP/self-use-macos.entitlements"
+          codesign -d --entitlements :- "$APP_PATH" > "$SELF_USE_ENTITLEMENTS_PATH"
+          if [[ ! -s "$SELF_USE_ENTITLEMENTS_PATH" ]]; then
+            echo "::error::Failed to extract entitlements from built macOS app"
             exit 1
           fi
-
-          SELF_USE_ENTITLEMENTS_PATH="$RUNNER_TEMP/self-use-macos.entitlements"
-          cp "$ENTITLEMENTS_PATH" "$SELF_USE_ENTITLEMENTS_PATH"
           /usr/libexec/PlistBuddy -c "Delete :com.apple.security.app-sandbox" "$SELF_USE_ENTITLEMENTS_PATH" || true
           /usr/libexec/PlistBuddy -c "Delete :keychain-access-groups" "$SELF_USE_ENTITLEMENTS_PATH" || true
+          /usr/libexec/PlistBuddy -c "Delete :com.apple.security.get-task-allow" "$SELF_USE_ENTITLEMENTS_PATH" || true
 
           SPARKLE_FRAMEWORK_PATH="$APP_PATH/Contents/Frameworks/Sparkle.framework"
           if [[ -d "$SPARKLE_FRAMEWORK_PATH" ]]; then
@@ -382,9 +381,17 @@ jobs:
             "$APP_PATH"
 
           codesign --verify --deep --strict --verbose=2 "$APP_PATH"
+          codesign -d --entitlements :- "$APP_PATH" > "$RUNNER_TEMP/resigned-self-use-entitlements.plist"
+          if grep -q '\$(' "$RUNNER_TEMP/resigned-self-use-entitlements.plist"; then
+            echo "::error::Resolved macOS entitlements still contain build setting placeholders"
+            cat "$RUNNER_TEMP/resigned-self-use-entitlements.plist"
+            exit 1
+          fi
           echo "Entitlements used for self-use package:"
           plutil -p "$SELF_USE_ENTITLEMENTS_PATH"
-          spctl --assess --type execute --verbose=4 "$APP_PATH" || true
+          if ! spctl --assess --type execute --verbose=4 "$APP_PATH"; then
+            echo "::warning::Self-use macOS app is ad-hoc signed and not notarized; Gatekeeper may require manually removing quarantine on first run."
+          fi
 
       - name: Install create-dmg
         run: brew install create-dmg
@@ -569,6 +576,17 @@ jobs:
             echo "npx -y https://github.com/augumn/ccpocket/releases/download/${{ steps.tag.outputs.immutable_tag }}/ccpocket-bridge-self-use.tgz ccpocket-bridge"
             echo '```'
             echo
+            if [[ "$BUILD_MACOS" == "true" ]]; then
+              echo "macOS first-run note:"
+              echo
+              echo "The self-use macOS DMG is ad-hoc signed but not Developer ID notarized. If macOS says the app cannot be opened after copying it to Applications, run:"
+              echo
+              echo '```bash'
+              echo "xattr -dr com.apple.quarantine /Applications/CC\\ Pocket.app"
+              echo "open /Applications/CC\\ Pocket.app"
+              echo '```'
+              echo
+            fi
             echo "Unselected assets remain from the previous self-use release state."
           } > release-notes.md
 
