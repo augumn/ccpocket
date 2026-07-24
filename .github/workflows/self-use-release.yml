@@ -332,7 +332,7 @@ jobs:
         working-directory: apps/mobile
         run: flutter build macos --release
 
-      - name: Re-sign and verify macOS app bundle for self-use distribution
+      - name: Verify macOS app bundle for self-use distribution
         shell: bash
         run: |
           set -euo pipefail
@@ -341,54 +341,17 @@ jobs:
             echo "::error::macOS app bundle not found at $APP_PATH"
             exit 1
           fi
-
-          SELF_USE_ENTITLEMENTS_PATH="$RUNNER_TEMP/self-use-macos.entitlements"
-          codesign -d --entitlements :- "$APP_PATH" > "$SELF_USE_ENTITLEMENTS_PATH"
-          if [[ ! -s "$SELF_USE_ENTITLEMENTS_PATH" ]]; then
-            echo "::error::Failed to extract entitlements from built macOS app"
-            exit 1
-          fi
-          /usr/libexec/PlistBuddy -c "Delete :com.apple.security.app-sandbox" "$SELF_USE_ENTITLEMENTS_PATH" || true
-          /usr/libexec/PlistBuddy -c "Delete :keychain-access-groups" "$SELF_USE_ENTITLEMENTS_PATH" || true
-          /usr/libexec/PlistBuddy -c "Delete :com.apple.security.get-task-allow" "$SELF_USE_ENTITLEMENTS_PATH" || true
-
-          SPARKLE_FRAMEWORK_PATH="$APP_PATH/Contents/Frameworks/Sparkle.framework"
-          if [[ -d "$SPARKLE_FRAMEWORK_PATH" ]]; then
-            SPARKLE_VERSION_DIR="$SPARKLE_FRAMEWORK_PATH/Versions/B"
-
-            for SPARKLE_HELPER in \
-              "$SPARKLE_VERSION_DIR/Autoupdate" \
-              "$SPARKLE_VERSION_DIR/XPCServices/Downloader.xpc" \
-              "$SPARKLE_VERSION_DIR/XPCServices/Installer.xpc" \
-              "$SPARKLE_VERSION_DIR/Updater.app"; do
-              if [[ -e "$SPARKLE_HELPER" ]]; then
-                codesign --force --sign - "$SPARKLE_HELPER"
-              fi
-            done
-
-            codesign --force --sign - "$SPARKLE_FRAMEWORK_PATH"
-          fi
-
-          find "$APP_PATH/Contents/Frameworks" \
-            -type f \
-            \( -perm -111 -o -name "*.dylib" \) \
-            -print0 | while IFS= read -r -d '' BIN; do
-              codesign --force --sign - "$BIN"
-            done
-
-          codesign --force --deep --sign - \
-            --entitlements "$SELF_USE_ENTITLEMENTS_PATH" \
-            "$APP_PATH"
-
           codesign --verify --deep --strict --verbose=2 "$APP_PATH"
-          codesign -d --entitlements :- "$APP_PATH" > "$RUNNER_TEMP/resigned-self-use-entitlements.plist"
-          if grep -q '\$(' "$RUNNER_TEMP/resigned-self-use-entitlements.plist"; then
-            echo "::error::Resolved macOS entitlements still contain build setting placeholders"
-            cat "$RUNNER_TEMP/resigned-self-use-entitlements.plist"
+          codesign -d --entitlements :- "$APP_PATH" > "$RUNNER_TEMP/self-use-macos.entitlements"
+          if grep -q '\$(' "$RUNNER_TEMP/self-use-macos.entitlements"; then
+            echo "::error::Built macOS entitlements contain unresolved build setting placeholders"
+            cat "$RUNNER_TEMP/self-use-macos.entitlements"
             exit 1
           fi
-          echo "Entitlements used for self-use package:"
-          plutil -p "$SELF_USE_ENTITLEMENTS_PATH"
+          echo "Built app entitlements:"
+          plutil -p "$RUNNER_TEMP/self-use-macos.entitlements"
+          test -x "$APP_PATH/Contents/MacOS/CC Pocket"
+          test -d "$APP_PATH/Contents/Frameworks/Sparkle.framework"
           if ! spctl --assess --type execute --verbose=4 "$APP_PATH"; then
             echo "::warning::Self-use macOS app is ad-hoc signed and not notarized; Gatekeeper may require manually removing quarantine on first run."
           fi
