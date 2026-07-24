@@ -36,6 +36,7 @@ class BridgeService implements BridgeServiceBase {
   final _fileListMessageController =
       StreamController<FileListMessage>.broadcast();
   final _projectHistoryController = StreamController<List<String>>.broadcast();
+  final _codexAutoReviewPolicyController = StreamController<bool>.broadcast();
   final _diffResultController = StreamController<DiffResultMessage>.broadcast();
   final _diffImageResultController =
       StreamController<DiffImageResultMessage>.broadcast();
@@ -111,6 +112,7 @@ class BridgeService implements BridgeServiceBase {
   Map<String, List<String>> _codexModelServiceTiers = {};
   List<String> _codexProfiles = [];
   String? _defaultCodexProfile;
+  bool _codexAutoReviewDisabled = false;
   String? _bridgeVersion;
   String? _promptHistoryBridgeId;
   UsageResultMessage? _lastUsageResult;
@@ -159,6 +161,8 @@ class BridgeService implements BridgeServiceBase {
   Stream<List<GalleryImage>> get galleryStream => _galleryController.stream;
   Stream<List<String>> get projectHistoryStream =>
       _projectHistoryController.stream;
+  Stream<bool> get codexAutoReviewPolicyStream =>
+      _codexAutoReviewPolicyController.stream;
   @override
   Stream<List<String>> get fileList => _fileListController.stream;
   Stream<FileListMessage> get fileListMessages =>
@@ -242,6 +246,7 @@ class BridgeService implements BridgeServiceBase {
       _codexModelServiceTiers;
   List<String> get codexProfiles => _codexProfiles;
   String? get defaultCodexProfile => _defaultCodexProfile;
+  bool get codexAutoReviewDisabled => _codexAutoReviewDisabled;
   String? get bridgeVersion => _bridgeVersion;
   String? get promptHistoryBridgeId => _promptHistoryBridgeId;
   UsageResultMessage? get lastUsageResult => _lastUsageResult;
@@ -360,13 +365,9 @@ class BridgeService implements BridgeServiceBase {
 
     _setBridgeConnectionState(BridgeConnectionState.connecting);
     try {
-      _channel = WebSocketChannel.connect(Uri.parse(url));
-      _setBridgeConnectionState(BridgeConnectionState.connected);
-      _reconnectAttempt = 0;
-      send(ClientMessage.clientCapabilities());
-      _flushMessageQueue();
-
-      _channelSub = _channel!.stream.listen(
+      final channel = WebSocketChannel.connect(Uri.parse(url));
+      _channel = channel;
+      _channelSub = channel.stream.listen(
         (data) {
           if (epoch != _connectionEpoch) return;
           try {
@@ -404,6 +405,7 @@ class BridgeService implements BridgeServiceBase {
                 :final codexModelServiceTiers,
                 :final codexProfiles,
                 :final defaultCodexProfile,
+                :final codexAutoReviewDisabled,
                 :final bridgeVersion,
               ):
                 _sessions = _sortActiveSessions(
@@ -419,6 +421,8 @@ class BridgeService implements BridgeServiceBase {
                 _codexModelServiceTiers = codexModelServiceTiers;
                 _codexProfiles = codexProfiles;
                 _defaultCodexProfile = defaultCodexProfile;
+                _codexAutoReviewDisabled = codexAutoReviewDisabled;
+                _codexAutoReviewPolicyController.add(codexAutoReviewDisabled);
                 _bridgeVersion = bridgeVersion;
               case RecentSessionsMessage(:final sessions, :final hasMore):
                 _lastRecentSessionsMessage = msg;
@@ -561,6 +565,10 @@ class BridgeService implements BridgeServiceBase {
               case SystemMessage(:final permissionMode):
                 if (msg.subtype == 'session_created') {
                   _clearPendingSessionActionFor(msg);
+                } else if (msg.subtype == 'session_resume_started') {
+                  _markPendingSessionActionProcessing(msg);
+                } else if (msg.subtype == 'session_resume_failed') {
+                  _clearFailedResumeAction(msg);
                 }
                 if (sessionId != null && permissionMode != null) {
                   _patchSessionPermissionMode(
@@ -624,9 +632,6 @@ class BridgeService implements BridgeServiceBase {
           _setBridgeConnectionState(BridgeConnectionState.disconnected);
           _requeueInFlightInputMessages();
           _requeueInFlightPendingMessages();
-          _messageController.add(
-            ErrorMessage(message: 'WebSocket error: $error'),
-          );
           _scheduleReconnect();
         },
         onDone: () {
@@ -642,10 +647,31 @@ class BridgeService implements BridgeServiceBase {
           }
         },
       );
+      unawaited(
+        channel.ready
+            .then((_) {
+              if (epoch != _connectionEpoch ||
+                  !identical(_channel, channel) ||
+                  _intentionalDisconnect) {
+                return;
+              }
+              _setBridgeConnectionState(BridgeConnectionState.connected);
+              _reconnectAttempt = 0;
+              send(ClientMessage.clientCapabilities());
+              _flushMessageQueue();
+            })
+            .catchError((Object error, StackTrace stackTrace) {
+              if (epoch != _connectionEpoch || _intentionalDisconnect) return;
+              logger.error('WS handshake failed', error, stackTrace);
+              _setBridgeConnectionState(BridgeConnectionState.disconnected);
+              _requeueInFlightInputMessages();
+              _requeueInFlightPendingMessages();
+              _scheduleReconnect();
+            }),
+      );
     } catch (e, st) {
       logger.error('WS connect failed', e, st);
       _setBridgeConnectionState(BridgeConnectionState.disconnected);
-      _messageController.add(ErrorMessage(message: 'Connection failed: $e'));
       _scheduleReconnect();
     }
   }
@@ -682,6 +708,7 @@ class BridgeService implements BridgeServiceBase {
     _codexModelServiceTiers = const {};
     _codexProfiles = const [];
     _defaultCodexProfile = null;
+    _codexAutoReviewDisabled = false;
     _bridgeVersion = null;
     _promptHistoryBridgeId = null;
     _lastUsageResult = null;
@@ -810,6 +837,10 @@ class BridgeService implements BridgeServiceBase {
 
   void _scheduleReconnect() {
     if (_intentionalDisconnect || _lastUrl == null) return;
+    if (_reconnectTimer?.isActive ?? false) {
+      _setBridgeConnectionState(BridgeConnectionState.reconnecting);
+      return;
+    }
 
     _reconnectAttempt++;
     final delay = min(pow(2, _reconnectAttempt).toInt(), _maxReconnectDelay);
@@ -1111,6 +1142,9 @@ class BridgeService implements BridgeServiceBase {
     if (projectPath == null || projectPath.isEmpty) return null;
     final provider = json['provider'] as String? ?? Provider.claude.value;
     final createdAt = DateTime.now();
+    final state = canCancel
+        ? OfflinePendingActionState.queuedForReconnect
+        : OfflinePendingActionState.processing;
     return switch (message.type) {
       'start' => OfflinePendingAction(
         id: _offlinePendingActionId(message),
@@ -1118,6 +1152,7 @@ class BridgeService implements BridgeServiceBase {
         projectPath: projectPath,
         provider: provider,
         createdAt: createdAt,
+        state: state,
         canCancel: canCancel,
       ),
       'resume_session' => OfflinePendingAction(
@@ -1126,6 +1161,7 @@ class BridgeService implements BridgeServiceBase {
         projectPath: projectPath,
         provider: provider,
         createdAt: createdAt,
+        state: state,
         canCancel: canCancel,
         sessionId: json['sessionId'] as String?,
       ),
@@ -1241,6 +1277,68 @@ class BridgeService implements BridgeServiceBase {
         return true;
       });
       removed = before != _messageQueue.length;
+      if (removed) {
+        unawaited(_persistOfflinePendingMessages());
+      }
+    }
+    if (removed) {
+      _publishOfflinePendingActions();
+    }
+  }
+
+  void _markPendingSessionActionProcessing(SystemMessage message) {
+    final sourceSessionId = message.sourceSessionId;
+    if (sourceSessionId == null || sourceSessionId.isEmpty) return;
+    final provider = message.provider ?? Provider.claude.value;
+    final projectPath = message.projectPath;
+
+    for (final entry in _inFlightPendingMessages.entries) {
+      final action = _offlinePendingActionFor(entry.value, canCancel: false);
+      if (action == null ||
+          action.kind != OfflinePendingActionKind.resume ||
+          action.provider != provider ||
+          action.sessionId != sourceSessionId) {
+        continue;
+      }
+      if (projectPath != null &&
+          !_compatiblePendingProjectPath(action.projectPath, projectPath)) {
+        continue;
+      }
+
+      _inFlightPendingVisibilityTimers.remove(entry.key)?.cancel();
+      _visibleInFlightPendingKeys.add(entry.key);
+      _publishOfflinePendingActions();
+      return;
+    }
+  }
+
+  void _clearFailedResumeAction(SystemMessage message) {
+    final sourceSessionId = message.sourceSessionId;
+    if (sourceSessionId == null || sourceSessionId.isEmpty) return;
+    final provider = message.provider ?? Provider.claude.value;
+
+    bool matches(ClientMessage pending) {
+      final action = _offlinePendingActionFor(pending);
+      return action?.kind == OfflinePendingActionKind.resume &&
+          action?.provider == provider &&
+          action?.sessionId == sourceSessionId;
+    }
+
+    var removed = false;
+    for (final entry in List.of(_inFlightPendingMessages.entries)) {
+      if (!matches(entry.value)) continue;
+      _clearInFlightPendingMessage(entry.key);
+      removed = true;
+      break;
+    }
+    if (!removed) {
+      var didRemove = false;
+      _messageQueue.removeWhere((pending) {
+        if (didRemove || !matches(pending)) return false;
+        didRemove = true;
+        return true;
+      });
+      removed = didRemove;
       if (removed) {
         unawaited(_persistOfflinePendingMessages());
       }
@@ -2364,6 +2462,7 @@ class BridgeService implements BridgeServiceBase {
     _fileListController.close();
     _fileListMessageController.close();
     _projectHistoryController.close();
+    _codexAutoReviewPolicyController.close();
     _diffResultController.close();
     _diffImageResultController.close();
     _worktreeListController.close();

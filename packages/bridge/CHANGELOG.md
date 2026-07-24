@@ -2,6 +2,23 @@
 
 All notable changes to `@ccpocket/bridge` will be documented in this file.
 
+## [1.69.3] - 2026-07-24
+
+### Fixed
+- Verify session restore lifecycle events consistently across Windows and POSIX Bridge environments.
+
+## [1.69.2] - 2026-07-24
+
+### Fixed
+- Keep image-heavy session restores alive with explicit progress and failure events, idempotent reconnect handling, and bounded restore timeouts.
+- Reduce repeated history and image processing during session restore with reusable Codex history, content-addressed image references, and seven-day HTTP caching.
+
+## [1.69.1] - 2026-07-24
+
+### Fixed
+- Honor managed Codex auto-review restrictions when starting and resuming sessions, and expose the policy state to connected clients.
+- Improve Codex app-server resilience around RPC errors, active-writer conflicts, archived threads, and streamed response recovery.
+
 ## [1.69.0] - 2026-07-21
 
 ### Added
